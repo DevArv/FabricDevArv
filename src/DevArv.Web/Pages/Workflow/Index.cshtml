@@ -1,0 +1,56 @@
+@page
+@model DevArv.Web.Pages.Workflow.IndexModel
+@{
+    ViewData["Title"] = "Flujo";
+}
+
+<div class="page-head">
+    <h1>Flujo de trabajo</h1>
+    <a class="btn btn-primary" href="/Workflow/Edit">+ Nueva columna</a>
+</div>
+<p class="muted">Cada columna del tablero es una etapa. Las columnas de <strong>agente</strong> ejecutan Claude Code en una PC;
+    las de <strong>sistema</strong> las ejecuta el servidor (crear PR); las de <strong>aprobación</strong> esperan a una persona.
+    ✓ indica a dónde va la tarea si la etapa termina bien o se aprueba; ⊘ a dónde vuelve si se rechaza.</p>
+
+@if (Model.Error is not null) { <div class="alert error">@Model.Error</div> }
+
+<div class="flow">
+    @foreach (var s in Model.Stages)
+    {
+        <div class="flow-row kind-@s.Kind.ToString().ToLowerInvariant()">
+            <span class="avatar">@s.Icon</span>
+            <div class="flow-main">
+                <strong>@s.Name</strong> @if (s.IsInitial) { <span class="label">inicial</span> }
+                <div class="muted">
+                    @Labels.Of(s.Kind)
+                    @if (s.Kind == StageKind.Agent)
+                    {
+                        <text> · modelo <code>@(s.Model ?? "por defecto")</code> · permisos <code>@s.PermissionMode</code>
+                        @(s.PushChanges ? " · hace commit y push" : "")@(s.RequiresDecision ? " · emite veredicto" : "") · máx. @s.TimeoutMinutes min</text>
+                    }
+                    @if (s.Kind == StageKind.System) { <text> · @Labels.Of(s.SystemAction)</text> }
+                </div>
+                <div class="transitions">
+                    @if (s.SuccessStageId is not null) { <span>✓ → @Model.NameOf(s.SuccessStageId)</span> }
+                    @if (s.RejectStageId is not null) { <span>⊘ → @Model.NameOf(s.RejectStageId)</span> }
+                </div>
+            </div>
+            <span class="count" title="Tareas en la columna">@Model.TaskCounts.GetValueOrDefault(s.Id)</span>
+            <div class="flow-actions">
+                <form method="post" asp-page-handler="Move" class="inline">
+                    <input type="hidden" name="id" value="@s.Id" /><input type="hidden" name="direction" value="-1" />
+                    <button class="btn btn-ghost small" title="Subir">▲</button>
+                </form>
+                <form method="post" asp-page-handler="Move" class="inline">
+                    <input type="hidden" name="id" value="@s.Id" /><input type="hidden" name="direction" value="1" />
+                    <button class="btn btn-ghost small" title="Bajar">▼</button>
+                </form>
+                <a class="btn small" href="/Workflow/Edit/@s.Id">Editar</a>
+                <form method="post" asp-page-handler="Delete" class="inline" data-confirm="¿Eliminar la columna «@s.Name»?">
+                    <input type="hidden" name="id" value="@s.Id" />
+                    <button class="btn btn-ghost small">🗑</button>
+                </form>
+            </div>
+        </div>
+    }
+</div>

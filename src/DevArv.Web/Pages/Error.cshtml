@@ -1,0 +1,14 @@
+@page
+@model ErrorModel
+@{
+    ViewData["Title"] = "Error";
+}
+<div class="panel narrow">
+    <h1>Algo salió mal</h1>
+    <p>Ocurrió un error al procesar la solicitud.</p>
+    @if (!string.IsNullOrEmpty(Model.RequestId))
+    {
+        <p class="muted">Id de la solicitud: <code>@Model.RequestId</code></p>
+    }
+    <a class="btn" href="/">Volver al tablero</a>
+</div>

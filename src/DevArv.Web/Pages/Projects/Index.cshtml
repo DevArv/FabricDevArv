@@ -1,0 +1,49 @@
+@page
+@model DevArv.Web.Pages.Projects.IndexModel
+@{
+    ViewData["Title"] = "Proyectos";
+}
+
+<div class="page-head">
+    <h1>Proyectos</h1>
+    <a class="btn btn-primary" href="/Projects/Edit">+ Conectar repositorio</a>
+</div>
+
+@if (!Model.GitHubConfigured)
+{
+    <div class="alert error">
+        Falta el token de GitHub del servidor. Configúralo con
+        <code>dotnet user-secrets set "GitHub:Token" "ghp_…"</code> o la variable de entorno <code>GitHub__Token</code>.
+        Sin él no se pueden validar repositorios ni crear pull requests.
+    </div>
+}
+
+@if (Model.Rows.Count == 0)
+{
+    <div class="empty">
+        <p>No hay proyectos todavía. Cada proyecto apunta a un repositorio de GitHub donde los agentes harán los cambios.</p>
+        <a class="btn btn-primary" href="/Projects/Edit">Conectar el primero</a>
+    </div>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr><th>Proyecto</th><th>Repositorio</th><th>Rama por defecto</th><th>Tareas abiertas</th><th>Costo acumulado</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Model.Rows)
+            {
+                var p = row.Project;
+                <tr class="@(p.IsActive ? "" : "inactive")">
+                    <td><i class="dot" style="background:@p.Color"></i> <strong>@p.Name</strong> @(p.IsActive ? "" : "(inactivo)")</td>
+                    <td><a href="https://github.com/@p.RepoOwner/@p.RepoName" target="_blank" rel="noopener">@p.RepoFullName</a></td>
+                    <td><code>@p.DefaultBranch</code></td>
+                    <td><a href="/?project=@p.Id">@row.OpenTasks</a></td>
+                    <td>@Labels.Usd(row.Cost)</td>
+                    <td><a class="btn small" href="/Projects/Edit/@p.Id">Editar</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

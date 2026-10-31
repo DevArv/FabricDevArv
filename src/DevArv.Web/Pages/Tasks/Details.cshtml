@@ -1,0 +1,325 @@
+@page "{id:int}"
+@model DevArv.Web.Pages.Tasks.DetailsModel
+@{
+    var t = Model.Item;
+    var s = t.Stage;
+    var run = Model.SelectedRun;
+    ViewData["Title"] = $"#{t.Id} {t.Title}";
+    if (Model.Modal) { Layout = null; }
+}
+
+<div class="panel details" data-live="@(Model.IsLive ? "true" : "false")" data-self="@Model.SelfUrl()">
+    <div class="panel-head">
+        <h2>Tarea #@t.Id · @t.Title</h2>
+        @if (Model.Modal)
+        {
+            <a class="btn btn-ghost" href="/Tasks/Details/@t.Id" target="_blank" title="Abrir en página completa">⤢</a>
+            <button type="button" class="btn btn-ghost" data-close-modal>✕</button>
+        }
+    </div>
+
+    @if (Model.Error is not null) { <div class="alert error">@Model.Error</div> }
+    @if (Model.Notice is not null) { <div class="alert ok">@Model.Notice</div> }
+    @if (t.ArchivedAt is not null) { <div class="alert">📦 Tarea archivada el @Model.Clock.Format(t.ArchivedAt)</div> }
+
+    <div class="meta-grid">
+        <span>Columna: <strong>@s.Icon @s.Name</strong></span>
+        <span>Estado: <span class="status-pill @Labels.StatusCss(t.Status)">@Labels.StatusIcon(t.Status) @Labels.Of(t.Status)</span></span>
+        <span class="chip mini"><i class="dot" style="background:@t.Project.Color"></i>@t.Project.Name</span>
+        <span>Creada por <span class="user-chip small">@Labels.Initials(t.CreatedByName)</span> @t.CreatedByName</span>
+        <span class="prio @Labels.PriorityCss(t.Priority)">● @Labels.Of(t.Priority)</span>
+        <span>Complejidad: @Labels.Of(t.Complexity)</span>
+        <span>Rama base: <code>@t.BaseBranch</code></span>
+        @if (t.WorkBranch is not null)
+        {
+            <span>Rama de trabajo: <code>@t.WorkBranch</code></span>
+        }
+        @if (t.PullRequestUrl is not null)
+        {
+            <a href="@t.PullRequestUrl" target="_blank" rel="noopener">🔗 Ver pull request #@t.PullRequestNumber</a>
+        }
+        <span>PC: 🖥 @(t.PreferredWorker?.Name is { } pc ? $"{pc} (fija)" : t.LastWorkerName ?? "cualquiera")</span>
+        <span>Creada: @Model.Clock.Format(t.CreatedAt)</span>
+        <span>Costo: @Labels.Usd(t.TotalCostUsd)</span>
+        <span>Tokens: @Labels.Tokens(t.TotalTokens)</span>
+        @if (t.ModelOverride is not null) { <span>Modelo: <code>@t.ModelOverride</code></span> }
+    </div>
+
+    @* ---------- Decisión pendiente / errores / ejecución en curso ---------- *@
+    @if (t.Status == WorkStatus.WaitingApproval || (s.Kind == StageKind.Manual && s.SuccessStageId is not null && t.ArchivedAt is null))
+    {
+        <div class="decision @(t.Status == WorkStatus.WaitingApproval ? "waiting" : "")">
+            @if (t.Status == WorkStatus.WaitingApproval)
+            {
+                <span class="waiting-tag">⏸ Espera una decisión desde @Model.Clock.Format(t.StageEnteredAt)</span>
+            }
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Approve")" class="inline">
+                <input type="hidden" name="returnQuery" />
+                <button class="btn btn-primary">✓ @(s.Kind == StageKind.HumanApproval ? "Aprobar" : "Avanzar") → @Model.StageName(s.SuccessStageId)</button>
+            </form>
+            @if (s.Kind == StageKind.HumanApproval)
+            {
+                <details class="inline-details" data-key="changes">
+                    <summary class="btn">↩ Pedir cambios → @Model.StageName(s.RejectStageId)</summary>
+                    <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("RequestChanges")">
+                        <input type="hidden" name="returnQuery" />
+                        <textarea name="feedback" rows="5" required placeholder="¿Qué debe corregir el agente? Sé específico: el texto se envía en su próximo prompt."></textarea>
+                        <button class="btn btn-warn">Enviar al agente</button>
+                    </form>
+                </details>
+            }
+        </div>
+    }
+    @if (t.Status == WorkStatus.Failed)
+    {
+        <div class="alert error">
+            <strong>✖ Falló «@s.Name»:</strong> @t.LastError
+            @if (s.RunsAutomatically)
+            {
+                <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Retry")" class="inline">
+                    <input type="hidden" name="returnQuery" />
+                    <button class="btn">↻ Reintentar</button>
+                </form>
+            }
+        </div>
+    }
+    @if (t.Status is WorkStatus.Queued or WorkStatus.Running)
+    {
+        <div class="alert info">
+            @(t.Status == WorkStatus.Queued ? "⏳ En cola, esperando una PC disponible…" : $"● {t.LastWorkerName} está trabajando en «{s.Name}»…")
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Cancel")" class="inline">
+                <input type="hidden" name="returnQuery" />
+                <button class="btn btn-ghost">■ Cancelar</button>
+            </form>
+        </div>
+    }
+
+    @* ---------- Acciones ---------- *@
+    <div class="actions">
+        <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Move")" class="inline">
+            <input type="hidden" name="returnQuery" />
+            <select name="stageId">
+                @foreach (var st in Model.Stages)
+                {
+                    <option value="@st.Id" selected="@(st.Id == t.StageId)">@st.Icon @st.Name</option>
+                }
+            </select>
+            <button class="btn">Mover a…</button>
+        </form>
+        @if (s.RunsAutomatically && t.Status is not (WorkStatus.Queued or WorkStatus.Running or WorkStatus.Failed))
+        {
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Retry")" class="inline">
+                <input type="hidden" name="returnQuery" />
+                <button class="btn">▶ Ejecutar de nuevo</button>
+            </form>
+        }
+        <details class="inline-details" data-key="edit">
+            <summary class="btn">✎ Editar, prioridad, modelo y PC…</summary>
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Update")" class="stack">
+                <input type="hidden" name="returnQuery" />
+                <label>Título <input name="title" value="@t.Title" maxlength="200" /></label>
+                <div class="grid-3">
+                    <label>Prioridad
+                        <select name="priority">
+                            @foreach (var p in Enum.GetValues<Priority>())
+                            {
+                                <option value="@p" selected="@(p == t.Priority)">@Labels.Of(p)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Complejidad
+                        <select name="complexity">
+                            @foreach (var c in Enum.GetValues<Complexity>())
+                            {
+                                <option value="@c" selected="@(c == t.Complexity)">@Labels.Of(c)</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Etiquetas <input name="labels" value="@t.Labels" /></label>
+                </div>
+                <div class="grid-2">
+                    <label>Modelo <input name="modelOverride" value="@t.ModelOverride" list="models-d" placeholder="El de cada columna" />
+                        <datalist id="models-d"><option value="opus"></option><option value="sonnet"></option><option value="haiku"></option></datalist>
+                    </label>
+                    <label>Ejecutar sólo en
+                        <select name="preferredWorkerId">
+                            <option value="">Cualquier PC</option>
+                            @foreach (var w in Model.Workers)
+                            {
+                                <option value="@w.Id" selected="@(w.Id == t.PreferredWorkerId)">@w.Name</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+                <label>Descripción (Markdown)
+                    <textarea name="description" rows="10">@t.Description</textarea>
+                </label>
+                <button class="btn btn-primary">Guardar</button>
+            </form>
+        </details>
+        <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Archive")" class="inline">
+            <input type="hidden" name="returnQuery" />
+            <input type="hidden" name="archived" value="@(t.ArchivedAt is null ? "true" : "false")" />
+            <button class="btn btn-ghost">@(t.ArchivedAt is null ? "📦 Archivar" : "↺ Restaurar")</button>
+        </form>
+    </div>
+
+    @* ---------- Descripción y adjuntos ---------- *@
+    <details open class="section" data-key="desc">
+        <summary>Descripción</summary>
+        <div class="markdown">@MarkdownRenderer.Render(t.Description)</div>
+    </details>
+
+    <details open="@(t.Attachments.Count > 0)" class="section" data-key="files">
+        <summary>Adjuntos (@t.Attachments.Count/@Model.MaxFiles)</summary>
+        <div class="attachments">
+            @foreach (var a in t.Attachments.OrderBy(a => a.Id))
+            {
+                <div class="attachment">
+                    @if (a.Kind == AttachmentKind.Image)
+                    {
+                        <a href="@Model.AttachmentUrl(a.Id)" target="_blank" rel="noopener"><img src="@Model.AttachmentUrl(a.Id)" alt="@a.FileName" loading="lazy" /></a>
+                    }
+                    else
+                    {
+                        <a class="file-icon" href="@Model.AttachmentUrl(a.Id)" target="_blank" rel="noopener">@(a.Kind == AttachmentKind.Pdf ? "📄 PDF" : "🌐 HTML")</a>
+                    }
+                    <span class="name" title="@a.FileName">@a.FileName</span>
+                    <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("DeleteAttachment")" class="inline" data-confirm="¿Eliminar «@a.FileName»?">
+                        <input type="hidden" name="returnQuery" />
+                        <input type="hidden" name="attachmentId" value="@a.Id" />
+                        <button class="btn btn-ghost small">🗑</button>
+                    </form>
+                </div>
+            }
+        </div>
+        @if (t.Attachments.Count < Model.MaxFiles)
+        {
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Upload")" enctype="multipart/form-data" class="inline upload">
+                <input type="hidden" name="returnQuery" />
+                <input type="file" name="files" multiple accept="@FileSignature.AcceptAttribute" required />
+                <button class="btn">Adjuntar</button>
+            </form>
+        }
+    </details>
+
+    @* ---------- Ejecuciones ---------- *@
+    <div class="runs">
+        <aside class="run-list">
+            <h3>Ejecuciones</h3>
+            <p class="muted">Total: @Labels.Usd(t.TotalCostUsd) · @Labels.Tokens(t.TotalTokens) tokens</p>
+            @if (t.Runs.Count == 0)
+            {
+                <p class="muted">Todavía no hay ejecuciones. Se crean al entrar en una columna de agente o automática.</p>
+            }
+            @foreach (var r in t.Runs)
+            {
+                <a class="run-item @(r.Id == run?.Id ? "on" : "")" href="@Model.SelfUrl(r.Id)" data-modal-link>
+                    <div class="run-head">
+                        <strong>@r.StageName</strong>
+                        <span class="run-status rs-@r.Status.ToString().ToLowerInvariant()">@Labels.Of(r.Status)</span>
+                    </div>
+                    <small>
+                        @Model.Clock.Format(r.StartedAt ?? r.CreatedAt) · 🖥 @(r.Worker?.Name ?? (r.RunnerKind == StageKind.System ? "servidor" : "—"))
+                        @if (r.Model is not null) { <text> · @r.Model</text> }
+                        @if (r.Duration is not null) { <text> · @Labels.Duration(r.Duration)</text> }
+                        @if (r.TotalTokens > 0) { <text> · @Labels.Usd(r.CostUsd) · @Labels.Tokens(r.TotalTokens)</text> }
+                    </small>
+                    @if (r.Decision != RunDecision.None)
+                    {
+                        <span class="decision-tag @(r.Decision == RunDecision.Approved ? "ok" : "ko")">@(r.Decision == RunDecision.Approved ? "✓ Aprobó" : "⊘ Rechazó")</span>
+                    }
+                </a>
+            }
+        </aside>
+
+        <section class="run-detail">
+            @if (run is null)
+            {
+                <p class="muted">Selecciona una ejecución.</p>
+            }
+            else
+            {
+                <div class="run-detail-head">
+                    <strong>@run.StageName</strong>
+                    <span class="run-status rs-@run.Status.ToString().ToLowerInvariant()">@Labels.Of(run.Status)</span>
+                    @if (run.NumTurns is not null) { <span class="muted">@run.NumTurns turnos</span> }
+                    @if (run.HeadCommit is not null) { <code title="Commit">@(run.HeadCommit[..Math.Min(10, run.HeadCommit.Length)])</code> }
+                </div>
+
+                @if (run.ErrorMessage is not null)
+                {
+                    <div class="alert error">@run.ErrorMessage</div>
+                }
+
+                <h4>Resultado</h4>
+                @if (string.IsNullOrWhiteSpace(run.Summary))
+                {
+                    <p class="muted">@(run.Status is RunStatus.Running or RunStatus.Queued ? "En progreso…" : "Sin resultado.")</p>
+                }
+                else
+                {
+                    <div class="markdown result">@MarkdownRenderer.Render(run.Summary)</div>
+                }
+
+                <h4>Archivos modificados</h4>
+                @if (Model.SelectedRunFiles.Count == 0)
+                {
+                    <p class="muted">No se registraron cambios de archivos en esta ejecución.</p>
+                }
+                else
+                {
+                    <ul class="changed-files">
+                        @foreach (var f in Model.SelectedRunFiles)
+                        {
+                            <li><span class="fs fs-@(f.Status.Length > 0 ? f.Status[..1].ToLowerInvariant() : "x")">@f.Status</span> <code>@f.Path</code></li>
+                        }
+                    </ul>
+                }
+
+                <details class="section" data-key="log" open="@Model.IsLive">
+                    <summary>Log completo (@run.Log.Length.ToString("N0") caracteres)</summary>
+                    <pre class="log" data-autoscroll>@run.Log</pre>
+                </details>
+                @if (run.PromptSnapshot is not null)
+                {
+                    <details class="section" data-key="prompt">
+                        <summary>Prompt enviado al agente</summary>
+                        <pre class="log">@run.PromptSnapshot</pre>
+                    </details>
+                }
+            }
+        </section>
+    </div>
+
+    @* ---------- Comentarios e historial ---------- *@
+    <div class="grid-2 history">
+        <section>
+            <h3>Comentarios y retroalimentación</h3>
+            @foreach (var c in t.Comments.OrderBy(c => c.CreatedAt))
+            {
+                <div class="comment kind-@c.Kind.ToString().ToLowerInvariant()">
+                    <div class="comment-head">
+                        <strong>@c.Author</strong> · <span class="muted">@Labels.Of(c.Kind) · @Model.Clock.Format(c.CreatedAt)</span>
+                    </div>
+                    <div class="markdown">@MarkdownRenderer.Render(c.Body)</div>
+                </div>
+            }
+            <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Comment")" class="stack">
+                <input type="hidden" name="returnQuery" />
+                <textarea name="body" rows="3" required placeholder="Escribe un comentario…"></textarea>
+                <label class="check"><input type="checkbox" name="asFeedback" value="true" /> Enviar al agente como retroalimentación en su próxima ejecución</label>
+                <button class="btn">Comentar</button>
+            </form>
+        </section>
+        <section>
+            <h3>Historial</h3>
+            <ul class="timeline">
+                @foreach (var e in t.Events.OrderByDescending(e => e.CreatedAt).Take(100))
+                {
+                    <li><span class="muted">@Model.Clock.Format(e.CreatedAt, "dd/MM HH:mm")</span> @e.Message</li>
+                }
+            </ul>
+        </section>
+    </div>
+</div>

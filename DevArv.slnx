@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DevArv.Contracts/DevArv.Contracts.csproj" />
+    <Project Path="src/DevArv.Web/DevArv.Web.csproj" />
+    <Project Path="src/DevArv.Worker/DevArv.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DevArv.Tests/DevArv.Tests.csproj" />
+  </Folder>
+</Solution>

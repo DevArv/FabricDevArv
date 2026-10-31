@@ -1,0 +1,124 @@
+@page
+@model DevArv.Web.Pages.Tasks.CreateModel
+@{
+    ViewData["Title"] = "Nueva tarea";
+    if (Model.Modal) { Layout = null; }
+}
+
+<div class="panel form-panel">
+    <div class="panel-head">
+        <h2>Nueva tarea</h2>
+        @if (Model.Modal) { <button type="button" class="btn btn-ghost" data-close-modal>✕</button> }
+    </div>
+
+    <form asp-antiforgery="true" method="post" action="/Tasks/Create" enctype="multipart/form-data" class="task-form" id="task-form">
+        <div asp-validation-summary="All" class="validation"></div>
+
+        <div class="tabs" data-tabs>
+            <button type="button" class="on" data-tab="general">General</button>
+            <button type="button" data-tab="files">Adjuntos <span class="badge" data-file-count>0</span></button>
+            <button type="button" data-tab="ai">Modelos de IA y PC</button>
+        </div>
+
+        <div data-tab-panel="general">
+            <label>Título
+                <input asp-for="Input.Title" autocomplete="off" required maxlength="200" placeholder="Ej.: Permitir adjuntar PDF y HTML en las tareas" />
+            </label>
+
+            <div class="grid-2">
+                <label>Proyecto
+                    <select asp-for="Input.ProjectId" data-branch-source>
+                        @foreach (var p in Model.Projects)
+                        {
+                            <option value="@p.Id" data-default-branch="@p.DefaultBranch" selected="@(p.Id == Model.Input.ProjectId)">@p.Name (@p.RepoFullName)</option>
+                        }
+                    </select>
+                    <small>La tarea se desarrolla en el repositorio de este proyecto.</small>
+                </label>
+                <label>Rama base
+                    <input asp-for="Input.BaseBranch" data-branch-target required />
+                    <small>De esta rama parte el desarrollo y contra ella se abre el PR.</small>
+                </label>
+            </div>
+
+            <div class="grid-3">
+                <label>Prioridad
+                    <select asp-for="Input.Priority">
+                        @foreach (var p in Enum.GetValues<Priority>())
+                        {
+                            <option value="@p" selected="@(p == Model.Input.Priority)">@Labels.Of(p)</option>
+                        }
+                    </select>
+                </label>
+                <label>Complejidad
+                    <select asp-for="Input.Complexity">
+                        @foreach (var c in Enum.GetValues<Complexity>())
+                        {
+                            <option value="@c" selected="@(c == Model.Input.Complexity)">@Labels.Of(c)</option>
+                        }
+                    </select>
+                </label>
+                <label>Etiquetas
+                    <input asp-for="Input.Labels" placeholder="frontend, seguridad" />
+                </label>
+            </div>
+
+            <label>Descripción <small>(Markdown: # títulos, **negrita**, `código`, listas, - [ ] tareas, tablas, enlaces)</small>
+                <textarea asp-for="Input.Description" rows="14" placeholder="Qué se necesita, criterios de aceptación, restricciones…"></textarea>
+            </label>
+        </div>
+
+        <div data-tab-panel="files" hidden>
+            <div class="dropfiles" data-dropfiles>
+                <p><strong>Arrastra archivos aquí, pégalos (Ctrl+V) o</strong></p>
+                <label class="btn">Elegir archivos
+                    <input type="file" name="Files" multiple accept="@FileSignature.AcceptAttribute" hidden
+                           data-max-files="@Model.AttachmentLimits.MaxFilesPerTask" data-max-bytes="@Model.AttachmentLimits.MaxFileBytes" />
+                </label>
+                <p class="muted">Hasta @Model.AttachmentLimits.MaxFilesPerTask archivos · máx. @(Model.AttachmentLimits.MaxFileBytes / 1024 / 1024) MB c/u ·
+                    imágenes (PNG, JPG, GIF, WEBP), PDF y HTML. El servidor valida el contenido real de cada archivo.</p>
+                <ul class="file-list" data-file-list></ul>
+            </div>
+        </div>
+
+        <div data-tab-panel="ai" hidden>
+            <div class="grid-2">
+                <label>Modelo para los agentes de esta tarea
+                    <input asp-for="Input.ModelOverride" list="models" placeholder="El de cada columna (por defecto)" />
+                    <datalist id="models">
+                        <option value="opus"></option>
+                        <option value="sonnet"></option>
+                        <option value="haiku"></option>
+                    </datalist>
+                    <small>Alias (opus, sonnet, haiku) o nombre completo del modelo.</small>
+                </label>
+                <label>Ejecutar sólo en esta PC
+                    <select asp-for="Input.PreferredWorkerId">
+                        <option value="">Cualquier PC disponible</option>
+                        @foreach (var w in Model.Workers)
+                        {
+                            <option value="@w.Id" selected="@(w.Id == Model.Input.PreferredWorkerId)">@w.Name</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="form-foot">
+            <label class="check">
+                <input type="checkbox" asp-for="Input.StartNow" />
+                Enviar directo al agente desarrollador (sin pasar por Backlog ni aprobación)
+            </label>
+            <div class="spacer"></div>
+            @if (Model.Modal)
+            {
+                <button type="button" class="btn" data-close-modal>Cancelar</button>
+            }
+            else
+            {
+                <a class="btn" href="/">Cancelar</a>
+            }
+            <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+    </form>
+</div>

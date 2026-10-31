@@ -1,0 +1,44 @@
+@model DevArv.Web.Pages.BoardViewModel
+@inject Clock Clock
+
+<div class="columns @(Model.Compact ? "compact" : "")" data-generated="@Clock.Format(Model.GeneratedAt, "HH:mm:ss")">
+    @foreach (var col in Model.Columns)
+    {
+        if (Model.HideEmpty && col.Tasks.Count == 0) { continue; }
+        var s = col.Stage;
+        <section class="column kind-@s.Kind.ToString().ToLowerInvariant()" data-stage-id="@s.Id">
+            <header class="column-head">
+                <span class="avatar">@s.Icon</span>
+                <div class="column-title">
+                    <strong>@s.Name</strong>
+                    @if (s.Kind == StageKind.Agent)
+                    {
+                        <span class="agent-line">✦ Claude · @(s.Model ?? "por defecto")@(s.RequiresDecision ? " · revisor" : "")</span>
+                    }
+                    else if (s.Kind == StageKind.System)
+                    {
+                        <span class="agent-line system">⚙ @Labels.Of(s.SystemAction)</span>
+                    }
+                    else if (s.Kind == StageKind.HumanApproval)
+                    {
+                        <span class="agent-line human">👤 Aprobación humana</span>
+                    }
+                </div>
+                <span class="count">@col.Tasks.Count</span>
+            </header>
+            @if (col.SuccessName is not null || col.RejectName is not null)
+            {
+                <div class="transitions">
+                    @if (col.SuccessName is not null) { <span>✓ → @col.SuccessName</span> }
+                    @if (col.RejectName is not null) { <span>⊘ → @col.RejectName</span> }
+                </div>
+            }
+            <div class="dropzone">
+                @foreach (var t in col.Tasks)
+                {
+                    <partial name="_TaskCard" model="t" />
+                }
+            </div>
+        </section>
+    }
+</div>

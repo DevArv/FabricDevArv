@@ -1,0 +1,115 @@
+@page "{id:int?}"
+@model DevArv.Web.Pages.Workflow.EditModel
+@{
+    ViewData["Title"] = Model.Id is null ? "Nueva columna" : $"Columna «{Model.Input.Name}»";
+}
+
+<div class="panel form-panel">
+    <div class="panel-head">
+        <h2>@ViewData["Title"]</h2>
+        <a class="btn btn-ghost" href="/Workflow">✕</a>
+    </div>
+
+    <form method="post" class="stack" data-stage-form>
+        <div asp-validation-summary="All" class="validation"></div>
+
+        <div class="grid-3">
+            <label>Nombre <input asp-for="Input.Name" required /></label>
+            <label>Ícono (emoji) <input asp-for="Input.Icon" maxlength="16" /></label>
+            <label>Tipo
+                <select asp-for="Input.Kind" data-kind-select>
+                    @foreach (var k in Enum.GetValues<StageKind>())
+                    {
+                        <option value="@k" selected="@(k == Model.Input.Kind)">@Labels.Of(k)</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <label>Descripción <input asp-for="Input.Description" /></label>
+
+        <div class="grid-2">
+            <label>✓ Al terminar bien / aprobar, ir a
+                <select asp-for="Input.SuccessStageId">
+                    <option value="">— quedarse (finalizada) —</option>
+                    @foreach (var s in Model.OtherStages)
+                    {
+                        <option value="@s.Id" selected="@(s.Id == Model.Input.SuccessStageId)">@s.Icon @s.Name</option>
+                    }
+                </select>
+            </label>
+            <label>⊘ Al rechazar / pedir cambios, volver a
+                <select asp-for="Input.RejectStageId">
+                    <option value="">— ninguna —</option>
+                    @foreach (var s in Model.OtherStages)
+                    {
+                        <option value="@s.Id" selected="@(s.Id == Model.Input.RejectStageId)">@s.Icon @s.Name</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <label class="check"><input asp-for="Input.IsInitial" /> Columna inicial (donde nacen las tareas nuevas)</label>
+
+        <fieldset data-kind-show="System">
+            <legend>Acción automática del servidor</legend>
+            <select asp-for="Input.SystemAction">
+                @foreach (var a in Enum.GetValues<SystemAction>())
+                {
+                    <option value="@a" selected="@(a == Model.Input.SystemAction)">@Labels.Of(a)</option>
+                }
+            </select>
+        </fieldset>
+
+        <fieldset data-kind-show="Agent">
+            <legend>Agente Claude Code</legend>
+            <div class="grid-3">
+                <label>Modelo
+                    <input asp-for="Input.Model" list="models-w" placeholder="opus, sonnet o nombre completo" />
+                    <datalist id="models-w"><option value="opus"></option><option value="sonnet"></option><option value="haiku"></option></datalist>
+                </label>
+                <label>Modo de permisos
+                    <select asp-for="Input.PermissionMode">
+                        @foreach (var m in DevArv.Web.Pages.Workflow.EditModel.PermissionModes)
+                        {
+                            <option value="@m" selected="@(m == Model.Input.PermissionMode)">@m</option>
+                        }
+                    </select>
+                    <small><code>acceptEdits</code> edita archivos sin preguntar; <code>bypassPermissions</code> sólo en VMs aisladas.</small>
+                </label>
+                <label>Tiempo máximo (min) <input asp-for="Input.TimeoutMinutes" type="number" min="1" max="600" /></label>
+            </div>
+            <div class="grid-3">
+                <label class="check"><input asp-for="Input.PushChanges" /> Hace commit y push de los cambios (desarrollador)</label>
+                <label class="check"><input asp-for="Input.RequiresDecision" /> Debe emitir veredicto APROBADO/RECHAZADO (revisor)</label>
+                <label>Máx. turnos (opcional) <input asp-for="Input.MaxTurns" type="number" min="1" max="500" /></label>
+            </div>
+            <div class="grid-2">
+                <label>Herramientas permitidas (una por línea)
+                    <textarea asp-for="Input.AllowedTools" rows="8" class="mono"></textarea>
+                    <small>Se pasan a <code>--allowedTools</code>. Ej.: <code>Bash(dotnet test:*)</code></small>
+                </label>
+                <label>Herramientas prohibidas (una por línea)
+                    <textarea asp-for="Input.DisallowedTools" rows="8" class="mono"></textarea>
+                    <small>Se pasan a <code>--disallowedTools</code>. Ej.: <code>Edit</code>, <code>Write</code></small>
+                </label>
+            </div>
+            <label>Prompt de la etapa
+                <textarea asp-for="Input.PromptTemplate" rows="18" class="mono"></textarea>
+                <small>Variables: <code>{{task.id}}</code> <code>{{task.title}}</code> <code>{{task.description}}</code> <code>{{task.priority}}</code>
+                    <code>{{task.complexity}}</code> <code>{{task.labels}}</code> <code>{{project.name}}</code> <code>{{repo}}</code>
+                    <code>{{baseBranch}}</code> <code>{{workBranch}}</code> <code>{{attachments}}</code> <code>{{feedback}}</code></small>
+            </label>
+            <label>Texto extra para el system prompt (opcional)
+                <textarea asp-for="Input.AppendSystemPrompt" rows="4" class="mono"></textarea>
+            </label>
+            <label>Argumentos extra del CLI (uno por línea, opcional)
+                <textarea asp-for="Input.ExtraArgs" rows="3" class="mono" placeholder="--max-turns&#10;40"></textarea>
+            </label>
+        </fieldset>
+
+        <div class="form-foot">
+            <div class="spacer"></div>
+            <a class="btn" href="/Workflow">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+    </form>
+</div>

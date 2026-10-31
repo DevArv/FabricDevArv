@@ -1,0 +1,68 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Tablero";
+    ViewData["MainClass"] = "board-page";
+}
+
+<section class="filters">
+    <div class="chip-row">
+        <a class="chip @(Model.ProjectFilter is null ? "on" : "")" href="@Model.FilterUrl(clearProject: true)">
+            <i class="dot" style="background:#64748b"></i>Todos
+        </a>
+        @foreach (var p in Model.Projects)
+        {
+            <a class="chip @(Model.ProjectFilter == p.Id ? "on" : "")" href="@Model.FilterUrl(project: p.Id)">
+                <i class="dot" style="background:@p.Color"></i>@p.Name
+            </a>
+        }
+        @if (Model.Projects.Count == 0)
+        {
+            <a class="chip warn" href="/Projects/Edit">⚠ Conecta tu primer repositorio de GitHub</a>
+        }
+    </div>
+
+    <div class="chip-row">
+        <a class="chip @(Model.WorkerFilter is null ? "on" : "")" href="@Model.FilterUrl(clearWorker: true)">
+            <i class="dot" style="background:#64748b"></i>Todas las PC
+        </a>
+        @foreach (var w in Model.Workers)
+        {
+            var online = w.IsOnline(DateTimeOffset.UtcNow);
+            <a class="chip @(Model.WorkerFilter == w.Name ? "on" : "")" href="@Model.FilterUrl(worker: w.Name)"
+               title="@(online ? "En línea" : "Sin conexión")">
+                <i class="dot @(online ? "online" : "offline")"></i>@w.Name
+            </a>
+        }
+        <a class="chip @(Model.Waiting ? "on" : "")" href="@Model.FilterUrl(waiting: !Model.Waiting)">
+            <i class="dot" style="background:#f59e0b"></i>⏸ Esperando aprobación (@Model.WaitingCount)
+        </a>
+
+        <form method="get" class="search">
+            @if (Model.ProjectFilter is not null) { <input type="hidden" name="project" value="@Model.ProjectFilter" /> }
+            @if (Model.WorkerFilter is not null) { <input type="hidden" name="worker" value="@Model.WorkerFilter" /> }
+            @if (Model.Compact) { <input type="hidden" name="compact" value="true" /> }
+            @if (Model.HideEmpty) { <input type="hidden" name="hideEmpty" value="true" /> }
+            @if (Model.Archived) { <input type="hidden" name="archived" value="true" /> }
+            <input type="search" name="q" value="@Model.Q" placeholder="Buscar tareas… (#id o texto)" />
+        </form>
+    </div>
+
+    <div class="chip-row small">
+        <div class="seg">
+            <a class="@(!Model.Compact ? "on" : "")" href="@Model.FilterUrl(compact: false)">Detallada</a>
+            <a class="@(Model.Compact ? "on" : "")" href="@Model.FilterUrl(compact: true)">Compacta</a>
+        </div>
+        <div class="seg">
+            <a class="@(!Model.HideEmpty ? "on" : "")" href="@Model.FilterUrl(hideEmpty: false)">Columnas vacías: mostrar</a>
+            <a class="@(Model.HideEmpty ? "on" : "")" href="@Model.FilterUrl(hideEmpty: true)">ocultar</a>
+        </div>
+        <a class="chip @(Model.Archived ? "on" : "")" href="@Model.FilterUrl(archived: !Model.Archived)">📦 Archivadas</a>
+        <span class="muted" id="board-updated">Actualizado @Model.Clock.Format(Model.Board.GeneratedAt, "HH:mm:ss")</span>
+    </div>
+</section>
+
+@Html.AntiForgeryToken()
+<div id="board" data-open-task="@Model.OpenTask">
+    <partial name="_Board" model="Model.Board" />
+</div>

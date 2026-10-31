@@ -1,0 +1,51 @@
+@page "{id:int?}"
+@model DevArv.Web.Pages.Projects.EditModel
+@{
+    ViewData["Title"] = Model.Id is null ? "Conectar repositorio" : "Editar proyecto";
+}
+
+<div class="panel form-panel narrow">
+    <div class="panel-head">
+        <h2>@ViewData["Title"]</h2>
+        <a class="btn btn-ghost" href="/Projects">✕</a>
+    </div>
+
+    @if (!Model.GitHubConfigured)
+    {
+        <div class="alert error">El servidor no tiene <code>GitHub:Token</code>. Puedes guardar el proyecto, pero no se podrá probar ni crear PRs.</div>
+    }
+    @if (Model.Message is not null)
+    {
+        <div class="alert @(Model.MessageIsError ? "error" : "ok")">@Model.Message</div>
+    }
+
+    <form method="post" class="stack">
+        <div asp-validation-summary="All" class="validation"></div>
+        <div class="grid-2">
+            <label>Nombre <input asp-for="Input.Name" required /></label>
+            <label>Color <input asp-for="Input.Color" type="color" /></label>
+        </div>
+        <label>Repositorio de GitHub
+            <div class="input-row">
+                <input asp-for="Input.Repository" placeholder="mi-org/mi-repo o https://github.com/mi-org/mi-repo" required />
+                <button type="submit" class="btn" asp-page-handler="Test" formnovalidate>Probar conexión</button>
+            </div>
+        </label>
+        <div class="grid-2">
+            <label>Rama por defecto <input asp-for="Input.DefaultBranch" required /></label>
+            <label>Prefijo de ramas de trabajo <input asp-for="Input.BranchPrefix" />
+                <small>Ej.: <code>devarv/</code> → <code>devarv/12-titulo-de-la-tarea</code></small>
+            </label>
+        </div>
+        <label>Instrucciones para los agentes de este proyecto (opcional)
+            <textarea asp-for="Input.AgentInstructions" rows="8" placeholder="Ej.: Proyecto .NET 10 con Razor Pages. Usa xUnit para pruebas. No modifiques las migraciones existentes. Mensajes al usuario en español."></textarea>
+            <small>Se agregan al system prompt de todos los agentes. Para reglas del código, también puedes usar un CLAUDE.md en el repositorio.</small>
+        </label>
+        <label class="check"><input asp-for="Input.IsActive" /> Proyecto activo</label>
+        <div class="form-foot">
+            <div class="spacer"></div>
+            <a class="btn" href="/Projects">Cancelar</a>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+    </form>
+</div>

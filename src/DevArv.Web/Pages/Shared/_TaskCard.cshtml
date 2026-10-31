@@ -1,0 +1,47 @@
+@model TaskItem
+@inject Clock Clock
+@{
+    var t = Model;
+}
+<article class="card @Labels.StatusCss(t.Status)" draggable="true" data-task-id="@t.Id"
+         style="--project:@t.Project.Color" title="@t.Project.Name">
+    <div class="card-top">
+        <span class="pc-chip">🖥 @(t.LastWorkerName ?? "Sin PC")</span>
+        <span class="user-chip small" title="@t.CreatedByName">@Labels.Initials(t.CreatedByName)</span>
+    </div>
+    @if (t.Status != WorkStatus.Idle)
+    {
+        <div class="status-pill @Labels.StatusCss(t.Status)">@Labels.StatusIcon(t.Status) @Labels.Of(t.Status)</div>
+    }
+    <h3><span class="task-id">#@t.Id</span> @t.Title</h3>
+    <p class="excerpt">@Labels.Excerpt(t.Description)</p>
+    <div class="meta">
+        <span class="prio @Labels.PriorityCss(t.Priority)">● @Labels.Of(t.Priority)</span>
+        @if (!string.IsNullOrWhiteSpace(t.Labels))
+        {
+            foreach (var label in t.Labels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                <span class="label">@label</span>
+            }
+        }
+    </div>
+    <div class="branches">
+        <code>⌥ @t.BaseBranch</code>
+        @if (t.WorkBranch is not null) { <code>↳ @t.WorkBranch</code> }
+        @if (t.PullRequestUrl is not null)
+        {
+            <a href="@t.PullRequestUrl" target="_blank" rel="noopener" class="pr-link">🔗 PR #@t.PullRequestNumber</a>
+        }
+    </div>
+    @if (t.Status == WorkStatus.Failed && t.LastError is not null)
+    {
+        <p class="error-line">@Labels.Excerpt(t.LastError, 120)</p>
+    }
+    <footer>
+        <span>Creada: @Clock.Format(t.CreatedAt)</span>
+        @if (t.TotalTokens > 0)
+        {
+            <span>@Labels.Usd(t.TotalCostUsd) · @Labels.Tokens(t.TotalTokens) tokens</span>
+        }
+    </footer>
+</article>

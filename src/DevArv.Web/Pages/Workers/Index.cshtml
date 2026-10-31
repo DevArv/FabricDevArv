@@ -1,0 +1,69 @@
+@page
+@model DevArv.Web.Pages.Workers.IndexModel
+@inject Clock Clock
+@{
+    ViewData["Title"] = "Mis PCs";
+    var now = DateTimeOffset.UtcNow;
+    var serverUrl = $"{Request.Scheme}://{Request.Host}";
+}
+
+<div class="page-head">
+    <h1>Mis PCs (workers)</h1>
+</div>
+<p class="muted">Cada PC ejecuta el servicio <code>DevArv.Worker</code>, que toma tareas de las columnas de agente,
+    corre Claude Code sobre un clon del repositorio y reporta el resultado. Registra la PC aquí para obtener su clave.</p>
+
+@if (Model.Error is not null) { <div class="alert error">@Model.Error</div> }
+
+@if (Model.NewKey is not null)
+{
+    <div class="alert ok key-box">
+        <p><strong>Clave de «@Model.NewKeyWorker»</strong>: cópiala ahora, no se vuelve a mostrar.</p>
+        <pre class="log" data-copy>@Model.NewKey</pre>
+        <p>En la PC, configura <code>src/DevArv.Worker/appsettings.json</code> (o variables de entorno):</p>
+        <pre class="log">"Server": {
+  "Url": "@serverUrl",
+  "ApiKey": "@Model.NewKey"
+}</pre>
+    </div>
+}
+
+<form method="post" asp-page-handler="Create" class="inline add-worker">
+    <input asp-for="NewName" placeholder="Nombre de la PC (ej. agents-vm)" required />
+    <button class="btn btn-primary">+ Registrar PC</button>
+    <span asp-validation-for="NewName" class="validation"></span>
+</form>
+
+<table class="table">
+    <thead>
+        <tr><th>PC</th><th>Estado</th><th>Trabajando en</th><th>Última señal</th><th>Equipo</th><th>Clave</th><th></th></tr>
+    </thead>
+    <tbody>
+        @foreach (var w in Model.Workers)
+        {
+            var online = w.IsOnline(now);
+            <tr class="@(w.IsEnabled ? "" : "inactive")">
+                <td><i class="dot @(online ? "online" : "offline")"></i> <strong>@w.Name</strong></td>
+                <td>@(!w.IsEnabled ? "Deshabilitada" : online ? "En línea" : "Sin conexión")</td>
+                <td>@(Model.CurrentRuns.GetValueOrDefault(w.Id) ?? "—")</td>
+                <td>@(w.LastSeenAt is null ? "nunca" : Clock.Format(w.LastSeenAt, "dd/MM/yyyy HH:mm:ss"))</td>
+                <td class="muted">@w.MachineName @(w.Version is null ? "" : $"· v{w.Version}") @(w.OsDescription is null ? "" : $"· {w.OsDescription}")</td>
+                <td><code>@w.KeyPrefix…</code></td>
+                <td class="nowrap">
+                    <form method="post" asp-page-handler="Toggle" class="inline">
+                        <input type="hidden" name="id" value="@w.Id" />
+                        <button class="btn small">@(w.IsEnabled ? "Deshabilitar" : "Habilitar")</button>
+                    </form>
+                    <form method="post" asp-page-handler="Regenerate" class="inline" data-confirm="La clave actual dejará de funcionar. ¿Continuar?">
+                        <input type="hidden" name="id" value="@w.Id" />
+                        <button class="btn small">Nueva clave</button>
+                    </form>
+                    <form method="post" asp-page-handler="Delete" class="inline" data-confirm="¿Eliminar la PC «@w.Name»?">
+                        <input type="hidden" name="id" value="@w.Id" />
+                        <button class="btn btn-ghost small">🗑</button>
+                    </form>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

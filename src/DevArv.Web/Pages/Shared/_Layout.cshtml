@@ -1,0 +1,47 @@
+@inject SignInManager<IdentityUser> SignInManager
+@{
+    var path = Context.Request.Path.Value ?? "/";
+    string Active(string prefix) => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? "active" : "";
+    var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
+}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@(ViewData["Title"] is string t ? $"{t} · DevArv" : "DevArv")</title>
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+</head>
+<body class="@(ViewData["BodyClass"] as string)">
+    <header class="topbar">
+        <a class="brand" href="/">DevArv <small>v@(version)</small></a>
+        @if (SignInManager.IsSignedIn(User))
+        {
+            <a class="btn btn-primary" href="/Tasks/Create" data-modal="/Tasks/Create?modal=true">+ Nueva tarea</a>
+            <nav class="mainnav">
+                <a class="@(path == "/" ? "active" : "")" href="/">▦ Tablero</a>
+                <a class="@Active("/Projects")" href="/Projects">📁 Proyectos</a>
+                <a class="@Active("/Workflow")" href="/Workflow">⇄ Flujo</a>
+                <a class="@Active("/Workers")" href="/Workers">🖥 Mis PCs</a>
+            </nav>
+            <div class="spacer"></div>
+            <span class="user-chip" title="@User.Identity?.Name">@Labels.Initials(User.Identity?.Name)</span>
+            <form method="post" action="/Identity/Account/Logout?returnUrl=%2F" class="inline">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-ghost">Salir</button>
+            </form>
+        }
+    </header>
+
+    <main class="@(ViewData["MainClass"] as string ?? "page")">
+        @RenderBody()
+    </main>
+
+    <dialog id="modal" class="modal">
+        <div id="modal-body"></div>
+    </dialog>
+
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>
