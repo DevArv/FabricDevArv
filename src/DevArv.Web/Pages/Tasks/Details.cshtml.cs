@@ -1,16 +1,19 @@
 using System.Text.Json;
-using DevArv.Contracts;
-using DevArv.Web.Data;
-using DevArv.Web.Domain;
+using DevArv.Contracts.Models;
+using DevArv.Web.DataModels;
+using DevArv.Web.Enums.Tasks;
+using DevArv.Web.Helpers;
+using DevArv.Web.Repositories;
 using DevArv.Web.Services;
-using Microsoft.AspNetCore.Mvc;
+using DevArv.Web.ViewModels;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages.Tasks;
 
 public sealed class DetailsModel(
-    AppDbContext db, WorkflowService workflow, AttachmentStorage storage, Clock clock) : PageModel
+    TasksRepository tasks, StagesRepository stages, WorkersRepository workers, TaskAttachmentsRepository attachments,
+    WorkflowService workflow, Clock clock) : PageModel
 {
     [BindProperty(SupportsGet = true)] public int Id { get; set; }
     [BindProperty(SupportsGet = true)] public bool Modal { get; set; }
@@ -25,7 +28,7 @@ public sealed class DetailsModel(
     public string? Error => TempData["Error"] as string;
     public string? Notice => TempData["Notice"] as string;
     public bool IsLive => Item.Status is WorkStatus.Queued or WorkStatus.Running;
-    public int MaxFiles => storage.Options.MaxFilesPerTask;
+    public int MaxFiles => attachments.Limits.MaxFilesPerTask;
 
     public string SelfUrl(long? runId = null)
     {
@@ -44,10 +47,9 @@ public sealed class DetailsModel(
     /// <summary>Muestra un adjunto. El HTML siempre se descarga y con CSP sandbox para que nunca se ejecute en este dominio.</summary>
     public async Task<IActionResult> OnGetAttachmentAsync(long attachmentId, CancellationToken ct)
     {
-        var a = await db.TaskAttachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == attachmentId && x.TaskId == Id, ct);
-        if (a is null) return NotFound();
-        var path = storage.PathOf(a);
-        if (!System.IO.File.Exists(path)) return NotFound();
+        var file = await attachments.GetFileAsync(Id, attachmentId, ct);
+        if (file is null) return NotFound();
+        var (a, path) = file.Value;
 
         Response.Headers.XContentTypeOptions = "nosniff";
         if (a.Kind != AttachmentKind.Pdf)
@@ -81,50 +83,15 @@ public sealed class DetailsModel(
     public Task<IActionResult> OnPostUpdateAsync(
         Priority priority, Complexity complexity, string? labels, string? modelOverride, int? preferredWorkerId,
         string? title, string? description, CancellationToken ct) =>
-        ActAsync(async t =>
-        {
-            if (modelOverride is not null && !System.Text.RegularExpressions.Regex.IsMatch(modelOverride.Trim(), @"^[A-Za-z0-9.\-_\[\]]*$"))
-                throw new WorkflowException("Nombre de modelo inválido.");
-            if (preferredWorkerId is not null && !await db.Workers.AnyAsync(w => w.Id == preferredWorkerId, ct))
-                throw new WorkflowException("La PC no existe.");
-            if (!string.IsNullOrWhiteSpace(title)) t.Title = title.Trim()[..Math.Min(title.Trim().Length, 200)];
-            if (description is not null) t.Description = description.Trim();
-            t.Priority = priority;
-            t.Complexity = complexity;
-            t.Labels = CreateModel.NormalizeLabels(labels);
-            t.ModelOverride = string.IsNullOrWhiteSpace(modelOverride) ? null : modelOverride.Trim();
-            t.PreferredWorkerId = preferredWorkerId;
-            t.UpdatedAt = DateTimeOffset.UtcNow;
-            workflow.AddEvent(t.Id, Actor, $"{Actor} editó la tarea");
-            await db.SaveChangesAsync(ct);
-        }, "Cambios guardados.", ct);
+        ActAsync(t => tasks.UpdateAsync(
+            t, new TaskUpdateViewModel(priority, complexity, labels, modelOverride, preferredWorkerId, title, description), Actor, ct),
+            "Cambios guardados.", ct);
 
     public Task<IActionResult> OnPostUploadAsync(List<IFormFile> files, CancellationToken ct) =>
-        ActAsync(async t =>
-        {
-            var existing = await db.TaskAttachments.CountAsync(a => a.TaskId == t.Id, ct);
-            try
-            {
-                db.TaskAttachments.AddRange(await storage.SaveAsync(t.Id, files, existing, ct));
-            }
-            catch (AttachmentValidationException ex)
-            {
-                throw new WorkflowException(ex.Message);
-            }
-            workflow.AddEvent(t.Id, Actor, $"{Actor} adjuntó {files.Count} archivo(s)");
-            await db.SaveChangesAsync(ct);
-        }, "Archivos adjuntados.", ct);
+        ActAsync(t => attachments.AddAsync(t.Id, files, Actor, ct), "Archivos adjuntados.", ct);
 
     public Task<IActionResult> OnPostDeleteAttachmentAsync(long attachmentId, CancellationToken ct) =>
-        ActAsync(async t =>
-        {
-            var a = await db.TaskAttachments.FirstOrDefaultAsync(x => x.Id == attachmentId && x.TaskId == t.Id, ct)
-                    ?? throw new WorkflowException("El adjunto no existe.");
-            db.TaskAttachments.Remove(a);
-            workflow.AddEvent(t.Id, Actor, $"{Actor} eliminó el adjunto «{a.FileName}»");
-            await db.SaveChangesAsync(ct);
-            storage.Delete(a);
-        }, "Adjunto eliminado.", ct);
+        ActAsync(t => attachments.DeleteAsync(t.Id, attachmentId, Actor, ct), "Adjunto eliminado.", ct);
 
     private string Actor => User.Identity?.Name ?? "?";
 
@@ -138,6 +105,10 @@ public sealed class DetailsModel(
             TempData["Notice"] = notice;
         }
         catch (WorkflowException ex)
+        {
+            TempData["Error"] = ex.Message;
+        }
+        catch (ValidationFailedException ex)
         {
             TempData["Error"] = ex.Message;
         }
@@ -162,23 +133,12 @@ public sealed class DetailsModel(
 
     private async Task<bool> LoadAsync(CancellationToken ct)
     {
-        var task = await db.Tasks
-            .Include(t => t.Project)
-            .Include(t => t.Stage)
-            .Include(t => t.PreferredWorker)
-            .Include(t => t.Attachments)
-            .Include(t => t.Comments)
-            .Include(t => t.Events)
-            .Include(t => t.Runs).ThenInclude(r => r.Worker)
-            .AsSplitQuery()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == Id, ct);
+        var task = await tasks.GetDetailsAsync(Id, ct);
         if (task is null) return false;
 
-        task.Runs = task.Runs.OrderByDescending(r => r.Id).ToList();
         Item = task;
-        Stages = await db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(ct);
-        Workers = await db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(ct);
+        Stages = await stages.GetAllAsync(ct);
+        Workers = await workers.GetEnabledAsync(ct);
         SelectedRun = task.Runs.FirstOrDefault(r => r.Id == RunId) ?? task.Runs.FirstOrDefault();
         if (SelectedRun?.ChangedFilesJson is { } json)
         {

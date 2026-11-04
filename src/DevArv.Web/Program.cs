@@ -1,5 +1,8 @@
 using DevArv.Web.Api;
-using DevArv.Web.Data;
+using DevArv.Web.DatabaseConnection;
+using DevArv.Web.Helpers;
+using DevArv.Web.Models;
+using DevArv.Web.Repositories;
 using DevArv.Web.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
@@ -47,6 +50,14 @@ builder.Services.AddHttpClient<GitHubService>();
 
 builder.Services.AddSingleton<Clock>();
 builder.Services.AddSingleton<AttachmentStorage>();
+
+// Repositories: toda la lógica de negocio y de acceso a datos de las páginas.
+builder.Services.AddScoped<ProjectsRepository>();
+builder.Services.AddScoped<StagesRepository>();
+builder.Services.AddScoped<TasksRepository>();
+builder.Services.AddScoped<TaskAttachmentsRepository>();
+builder.Services.AddScoped<WorkersRepository>();
+
 builder.Services.AddScoped<PromptBuilder>();
 builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<SystemActionExecutor>();

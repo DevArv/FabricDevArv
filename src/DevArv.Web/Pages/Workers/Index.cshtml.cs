@@ -1,14 +1,12 @@
 using System.ComponentModel.DataAnnotations;
-using DevArv.Web.Api;
-using DevArv.Web.Data;
-using DevArv.Web.Domain;
-using Microsoft.AspNetCore.Mvc;
+using DevArv.Web.DataModels;
+using DevArv.Web.Repositories;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages.Workers;
 
-public sealed class IndexModel(AppDbContext db) : PageModel
+public sealed class IndexModel(WorkersRepository workers) : PageModel
 {
     public List<WorkerNode> Workers { get; private set; } = [];
     public Dictionary<int, string> CurrentRuns { get; private set; } = [];
@@ -30,67 +28,48 @@ public sealed class IndexModel(AppDbContext db) : PageModel
             await LoadAsync(ct);
             return Page();
         }
-        if (await db.Workers.AnyAsync(w => w.Name == NewName, ct))
+        try
         {
-            Error = $"Ya existe una PC llamada «{NewName}».";
-            return RedirectToPage();
+            NewKey = await workers.InsertAsync(NewName, ct);
+            NewKeyWorker = NewName.Trim();
         }
-        var key = ApiKeys.Generate();
-        db.Workers.Add(new WorkerNode { Name = NewName.Trim(), KeyHash = ApiKeys.Hash(key), KeyPrefix = key[..10] });
-        await db.SaveChangesAsync(ct);
-        NewKey = key;
-        NewKeyWorker = NewName.Trim();
+        catch (ValidationFailedException ex)
+        {
+            Error = ex.Message;
+        }
         return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostRegenerateAsync(int id, CancellationToken ct)
     {
-        var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null) return NotFound();
-        var key = ApiKeys.Generate();
-        worker.KeyHash = ApiKeys.Hash(key);
-        worker.KeyPrefix = key[..10];
-        await db.SaveChangesAsync(ct);
-        NewKey = key;
-        NewKeyWorker = worker.Name;
+        var result = await workers.RegenerateKeyAsync(id, ct);
+        if (result is null) return NotFound();
+        (NewKeyWorker, NewKey) = result.Value;
         return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostToggleAsync(int id, CancellationToken ct)
     {
-        var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is null) return NotFound();
-        worker.IsEnabled = !worker.IsEnabled;
-        await db.SaveChangesAsync(ct);
+        if (!await workers.ToggleEnabledAsync(id, ct)) return NotFound();
         return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(int id, CancellationToken ct)
     {
-        if (await db.TaskRuns.AnyAsync(r => r.WorkerId == id && r.Status == RunStatus.Running, ct))
+        try
         {
-            Error = "La PC tiene una ejecución en curso; cancélala o espera a que termine.";
-            return RedirectToPage();
+            await workers.DeleteAsync(id, ct);
         }
-        var worker = await db.Workers.FindAsync([id], ct);
-        if (worker is not null)
+        catch (ValidationFailedException ex)
         {
-            db.Workers.Remove(worker);
-            await db.SaveChangesAsync(ct);
+            Error = ex.Message;
         }
         return RedirectToPage();
     }
 
     private async Task LoadAsync(CancellationToken ct)
     {
-        Workers = await db.Workers.AsNoTracking().OrderBy(w => w.Name).ToListAsync(ct);
-        var running = await db.TaskRuns.AsNoTracking()
-            .Where(r => r.Status == RunStatus.Running && r.WorkerId != null)
-            .OrderByDescending(r => r.Id)
-            .Select(r => new { WorkerId = r.WorkerId!.Value, r.TaskId, r.StageName })
-            .ToListAsync(ct);
-        CurrentRuns = running
-            .GroupBy(r => r.WorkerId)
-            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(r => $"#{r.TaskId} · {r.StageName}")));
+        Workers = await workers.GetAllAsync(ct);
+        CurrentRuns = await workers.GetCurrentRunsAsync(ct);
     }
 }

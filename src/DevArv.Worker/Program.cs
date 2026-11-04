@@ -1,6 +1,5 @@
-using DevArv.Worker;
-using DevArv.Worker.Agents;
-using DevArv.Worker.Infrastructure;
+using DevArv.Worker.Models;
+using DevArv.Worker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);

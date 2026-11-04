@@ -1,27 +1,10 @@
-using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
+using DevArv.Web.Models;
 using Microsoft.Extensions.Options;
 
 namespace DevArv.Web.Services;
-
-public sealed class GitHubOptions
-{
-    /// <summary>Token (fine-grained o classic) con permiso de lectura de contenido y escritura de pull requests.</summary>
-    public string Token { get; set; } = "";
-    public string ApiBaseUrl { get; set; } = "https://api.github.com/";
-    public string WebBaseUrl { get; set; } = "https://github.com";
-}
-
-public sealed record RepoDetails(string FullName, string DefaultBranch, bool IsPrivate, string HtmlUrl);
-
-public sealed record PullRequestInfo(int Number, string HtmlUrl, string State, bool Merged);
-
-public sealed class GitHubException(HttpStatusCode status, string message) : Exception(message)
-{
-    public HttpStatusCode Status { get; } = status;
-}
 
 /// <summary>Cliente mínimo de la API REST de GitHub (repos, ramas y pull requests).</summary>
 public sealed class GitHubService

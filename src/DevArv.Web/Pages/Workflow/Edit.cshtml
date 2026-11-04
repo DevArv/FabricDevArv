@@ -68,7 +68,7 @@
                 </label>
                 <label>Modo de permisos
                     <select asp-for="Input.PermissionMode">
-                        @foreach (var m in DevArv.Web.Pages.Workflow.EditModel.PermissionModes)
+                        @foreach (var m in PermissionModes.ALL)
                         {
                             <option value="@m" selected="@(m == Model.Input.PermissionMode)">@m</option>
                         }

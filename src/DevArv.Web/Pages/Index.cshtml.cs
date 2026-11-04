@@ -1,29 +1,16 @@
-using DevArv.Web.Data;
-using DevArv.Web.Domain;
+using DevArv.Web.DataModels;
+using DevArv.Web.Helpers;
+using DevArv.Web.Repositories;
 using DevArv.Web.Services;
-using Microsoft.AspNetCore.Mvc;
+using DevArv.Web.ViewModels;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages;
 
-public sealed class BoardColumn
-{
-    public required Stage Stage { get; init; }
-    public required List<TaskItem> Tasks { get; init; }
-    public string? SuccessName { get; init; }
-    public string? RejectName { get; init; }
-}
-
-public sealed class BoardViewModel
-{
-    public List<BoardColumn> Columns { get; init; } = [];
-    public bool Compact { get; init; }
-    public bool HideEmpty { get; init; }
-    public DateTimeOffset GeneratedAt { get; init; } = DateTimeOffset.UtcNow;
-}
-
-public sealed class IndexModel(AppDbContext db, WorkflowService workflow, Clock clock) : PageModel
+public sealed class IndexModel(
+    ProjectsRepository projects, WorkersRepository workers, TasksRepository tasks,
+    WorkflowService workflow, Clock clock) : PageModel
 {
     [BindProperty(SupportsGet = true, Name = "project")] public int? ProjectFilter { get; set; }
     [BindProperty(SupportsGet = true)] public string? Q { get; set; }
@@ -42,9 +29,9 @@ public sealed class IndexModel(AppDbContext db, WorkflowService workflow, Clock 
 
     public async Task OnGetAsync(CancellationToken ct)
     {
-        Projects = await db.Projects.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync(ct);
-        Workers = await db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(ct);
-        WaitingCount = await db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WaitingApproval, ct);
+        Projects = await projects.GetActiveAsync(ct);
+        Workers = await workers.GetEnabledAsync(ct);
+        WaitingCount = await tasks.CountWaitingAsync(ct);
         Board = await LoadBoardAsync(ct);
     }
 
@@ -73,45 +60,17 @@ public sealed class IndexModel(AppDbContext db, WorkflowService workflow, Clock 
         }
     }
 
-    private async Task<BoardViewModel> LoadBoardAsync(CancellationToken ct)
-    {
-        var stages = await db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(ct);
-        var names = stages.ToDictionary(s => s.Id, s => s.Name);
-
-        var query = db.Tasks.AsNoTracking().Include(t => t.Project)
-            .Where(t => Archived ? t.ArchivedAt != null : t.ArchivedAt == null);
-        if (ProjectFilter is { } projectId) query = query.Where(t => t.ProjectId == projectId);
-        if (!string.IsNullOrWhiteSpace(WorkerFilter)) query = query.Where(t => t.LastWorkerName == WorkerFilter);
-        if (Waiting) query = query.Where(t => t.Status == WorkStatus.WaitingApproval);
-        if (!string.IsNullOrWhiteSpace(Q))
+    private Task<BoardViewModel> LoadBoardAsync(CancellationToken ct) =>
+        tasks.GetBoardAsync(new BoardFilterViewModel
         {
-            var term = Q.Trim().TrimStart('#');
-            var like = "%" + term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
-            query = int.TryParse(term, out var id)
-                ? query.Where(t => t.Id == id || EF.Functions.ILike(t.Title, like))
-                : query.Where(t => EF.Functions.ILike(t.Title, like) || EF.Functions.ILike(t.Description, like));
-        }
-
-        var tasks = await query
-            .OrderByDescending(t => t.Priority)
-            .ThenBy(t => t.CreatedAt)
-            .Take(1000)
-            .ToListAsync(ct);
-        var byStage = tasks.GroupBy(t => t.StageId).ToDictionary(g => g.Key, g => g.ToList());
-
-        return new BoardViewModel
-        {
+            ProjectID = ProjectFilter,
+            WorkerName = WorkerFilter,
+            Query = Q,
+            Archived = Archived,
+            Waiting = Waiting,
             Compact = Compact,
             HideEmpty = HideEmpty,
-            Columns = stages.Select(s => new BoardColumn
-            {
-                Stage = s,
-                Tasks = byStage.GetValueOrDefault(s.Id) ?? [],
-                SuccessName = s.SuccessStageId is { } ok ? names.GetValueOrDefault(ok) : null,
-                RejectName = s.RejectStageId is { } ko ? names.GetValueOrDefault(ko) : null,
-            }).ToList(),
-        };
-    }
+        }, ct);
 
     public string FilterUrl(int? project = null, string? worker = null, bool? waiting = null, bool? compact = null,
         bool? hideEmpty = null, bool? archived = null, bool clearProject = false, bool clearWorker = false)

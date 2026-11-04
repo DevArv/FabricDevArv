@@ -1,18 +1,23 @@
 using System.Text.Json;
-using DevArv.Contracts;
-using DevArv.Web.Data;
-using DevArv.Web.Domain;
+using DevArv.Contracts.Models;
+using DevArv.Web.DataModels;
+using DevArv.Web.DatabaseConnection;
+using DevArv.Web.Enums.Runs;
+using DevArv.Web.Enums.Tasks;
+using DevArv.Web.Enums.Workflow;
+using DevArv.Web.Helpers;
+using DevArv.Web.Models;
+using DevArv.Web.Repositories;
+using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Services;
-
-public sealed class WorkflowException(string message) : Exception(message);
 
 /// <summary>
 /// Reglas del flujo Kanban: entrar a una columna, aprobar, pedir cambios, reintentar,
 /// y procesar el resultado de las ejecuciones de agentes y del sistema.
 /// </summary>
-public sealed class WorkflowService(AppDbContext db, ILogger<WorkflowService> logger)
+public sealed class WorkflowService(AppDbContext db, AttachmentStorage storage, ILogger<WorkflowService> logger)
 {
     private static readonly TimeSpan RunMaxLogAge = TimeSpan.FromMinutes(5);
 
@@ -22,6 +27,63 @@ public sealed class WorkflowService(AppDbContext db, ILogger<WorkflowService> lo
     public async Task<Stage> GetInitialStageAsync(CancellationToken ct) =>
         await db.Stages.OrderByDescending(s => s.IsInitial).ThenBy(s => s.Order).FirstOrDefaultAsync(ct)
         ?? throw new WorkflowException("No hay columnas configuradas en el flujo.");
+
+    /// <summary>
+    /// Crea una tarea: valida proyecto y adjuntos, la inserta, guarda los archivos y la hace entrar a su primera columna
+    /// (o a la primera de desarrollo si <see cref="TaskCreateViewModel.StartNow"/>). Lanza ValidationFailedException.
+    /// </summary>
+    public async Task<TaskItem> CreateTaskAsync(
+        TaskCreateViewModel record, IReadOnlyCollection<IFormFile> files, string actor, string? userId, CancellationToken ct)
+    {
+        var errors = new List<(string Field, string Message)>();
+        var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == record.ProjectId && p.IsActive, ct);
+        if (project is null) errors.Add(("Input.ProjectId", "Selecciona un proyecto activo."));
+
+        List<ValidatedUpload> uploads = [];
+        try
+        {
+            uploads = await storage.ValidateAsync(files, 0, ct);
+        }
+        catch (AttachmentValidationException ex)
+        {
+            errors.Add(("Files", ex.Message));
+        }
+        if (errors.Count > 0 || project is null) throw new ValidationFailedException(errors);
+
+        var initial = await GetInitialStageAsync(ct);
+        var task = new TaskItem
+        {
+            Title = record.Title.Trim(),
+            Description = record.Description?.Trim() ?? "",
+            ProjectId = project.Id,
+            Project = project,
+            StageId = initial.Id,
+            BaseBranch = record.BaseBranch.Trim(),
+            Priority = record.Priority,
+            Complexity = record.Complexity,
+            Labels = TaskLabelsHelper.Normalize(record.Labels),
+            ModelOverride = string.IsNullOrWhiteSpace(record.ModelOverride) ? null : record.ModelOverride.Trim(),
+            PreferredWorkerId = await db.Workers.AnyAsync(w => w.Id == record.PreferredWorkerId && w.IsEnabled, ct)
+                ? record.PreferredWorkerId
+                : null,
+            CreatedById = userId,
+            CreatedByName = actor,
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync(ct);
+
+        db.TaskAttachments.AddRange(await storage.StoreAsync(task.Id, uploads, ct));
+
+        var start = initial;
+        if (record.StartNow)
+        {
+            start = await db.Stages.Where(s => s.Kind == StageKind.Agent && s.PushChanges)
+                .OrderBy(s => s.Order).FirstOrDefaultAsync(ct) ?? initial;
+        }
+        await EnterStageAsync(task, start, actor, $"{actor} creó la tarea en «{start.Name}»", ct);
+        await db.SaveChangesAsync(ct);
+        return task;
+    }
 
     // ------------------------------------------------------------------ acciones de usuario
 

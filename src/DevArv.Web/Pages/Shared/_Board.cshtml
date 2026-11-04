@@ -1,4 +1,4 @@
-@model DevArv.Web.Pages.BoardViewModel
+@model BoardViewModel
 @inject Clock Clock
 
 <div class="columns @(Model.Compact ? "compact" : "")" data-generated="@Clock.Format(Model.GeneratedAt, "HH:mm:ss")">

@@ -147,11 +147,24 @@ El token de GitHub del worker viaja en una cabecera HTTP de git (igual que `acti
 ## Estructura
 
 ```
-src/DevArv.Contracts   DTOs compartidos servidor ↔ worker
+src/DevArv.Contracts   DTOs compartidos servidor ↔ worker (Models/)
 src/DevArv.Web         Razor Pages, EF Core (Npgsql), Identity, API de workers, orquestador
-src/DevArv.Worker      Servicio (Windows/systemd) que ejecuta Claude Code y git
-tests/DevArv.Tests     xUnit: validación de archivos, veredictos, prompts, parser de stream-json, argumentos del CLI
+  Api/                 Endpoints /api/worker y su filtro de autenticación
+  Constants/           Plantillas de prompts y constantes
+  DataModels/          Entidades EF Core (una clase por archivo)
+  DatabaseConnection/  AppDbContext y DbInitializer (siembra del flujo por defecto)
+  Enums/<Dominio>/     Enums por dominio: Workflow, Tasks, Runs
+  Helpers/             Utilidades estáticas (Labels, Slug, FileSignature, MarkdownRenderer…)
+  Models/              Opciones de configuración y DTOs internos
+  Pages/<Feature>/     PageModels delgados + vistas
+  Repositories/        Acceso a datos y reglas de negocio de cada pantalla
+  Services/            WorkflowService, Orchestrator, GitHubService, AttachmentStorage, PromptBuilder
+  ViewModels/          Modelos de formularios y de lectura de las páginas
+src/DevArv.Worker      Servicio (Windows/systemd) que ejecuta Claude Code y git (Helpers/, Models/, Services/)
+tests/DevArv.Tests     xUnit, con carpetas espejo de src: Web/Helpers, Web/Services, Worker/Helpers, Worker/Services
 ```
+
+Las reglas de arquitectura y de organización del código están en [CLAUDE.md](CLAUDE.md).
 
 ## Próximos pasos sugeridos
 
