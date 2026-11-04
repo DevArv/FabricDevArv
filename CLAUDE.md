@@ -27,6 +27,18 @@ Si encuentras código que no cumple, se migra al Repository cuando se modifique;
 
 Los Repositories y Services lanzan `ValidationFailedException` (campo + mensaje, por ejemplo `"Input.Name"`) para reglas de negocio que el usuario puede corregir, y `WorkflowException` para transiciones inválidas del flujo. El PageModel los captura y los muestra; nunca decide la regla.
 
+## Configuración: sólo appsettings
+
+Toda la configuración de `DevArv.Web` y `DevArv.Worker` se lee de `appsettings.json` → `appsettings.{Entorno}.json` →
+`appsettings.Local.json` (ignorado por git; ahí van las credenciales). `Program.cs` llama a
+`builder.Configuration.UseAppSettingsOnly(...)` (`Helpers/AppSettingsConfiguration`), que quita user-secrets,
+variables de entorno y línea de comandos.
+
+- Cada ajuste nuevo se declara en `appsettings.json` (vacío si es un secreto) y en su clase `*Options` de `Models/`.
+- No leas `Environment.GetEnvironmentVariable`, user-secrets ni archivos propios para obtener configuración o credenciales.
+- Las credenciales no tienen respaldo: si faltan, se informa qué clave falta (no se recurre a la sesión de `claude`, al
+  Credential Manager de git ni a variables de la PC).
+
 ## Organización de carpetas (proyecto `DevArv.Web`)
 
 | Carpeta | Contenido |

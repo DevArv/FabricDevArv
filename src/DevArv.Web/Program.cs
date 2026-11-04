@@ -9,7 +9,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+// Toda la configuración sale de los appsettings (ver AppSettingsConfiguration).
+builder.Configuration.UseAppSettingsOnly(builder.Environment.EnvironmentName);
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Falta ConnectionStrings:Default (PostgreSQL).");

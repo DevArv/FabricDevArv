@@ -57,7 +57,10 @@ Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador 
 | Token de GitHub del worker | Worker: `git clone`, `fetch` y `push` de las ramas de trabajo | `src/DevArv.Worker/appsettings.Local.json` → `Worker:Git:GitHubToken` |
 | Token de GitHub del servidor | Servidor: probar conexión, listar ramas, abrir PRs | `src/DevArv.Web/appsettings.Local.json` → `GitHub:Token` |
 
-**Las credenciales siempre se leen del appsettings de cada app.** El worker no toma trabajos si falta alguna, no usa la
+**Toda la configuración se lee de los appsettings de cada app**: `appsettings.json` → `appsettings.{Entorno}.json` →
+`appsettings.Local.json`, cada uno sobrescribe al anterior. No se usan user-secrets, variables de entorno ni argumentos
+de línea de comandos (sólo las variables del host `ASPNETCORE_*`/`DOTNET_*`, como el entorno o las URLs de
+`launchSettings.json`, y nunca para una clave que exista en un appsettings). Para las credenciales: El worker no toma trabajos si falta alguna, no usa la
 sesión de `claude login` ni el Credential Manager de git, y quita del proceso de Claude cualquier `ANTHROPIC_API_KEY`,
 `ANTHROPIC_AUTH_TOKEN` o `CLAUDE_CODE_OAUTH_TOKEN` heredado de la PC. `appsettings.Local.json` está en `.gitignore` y se
 copia al `dotnet publish`, junto al ejecutable.
@@ -103,7 +106,7 @@ dotnet run
 ```
 
 Abre `https://localhost:5001` y entra con el administrador. Si no configuras `Admin:*`, la página de registro queda
-abierta sólo hasta que exista el primer usuario. Para permitir más registros: `Auth:AllowRegistration=true`.
+abierta sólo hasta que exista el primer usuario. Para permitir más registros: `"Auth": { "AllowRegistration": true }` en `appsettings.Local.json`.
 
 En producción publica con `dotnet publish`, deja `appsettings.Local.json` junto al ejecutable (con `App:PublicUrl`
 y las credenciales) y ponlo detrás de HTTPS (IIS, Nginx o Azure App Service).

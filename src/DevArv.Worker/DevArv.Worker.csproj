@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
     <RootNamespace>DevArv.Worker</RootNamespace>
-    <UserSecretsId>devarv-worker-91d2c7b4</UserSecretsId>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 

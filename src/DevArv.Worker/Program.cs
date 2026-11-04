@@ -1,9 +1,10 @@
+using DevArv.Worker.Helpers;
 using DevArv.Worker.Models;
 using DevArv.Worker.Services;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: false);
-builder.Configuration.AddEnvironmentVariables(prefix: "DEVARV_");
+// Toda la configuración sale de los appsettings (ver AppSettingsConfiguration).
+builder.Configuration.UseAppSettingsOnly(builder.Environment.EnvironmentName);
 
 // Se puede instalar como servicio de Windows o de systemd.
 builder.Services.AddWindowsService(o => o.ServiceName = "DevArv Worker");
