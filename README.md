@@ -203,6 +203,7 @@ src/DevArv.Web         Razor Pages, EF Core (Npgsql), Identity, API de workers, 
   Services/            WorkflowService, Orchestrator, GitHubService, AttachmentStorage, PromptBuilder
   ViewModels/          Modelos de formularios y de lectura de las páginas
 src/DevArv.Worker      Servicio (Windows/systemd) que ejecuta Claude Code y git (Helpers/, Models/, Services/)
+scripts/               Configurar-Claves.ps1 (claves de Anthropic y GitHub en appsettings.Local.json)
 tests/DevArv.Tests     xUnit, con carpetas espejo de src: Web/Helpers, Web/Services, Worker/Helpers, Worker/Services
 ```
 
