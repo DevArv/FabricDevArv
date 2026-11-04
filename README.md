@@ -47,6 +47,35 @@ Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador 
 - **GitHub:** dos tokens fine-grained (o uno solo si prefieres):
   - Servidor: *Pull requests: Read & write*, *Contents: Read*, *Metadata: Read* sobre los repos que vas a conectar.
   - Workers: *Contents: Read & write* (clonar y hacer push de las ramas `devarv/*`).
+  - Si en **Flujo** usas la acción de sistema «Hacer merge del pull request», el token del servidor necesita además *Contents: Read & write*.
+
+## Claves de Anthropic y GitHub
+
+| Clave | Quién la usa | Dónde se configura |
+|---|---|---|
+| API key de Anthropic (`sk-ant-api03-…`) | Worker: se pasa a `claude -p` como `ANTHROPIC_API_KEY` | `Worker:Claude:AnthropicApiKey` |
+| Token de suscripción (`sk-ant-oat01-…`, de `claude setup-token`) | Worker, alternativa a la API key | `Worker:Claude:Environment:CLAUDE_CODE_OAUTH_TOKEN` |
+| Token de GitHub del servidor | Servidor: probar conexión, listar ramas, abrir PRs | `GitHub:Token` |
+| Token de GitHub del worker | Worker: `git clone`, `fetch` y `push` de las ramas de trabajo | `Worker:Git:GitHubToken` |
+
+La forma más simple es el script, que pide las claves ocultas, las guarda en los `appsettings.Local.json`
+(ignorados por git) y comprueba que la API key responda y que el token alcance los repositorios:
+
+```powershell
+./scripts/Configurar-Claves.ps1                                   # servidor y worker en la misma PC
+./scripts/Configurar-Claves.ps1 -Destino Worker                   # sólo en una PC worker
+./scripts/Configurar-Claves.ps1 -Repositorio DevArv/ShopyCube, DevArv/OtroRepo
+```
+
+Si prefieres hacerlo a mano, copia `appsettings.Local.example.json` a `appsettings.Local.json` en
+`src/DevArv.Web` y `src/DevArv.Worker` y completa los valores. También sirven variables de entorno
+(`GitHub__Token` en el servidor; `Worker__Claude__AnthropicApiKey` y `Worker__Git__GitHubToken` en el worker).
+Al arrancar, el worker indica en el log de dónde toma cada credencial (sin mostrar su valor) y el servidor avisa si falta `GitHub:Token`.
+
+**Token de GitHub (fine-grained):** en GitHub → *Settings → Developer settings → Fine-grained tokens*, con
+*Resource owner* = el dueño de los repos (p. ej. `DevArv`), *Only select repositories* = los repos de tus proyectos
+(p. ej. `ShopyCube`) y los permisos de [Requisitos](#requisitos). Con un solo token para todo, marca
+*Contents: Read & write*, *Pull requests: Read & write* y *Metadata: Read*.
 
 ## Puesta en marcha
 
@@ -85,16 +114,29 @@ ponlo detrás de HTTPS (IIS, Nginx o Azure App Service).
 Opcional: «Instrucciones para los agentes», que se agregan al system prompt (stack, convenciones, qué no tocar).
 Para reglas del código, lo ideal es tener un `CLAUDE.md` en el repositorio, que Claude Code lee solo.
 
+**Ejemplo: ShopyCube**
+
+| Campo | Valor |
+|---|---|
+| Repositorio | `DevArv/ShopyCube` |
+| Rama base | `master` (no `main`) |
+| Prefijo de ramas | `sc-devarv-` → ramas `sc-devarv-{id}-{slug}`, en la línea de `sc-jvalerio-…` |
+
+ShopyCube trae su propio `CLAUDE.md` con la arquitectura, los recursos `.resx`, los scripts SQL y las pruebas que
+deben seguir los agentes. Las PCs worker necesitan además el **SDK de .NET 8** (ShopyCube apunta a `net8.0`) para compilar
+y ejecutar sus pruebas.
+
 ### 4. Registrar una PC y arrancar el worker
 
 1. **Mis PCs → Registrar PC** (ej. `agents-vm`) y copia la clave que aparece (se muestra una sola vez).
-2. En esa PC, crea `src/DevArv.Worker/appsettings.Local.json`:
+2. En esa PC, ejecuta `./scripts/Configurar-Claves.ps1 -Destino Worker` o crea `src/DevArv.Worker/appsettings.Local.json`:
 
 ```json
 {
   "Worker": {
     "Server": { "Url": "https://devarv.miempresa.com", "ApiKey": "dvw_..." },
     "Workspace": { "Root": "D:\\devarv-workspace" },
+    "Claude": { "AnthropicApiKey": "sk-ant-api03-..." },
     "Git": { "GitHubToken": "github_pat_..." },
     "MaxParallelJobs": 1
   }

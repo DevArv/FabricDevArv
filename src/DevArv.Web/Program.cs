@@ -65,6 +65,10 @@ builder.Services.AddHostedService<Orchestrator>();
 
 var app = builder.Build();
 
+if (string.IsNullOrWhiteSpace(app.Configuration["GitHub:Token"]))
+    app.Logger.LogWarning("GitHub:Token no está configurado: no se podrán conectar repositorios ni abrir pull requests. " +
+        "Defínelo en appsettings.Local.json, user-secrets o la variable de entorno GitHub__Token.");
+
 using (var scope = app.Services.CreateScope())
 {
     await DbInitializer.InitializeAsync(scope.ServiceProvider);

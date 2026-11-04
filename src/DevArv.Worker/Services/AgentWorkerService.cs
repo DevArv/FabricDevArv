@@ -27,6 +27,7 @@ public sealed class AgentWorkerService(
         logger.LogInformation("DevArv.Worker en {Machine} · servidor {Url} · espacio de trabajo {Root} · {Jobs} trabajo(s) en paralelo",
             Environment.MachineName, _options.Server.Url, _options.Workspace.ResolveRoot(), _options.MaxParallelJobs);
         await CheckToolsAsync(stoppingToken);
+        LogCredentialSources();
 
         var loops = Enumerable.Range(0, Math.Max(1, _options.MaxParallelJobs))
             .Select(i => JobLoopAsync(i, stoppingToken))
@@ -99,6 +100,31 @@ public sealed class AgentWorkerService(
         var claude = ExecutableResolver.Resolve(_options.Claude.Executable);
         await CheckAsync("Claude Code", claude.FileName, [.. claude.PrefixArgs, "--version"], ct);
         await CheckAsync("git", _options.Git.Executable, ["--version"], ct);
+    }
+
+    /// <summary>Indica (sin mostrar los valores) de dónde saldrán las credenciales de Claude y de GitHub.</summary>
+    private void LogCredentialSources()
+    {
+        var claudeEnv = _options.Claude.Environment;
+        if (!string.IsNullOrWhiteSpace(_options.Claude.AnthropicApiKey))
+            logger.LogInformation("Claude: se usará la API key de Worker:Claude:AnthropicApiKey.");
+        else if (claudeEnv.TryGetValue("ANTHROPIC_API_KEY", out var k) && !string.IsNullOrWhiteSpace(k))
+            logger.LogInformation("Claude: se usará ANTHROPIC_API_KEY de Worker:Claude:Environment.");
+        else if (claudeEnv.TryGetValue("CLAUDE_CODE_OAUTH_TOKEN", out var t) && !string.IsNullOrWhiteSpace(t))
+            logger.LogInformation("Claude: se usará el token de suscripción CLAUDE_CODE_OAUTH_TOKEN de Worker:Claude:Environment.");
+        else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")))
+            logger.LogInformation("Claude: se usará la variable de entorno ANTHROPIC_API_KEY.");
+        else if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CLAUDE_CODE_OAUTH_TOKEN")))
+            logger.LogInformation("Claude: se usará la variable de entorno CLAUDE_CODE_OAUTH_TOKEN.");
+        else
+            logger.LogWarning("Claude: no hay API key configurada; se usará la sesión de `claude` iniciada por el usuario {User}. " +
+                "Si el worker corre como servicio con otro usuario, define Worker:Claude:AnthropicApiKey.", Environment.UserName);
+
+        if (!string.IsNullOrWhiteSpace(_options.Git.GitHubToken))
+            logger.LogInformation("GitHub: se usará el token de Worker:Git:GitHubToken para clonar y hacer push.");
+        else
+            logger.LogWarning("GitHub: Worker:Git:GitHubToken está vacío; se usarán las credenciales de git de esta PC " +
+                "(Git Credential Manager, SSH). Si no hay, el clon de repositorios privados fallará.");
     }
 
     private async Task CheckAsync(string name, string file, IReadOnlyList<string> args, CancellationToken ct)
