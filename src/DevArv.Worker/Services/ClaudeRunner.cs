@@ -16,14 +16,7 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> options, ILogger<Claude
         var args = new List<string>(command.PrefixArgs);
         args.AddRange(BuildArguments(job, ws));
 
-        var env = new Dictionary<string, string>(_options.Claude.Environment)
-        {
-            ["DISABLE_AUTOUPDATER"] = "1",
-            ["DEVARV_TASK_ID"] = job.TaskId.ToString(),
-            ["DEVARV_RUN_ID"] = job.RunId.ToString(),
-        };
-        if (!string.IsNullOrWhiteSpace(_options.Claude.AnthropicApiKey))
-            env["ANTHROPIC_API_KEY"] = _options.Claude.AnthropicApiKey.Trim();
+        var env = BuildEnvironment(_options.Claude, job);
 
         var prompt = job.Prompt.Replace(PromptTokens.AttachmentsDir, ws.AttachmentsPath);
         var parser = new ClaudeStreamParser();
@@ -35,6 +28,7 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> options, ILogger<Claude
         var spec = new ProcessSpec(command.FileName, args, ws.WorktreePath)
         {
             Environment = env,
+            RemovedEnvironment = RequiredSettings.ClaudeCredentialVariables,
             StandardInput = prompt,
         };
 
@@ -58,6 +52,23 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> options, ILogger<Claude
         string tail;
         lock (stderrTail) tail = string.Join("\n", stderrTail);
         return new ClaudeOutcome(exit, parser.Result, parser.Model, tail);
+    }
+
+    /// <summary>
+    /// Entorno del proceso de Claude. La única credencial es Worker:Claude:AnthropicApiKey del appsettings;
+    /// las credenciales que aparezcan en Worker:Claude:Environment se descartan.
+    /// </summary>
+    internal static Dictionary<string, string> BuildEnvironment(ClaudeOptions options, AgentJob job)
+    {
+        var env = options.Environment
+            .Where(e => !RequiredSettings.ClaudeCredentialVariables.Contains(e.Key, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(e => e.Key, e => e.Value);
+        env["DISABLE_AUTOUPDATER"] = "1";
+        env["DEVARV_TASK_ID"] = job.TaskId.ToString();
+        env["DEVARV_RUN_ID"] = job.RunId.ToString();
+        if (!string.IsNullOrWhiteSpace(options.AnthropicApiKey))
+            env["ANTHROPIC_API_KEY"] = options.AnthropicApiKey.Trim();
+        return env;
     }
 
     internal static List<string> BuildArguments(AgentJob job, PreparedWorkspace ws, bool forDisplay = false)

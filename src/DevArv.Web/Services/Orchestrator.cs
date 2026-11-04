@@ -26,7 +26,7 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
         {
             if (!scope.ServiceProvider.GetRequiredService<GitHubService>().IsConfigured)
                 logger.LogWarning("GitHub:Token no está configurado: no se podrán conectar repositorios ni abrir pull requests. " +
-                    "Defínelo en appsettings.Local.json, user-secrets o la variable de entorno GitHub__Token.");
+                    "Defínelo en el appsettings del servidor (appsettings.Local.json).");
         }
 
         while (!stoppingToken.IsCancellationRequested)

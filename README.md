@@ -41,8 +41,8 @@ Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador 
 ## Requisitos
 
 - **Servidor:** .NET 10 SDK y PostgreSQL 14 o superior.
-- **Cada PC worker:** .NET 10 Runtime (o SDK), `git` y [Claude Code](https://docs.claude.com/en/docs/claude-code)
-  con sesión iniciada (`claude` y luego login) o una `ANTHROPIC_API_KEY`.
+- **Cada PC worker:** .NET 10 Runtime (o SDK), `git`, [Claude Code](https://docs.claude.com/en/docs/claude-code)
+  y una **API key de Anthropic** en su appsettings (no se usa la sesión de `claude login`).
   En Windows conviene el instalador nativo (`claude.exe`). Si lo instalaste con npm, el worker detecta `claude.cmd` y ejecuta `node cli.js` directamente.
 - **GitHub:** dos tokens fine-grained (o uno solo si prefieres):
   - Servidor: *Pull requests: Read & write*, *Contents: Read*, *Metadata: Read* sobre los repos que vas a conectar.
@@ -53,10 +53,14 @@ Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador 
 
 | Clave | Quién la usa | Dónde se configura |
 |---|---|---|
-| API key de Anthropic (`sk-ant-api03-…`) | Worker: se pasa a `claude -p` como `ANTHROPIC_API_KEY` | `Worker:Claude:AnthropicApiKey` |
-| Token de suscripción (`sk-ant-oat01-…`, de `claude setup-token`) | Worker, alternativa a la API key | `Worker:Claude:Environment:CLAUDE_CODE_OAUTH_TOKEN` |
-| Token de GitHub del servidor | Servidor: probar conexión, listar ramas, abrir PRs | `GitHub:Token` |
-| Token de GitHub del worker | Worker: `git clone`, `fetch` y `push` de las ramas de trabajo | `Worker:Git:GitHubToken` |
+| API key de Anthropic (`sk-ant-api03-…`) | Worker: se pasa a `claude -p` como `ANTHROPIC_API_KEY` | `src/DevArv.Worker/appsettings.Local.json` → `Worker:Claude:AnthropicApiKey` |
+| Token de GitHub del worker | Worker: `git clone`, `fetch` y `push` de las ramas de trabajo | `src/DevArv.Worker/appsettings.Local.json` → `Worker:Git:GitHubToken` |
+| Token de GitHub del servidor | Servidor: probar conexión, listar ramas, abrir PRs | `src/DevArv.Web/appsettings.Local.json` → `GitHub:Token` |
+
+**Las credenciales siempre se leen del appsettings de cada app.** El worker no toma trabajos si falta alguna, no usa la
+sesión de `claude login` ni el Credential Manager de git, y quita del proceso de Claude cualquier `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` o `CLAUDE_CODE_OAUTH_TOKEN` heredado de la PC. `appsettings.Local.json` está en `.gitignore` y se
+copia al `dotnet publish`, junto al ejecutable.
 
 La forma más simple es el script, que pide las claves ocultas, las guarda en los `appsettings.Local.json`
 (ignorados por git) y comprueba que la API key responda y que el token alcance los repositorios:
@@ -68,9 +72,8 @@ La forma más simple es el script, que pide las claves ocultas, las guarda en lo
 ```
 
 Si prefieres hacerlo a mano, copia `appsettings.Local.example.json` a `appsettings.Local.json` en
-`src/DevArv.Web` y `src/DevArv.Worker` y completa los valores. También sirven variables de entorno
-(`GitHub__Token` en el servidor; `Worker__Claude__AnthropicApiKey` y `Worker__Git__GitHubToken` en el worker).
-Al arrancar, el worker indica en el log de dónde toma cada credencial (sin mostrar su valor) y el servidor avisa si falta `GitHub:Token`.
+`src/DevArv.Web` y `src/DevArv.Worker` y completa los valores. Al arrancar, el worker indica qué ajuste falta y el
+servidor avisa si falta `GitHub:Token`.
 
 **Token de GitHub (fine-grained):** en GitHub → *Settings → Developer settings → Fine-grained tokens*, con
 *Resource owner* = el dueño de los repos (p. ej. `DevArv`), *Only select repositories* = los repos de tus proyectos
@@ -90,10 +93,7 @@ CREATE DATABASE devarv OWNER devarv;
 
 ```bash
 cd src/DevArv.Web
-dotnet user-secrets set "ConnectionStrings:Default" "Host=localhost;Database=devarv;Username=devarv;Password=una-clave-segura"
-dotnet user-secrets set "GitHub:Token" "github_pat_..."
-dotnet user-secrets set "Admin:Email" "tu@correo.com"
-dotnet user-secrets set "Admin:Password" "UnaClaveLarga123"
+cp appsettings.Local.example.json appsettings.Local.json   # completa ConnectionStrings, Admin y GitHub:Token
 
 # Recomendado: generar la migración inicial (si no existe, el esquema se crea con EnsureCreated)
 dotnet tool install --global dotnet-ef
@@ -105,8 +105,8 @@ dotnet run
 Abre `https://localhost:5001` y entra con el administrador. Si no configuras `Admin:*`, la página de registro queda
 abierta sólo hasta que exista el primer usuario. Para permitir más registros: `Auth:AllowRegistration=true`.
 
-En producción usa variables de entorno (`ConnectionStrings__Default`, `GitHub__Token`, `App__PublicUrl`…) y
-ponlo detrás de HTTPS (IIS, Nginx o Azure App Service).
+En producción publica con `dotnet publish`, deja `appsettings.Local.json` junto al ejecutable (con `App:PublicUrl`
+y las credenciales) y ponlo detrás de HTTPS (IIS, Nginx o Azure App Service).
 
 ### 3. Conectar repositorios
 
@@ -153,8 +153,9 @@ sc.exe create "DevArv Worker" binPath= "C:\devarv-worker\DevArv.Worker.exe" star
 sc.exe start "DevArv Worker"
 ```
 
-Ejecuta el servicio con **tu usuario** (no LocalSystem) para que use tu sesión de Claude Code y tus credenciales de git,
-o define `Worker:Claude:AnthropicApiKey`. En Linux funciona igual como unidad de **systemd** (`Type=notify`).
+Antes de publicar, ejecuta el script (o completa `src/DevArv.Worker/appsettings.Local.json`): el publish copia ese archivo
+a `C:\devarv-worker`, de donde el servicio lee sus credenciales, sin importar con qué usuario corra.
+En Linux funciona igual como unidad de **systemd** (`Type=notify`).
 
 ### 5. Usarlo
 

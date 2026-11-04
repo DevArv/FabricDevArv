@@ -9,8 +9,8 @@
                                                   Worker:Server:Url, Worker:Server:ApiKey, Worker:Workspace:Root
     Las claves se piden ocultas. Después verifica que la API key responda y que el token alcance los repositorios.
 
-    Si la clave de Claude empieza por «sk-ant-oat» (token de suscripción generado con `claude setup-token`)
-    se guarda como Worker:Claude:Environment:CLAUDE_CODE_OAUTH_TOKEN en lugar de AnthropicApiKey.
+    El appsettings es la única fuente de credenciales: el worker no usa la sesión de `claude login`,
+    el Credential Manager de git ni variables de entorno de la PC, y no toma trabajos si falta alguna.
 
 .EXAMPLE
     ./scripts/Configurar-Claves.ps1
@@ -171,17 +171,18 @@ if ($configureWorker) {
     }
     Assert-Prefix $WorkerGitHubToken @('github_pat_', 'ghp_') 'El token de GitHub del worker'
 
-    if (-not $PSBoundParameters.ContainsKey('AnthropicApiKey')) {
-        $AnthropicApiKey = Read-Secret 'API key de Anthropic (sk-ant-…; Enter para usar la sesión de `claude login`)'
+    if (-not $AnthropicApiKey) {
+        $AnthropicApiKey = Read-Secret 'API key de Anthropic (sk-ant-api03-…)'
     }
-    Assert-Prefix $AnthropicApiKey @('sk-ant-') 'La clave de Anthropic'
+    if (-not $AnthropicApiKey) { throw 'La API key de Anthropic es obligatoria.' }
+    Assert-Prefix $AnthropicApiKey @('sk-ant-api') 'La API key de Anthropic'
 
     $current = Read-JsonFile $workerFile
     $defaultUrl = (Get-Value $current 'Worker:Server:Url')
     if (-not $defaultUrl) { $defaultUrl = 'https://localhost:5001' }
     if (-not $ServerUrl) { $ServerUrl = Read-Plain 'URL del servidor DevArv' $defaultUrl }
     if (-not $PSBoundParameters.ContainsKey('WorkerApiKey')) {
-        $WorkerApiKey = Read-Secret 'Clave de la PC (dvw_… de «Mis PCs»; Enter para dejarla como está)'
+        $WorkerApiKey = Read-Secret 'Clave de la PC (dvw_… de «Mis PCs»; Enter si aún no la tienes: el worker no arrancará sin ella)'
     }
     if (-not $WorkspaceRoot) {
         $WorkspaceRoot = Read-Plain 'Carpeta de trabajo del worker (Enter = ~/devarv-workspace)' (Get-Value $current 'Worker:Workspace:Root')
@@ -206,14 +207,10 @@ if ($configureWorker) {
     if ($WorkerApiKey) { Set-Value $worker 'Worker:Server:ApiKey' $WorkerApiKey }
     if ($WorkspaceRoot) { Set-Value $worker 'Worker:Workspace:Root' $WorkspaceRoot }
 
-    if ($AnthropicApiKey -and $AnthropicApiKey.StartsWith('sk-ant-oat')) {
-        # Token de suscripción (claude setup-token): Claude Code lo lee de CLAUDE_CODE_OAUTH_TOKEN.
-        Set-Value $worker 'Worker:Claude:Environment:CLAUDE_CODE_OAUTH_TOKEN' $AnthropicApiKey
-        Remove-Value $worker 'Worker:Claude:AnthropicApiKey'
-    }
-    elseif ($AnthropicApiKey) {
-        Set-Value $worker 'Worker:Claude:AnthropicApiKey' $AnthropicApiKey
-        Remove-Value $worker 'Worker:Claude:Environment:CLAUDE_CODE_OAUTH_TOKEN'
+    Set-Value $worker 'Worker:Claude:AnthropicApiKey' $AnthropicApiKey
+    # Las credenciales de Anthropic sólo van en AnthropicApiKey; el worker descarta las de Claude:Environment.
+    foreach ($name in 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN') {
+        Remove-Value $worker "Worker:Claude:Environment:$name"
     }
     Write-JsonFile $workerFile $worker
 }
@@ -225,7 +222,7 @@ if (-not $SinVerificar) {
     Write-Host 'Verificando:' -ForegroundColor Cyan
     Test-GitHubToken $GitHubToken 'del servidor'
     if ($configureWorker -and $WorkerGitHubToken -ne $GitHubToken) { Test-GitHubToken $WorkerGitHubToken 'del worker' }
-    if ($configureWorker -and $AnthropicApiKey -and -not $AnthropicApiKey.StartsWith('sk-ant-oat')) { Test-AnthropicKey $AnthropicApiKey }
+    if ($configureWorker) { Test-AnthropicKey $AnthropicApiKey }
 }
 
 Write-Host ''

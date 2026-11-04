@@ -27,4 +27,32 @@ public class ClaudeRunnerTests
         Assert.True(args.IndexOf("--allowedTools") > args.IndexOf("--add-dir"));
         Assert.Equal(new[] { "--disallowedTools", "Edit" }, args.TakeLast(2));
     }
+
+    [Fact]
+    public void EnvironmentUsesOnlyTheApiKeyFromSettings()
+    {
+        var job = new AgentJob(
+            RunId: 7, TaskId: 3, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
+            BaseBranch: "master", WorkBranch: "sc-devarv-3-t", Prompt: "p", AppendSystemPrompt: null, Model: "opus",
+            PermissionMode: "acceptEdits", AllowedTools: [], DisallowedTools: [], MaxTurns: null,
+            ExtraArgs: [], PushChanges: true, TimeoutMinutes: 30, CommitMessage: "c", Attachments: []);
+        var options = new ClaudeOptions
+        {
+            AnthropicApiKey = " sk-ant-api03-settings ",
+            Environment =
+            {
+                ["ANTHROPIC_API_KEY"] = "otra",
+                ["claude_code_oauth_token"] = "sk-ant-oat01-x",
+                ["HTTPS_PROXY"] = "http://proxy:8080",
+            },
+        };
+
+        var env = ClaudeRunner.BuildEnvironment(options, job);
+
+        Assert.Equal("sk-ant-api03-settings", env["ANTHROPIC_API_KEY"]);
+        Assert.DoesNotContain(env.Keys, k => k.Equals("CLAUDE_CODE_OAUTH_TOKEN", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("http://proxy:8080", env["HTTPS_PROXY"]);
+        Assert.Equal("3", env["DEVARV_TASK_ID"]);
+        Assert.Equal("7", env["DEVARV_RUN_ID"]);
+    }
 }

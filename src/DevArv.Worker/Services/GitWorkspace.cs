@@ -173,14 +173,18 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
     private Task<ProcessResult> RunGitAsync(string cwd, CancellationToken ct, string? withAuth, params string[] args)
     {
         var all = new List<string>();
-        var token = _options.Git.GitHubToken;
-        if (withAuth is not null && !string.IsNullOrWhiteSpace(token)
-            && Uri.TryCreate(withAuth, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+        if (withAuth is not null)
         {
+            var token = _options.Git.GitHubToken;
+            if (string.IsNullOrWhiteSpace(token))
+                throw new GitException("Falta Worker:Git:GitHubToken en el appsettings del worker.");
+            if (!Uri.TryCreate(withAuth, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                throw new GitException($"Sólo se admiten repositorios por HTTPS: «{withAuth}».");
+
             // Igual que actions/checkout: la credencial va en una cabecera y nunca se guarda en .git/config.
+            // credential.helper vacío evita que git use credenciales guardadas en la PC.
             var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"x-access-token:{token.Trim()}"));
-            all.Add("-c");
-            all.Add($"http.https://{uri.Host}/.extraheader=AUTHORIZATION: basic {basic}");
+            all.AddRange(["-c", "credential.helper=", "-c", $"http.https://{uri.Host}/.extraheader=AUTHORIZATION: basic {basic}"]);
         }
         all.AddRange(args);
 
