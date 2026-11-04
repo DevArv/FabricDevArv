@@ -63,7 +63,7 @@ public sealed class ServerClient
         var body = await response.Content.ReadAsStringAsync(ct);
         if (body.Length > 500) body = body[..500];
         var hint = response.StatusCode == HttpStatusCode.Unauthorized
-            ? " (revisa Server:ApiKey y que la PC esté habilitada en «Mis PCs»)"
+            ? " (revisa EnvironmentData:ApiKey y que la PC esté habilitada en «Mis PCs»)"
             : "";
         throw new HttpRequestException($"Servidor respondió {(int)response.StatusCode}{hint}: {body}", null, response.StatusCode);
     }
