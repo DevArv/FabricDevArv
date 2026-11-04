@@ -4,9 +4,10 @@
 
 .DESCRIPTION
     Escribe (o actualiza sin borrar lo demás) estos archivos, que git ignora:
-      src/DevArv.Web/appsettings.Local.json     → GitHub:Token (crear y consultar pull requests)
-      src/DevArv.Worker/appsettings.Local.json  → Worker:Claude:AnthropicApiKey, Worker:Git:GitHubToken,
-                                                  Worker:Server:Url, Worker:Server:ApiKey, Worker:Workspace:Root
+      src/DevArv.Web/appsettings.Local.json     → EnvironmentData (Host, Port, Database, Username, Password)
+                                                  y GitHub:Token (crear y consultar pull requests)
+      src/DevArv.Worker/appsettings.Local.json  → EnvironmentData (Url, ApiKey), Worker:Claude:AnthropicApiKey,
+                                                  Worker:Git:GitHubToken, Worker:Workspace:Root
     Las claves se piden ocultas. Después verifica que la API key responda y que el token alcance los repositorios.
 
     El appsettings es la única fuente de credenciales: el worker no usa la sesión de `claude login`,
@@ -36,7 +37,12 @@ param(
     [string] $WorkerGitHubToken,
     [string] $ServerUrl,
     [string] $WorkerApiKey,
-    [string] $WorkspaceRoot
+    [string] $WorkspaceRoot,
+    [string] $DbHost,
+    [string] $DbPort,
+    [string] $DbName,
+    [string] $DbUser,
+    [string] $DbPassword
 )
 
 $ErrorActionPreference = 'Stop'
@@ -102,7 +108,7 @@ function Set-Value($Table, [string] $Path, $Value) {
 
 function Remove-Value($Table, [string] $Path) {
     $parts = $Path.Split(':')
-    $parent = Get-Value $Table ($parts[0..($parts.Length - 2)] -join ':')
+    $parent = if ($parts.Length -eq 1) { $Table } else { Get-Value $Table ($parts[0..($parts.Length - 2)] -join ':') }
     if ($parent -is [System.Collections.IDictionary] -and $parent.Contains($parts[-1])) { $parent.Remove($parts[-1]) }
 }
 
@@ -163,6 +169,24 @@ if (-not $GitHubToken) {
 if (-not $GitHubToken) { throw 'El token de GitHub es obligatorio.' }
 Assert-Prefix $GitHubToken @('github_pat_', 'ghp_') 'El token de GitHub'
 
+if ($configureWeb) {
+    # Datos de conexión a PostgreSQL (EnvironmentData del servidor). Enter conserva el valor actual.
+    $currentWeb = Read-JsonFile $webFile
+    function Get-Default([string] $Key, [string] $Fallback) {
+        $value = Get-Value $currentWeb "EnvironmentData:$Key"
+        if ($value) { return $value } else { return $Fallback }
+    }
+    if (-not $DbHost) { $DbHost = Read-Plain 'Servidor PostgreSQL' (Get-Default 'Host' 'localhost') }
+    if (-not $DbPort) { $DbPort = Read-Plain 'Puerto PostgreSQL' (Get-Default 'Port' '5432') }
+    if (-not $DbName) { $DbName = Read-Plain 'Base de datos' (Get-Default 'Database' 'devarv') }
+    if (-not $DbUser) { $DbUser = Read-Plain 'Usuario de la base de datos' (Get-Default 'Username' 'devarv') }
+    if (-not $PSBoundParameters.ContainsKey('DbPassword')) {
+        $DbPassword = Read-Secret 'Contraseña de la base de datos (Enter conserva la actual)'
+    }
+    if (-not $DbPassword) { $DbPassword = Get-Value $currentWeb 'EnvironmentData:Password' }
+    if (-not $DbPassword) { throw 'La contraseña de la base de datos es obligatoria.' }
+}
+
 if ($configureWorker) {
     if (-not $WorkerGitHubToken) {
         $WorkerGitHubToken = if ($TokenSeparadoParaWorker) {
@@ -178,7 +202,7 @@ if ($configureWorker) {
     Assert-Prefix $AnthropicApiKey @('sk-ant-api') 'La API key de Anthropic'
 
     $current = Read-JsonFile $workerFile
-    $defaultUrl = (Get-Value $current 'Worker:Server:Url')
+    $defaultUrl = (Get-Value $current 'EnvironmentData:Url')
     if (-not $defaultUrl) { $defaultUrl = 'https://localhost:5001' }
     if (-not $ServerUrl) { $ServerUrl = Read-Plain 'URL del servidor DevArv' $defaultUrl }
     if (-not $PSBoundParameters.ContainsKey('WorkerApiKey')) {
@@ -196,6 +220,12 @@ Write-Host 'Guardando:' -ForegroundColor Cyan
 
 if ($configureWeb) {
     $web = Read-JsonFile $webFile
+    Set-Value $web 'EnvironmentData:Host' $DbHost
+    Set-Value $web 'EnvironmentData:Port' $DbPort
+    Set-Value $web 'EnvironmentData:Database' $DbName
+    Set-Value $web 'EnvironmentData:Username' $DbUser
+    Set-Value $web 'EnvironmentData:Password' $DbPassword
+    Remove-Value $web 'ConnectionStrings'
     Set-Value $web 'GitHub:Token' $GitHubToken
     Write-JsonFile $webFile $web
 }
@@ -203,8 +233,9 @@ if ($configureWeb) {
 if ($configureWorker) {
     $worker = Read-JsonFile $workerFile
     Set-Value $worker 'Worker:Git:GitHubToken' $WorkerGitHubToken
-    Set-Value $worker 'Worker:Server:Url' $ServerUrl
-    if ($WorkerApiKey) { Set-Value $worker 'Worker:Server:ApiKey' $WorkerApiKey }
+    Set-Value $worker 'EnvironmentData:Url' $ServerUrl
+    if ($WorkerApiKey) { Set-Value $worker 'EnvironmentData:ApiKey' $WorkerApiKey }
+    Remove-Value $worker 'Worker:Server'
     if ($WorkspaceRoot) { Set-Value $worker 'Worker:Workspace:Root' $WorkspaceRoot }
 
     Set-Value $worker 'Worker:Claude:AnthropicApiKey' $AnthropicApiKey

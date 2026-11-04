@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using DevArv.Contracts.Models;
 using Microsoft.Extensions.Options;
+using DevArv.Worker.EnvironmentConfig;
 using DevArv.Worker.Models;
 using DevArv.Worker.Helpers;
 
@@ -10,6 +11,7 @@ namespace DevArv.Worker.Services;
 public sealed class AgentWorkerService(
     ServerClient server,
     JobRunner runner,
+    EnvironmentData environmentData,
     IOptions<WorkerOptions> options,
     ILogger<AgentWorkerService> logger) : BackgroundService
 {
@@ -18,18 +20,10 @@ public sealed class AgentWorkerService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var missing = RequiredSettings.Missing(_options);
-        if (missing.Count > 0)
-        {
-            logger.LogCritical("Faltan en el appsettings del worker: {Missing}. El worker no tomará trabajos. " +
-                "Ejecuta scripts/Configurar-Claves.ps1 o completa appsettings.Local.json.", string.Join(", ", missing));
-            return;
-        }
-
         logger.LogInformation("DevArv.Worker en {Machine} · servidor {Url} · espacio de trabajo {Root} · {Jobs} trabajo(s) en paralelo",
-            Environment.MachineName, _options.Server.Url, _options.Workspace.ResolveRoot(), _options.MaxParallelJobs);
+            Environment.MachineName, environmentData.Url, _options.Workspace.ResolveRoot(), _options.MaxParallelJobs);
         await CheckToolsAsync(stoppingToken);
-        logger.LogInformation("Credenciales tomadas del appsettings: Worker:Claude:AnthropicApiKey y Worker:Git:GitHubToken.");
+        logger.LogInformation("Conexión y credenciales tomadas del appsettings (EnvironmentData, Worker:Claude, Worker:Git).");
 
         var loops = Enumerable.Range(0, Math.Max(1, _options.MaxParallelJobs))
             .Select(i => JobLoopAsync(i, stoppingToken))

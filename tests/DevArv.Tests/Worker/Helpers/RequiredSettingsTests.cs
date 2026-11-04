@@ -7,7 +7,6 @@ public class RequiredSettingsTests
 {
     private static WorkerOptions Complete() => new()
     {
-        Server = new ServerOptions { Url = "https://devarv.local", ApiKey = "dvw_x" },
         Claude = new ClaudeOptions { AnthropicApiKey = "sk-ant-api03-x" },
         Git = new GitOptions { GitHubToken = "github_pat_x" },
     };
@@ -16,6 +15,7 @@ public class RequiredSettingsTests
     public void CompleteSettingsHaveNothingMissing()
     {
         Assert.Empty(RequiredSettings.Missing(Complete()));
+        RequiredSettings.EnsureComplete(Complete());
     }
 
     [Fact]
@@ -23,9 +23,7 @@ public class RequiredSettingsTests
     {
         var missing = RequiredSettings.Missing(new WorkerOptions());
 
-        Assert.Equal(
-            new[] { "Worker:Server:Url", "Worker:Server:ApiKey", "Worker:Claude:AnthropicApiKey", "Worker:Git:GitHubToken" },
-            missing);
+        Assert.Equal(new[] { "Worker:Claude:AnthropicApiKey", "Worker:Git:GitHubToken" }, missing);
     }
 
     [Fact]
@@ -33,11 +31,11 @@ public class RequiredSettingsTests
     {
         var options = Complete();
         options.Claude.AnthropicApiKey = "   ";
-        options.Git.GitHubToken = null;
 
-        var missing = RequiredSettings.Missing(options);
+        var ex = Assert.Throws<ArgumentException>(() => RequiredSettings.EnsureComplete(options));
 
-        Assert.Equal(new[] { "Worker:Claude:AnthropicApiKey", "Worker:Git:GitHubToken" }, missing);
+        Assert.Contains("Worker:Claude:AnthropicApiKey", ex.Message);
+        Assert.DoesNotContain("Worker:Git:GitHubToken", ex.Message);
     }
 
     [Fact]

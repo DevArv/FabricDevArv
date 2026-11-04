@@ -27,17 +27,27 @@ Si encuentras código que no cumple, se migra al Repository cuando se modifique;
 
 Los Repositories y Services lanzan `ValidationFailedException` (campo + mensaje, por ejemplo `"Input.Name"`) para reglas de negocio que el usuario puede corregir, y `WorkflowException` para transiciones inválidas del flujo. El PageModel los captura y los muestra; nunca decide la regla.
 
-## Configuración: sólo appsettings
+## Configuración: `EnvironmentConfig` (igual que ShopyCube)
 
-Toda la configuración de `DevArv.Web` y `DevArv.Worker` se lee de `appsettings.json` → `appsettings.{Entorno}.json` →
-`appsettings.Local.json` (ignorado por git; ahí van las credenciales). `Program.cs` llama a
-`builder.Configuration.UseAppSettingsOnly(...)` (`Helpers/AppSettingsConfiguration`), que quita user-secrets,
-variables de entorno y línea de comandos.
+`DevArv.Web` y `DevArv.Worker` tienen la carpeta `EnvironmentConfig/` con dos clases, como ShopyCube:
 
-- Cada ajuste nuevo se declara en `appsettings.json` (vacío si es un secreto) y en su clase `*Options` de `Models/`.
-- No leas `Environment.GetEnvironmentVariable`, user-secrets ni archivos propios para obtener configuración o credenciales.
-- Las credenciales no tienen respaldo: si faltan, se informa qué clave falta (no se recurre a la sesión de `claude`, al
-  Credential Manager de git ni a variables de la PC).
+- **`EnvironmentTools`** (estática): única fuente de configuración. Carga una sola vez `appsettings.json` →
+  `appsettings.{Entorno}.json` → `appsettings.Local.json` (ignorado por git; ahí van las credenciales) y valida los datos
+  con `ArgumentException`, indicando la clave (`"EnvironmentData:Host no puede estar vacío."`). `Program.cs` llama a
+  `EnvironmentTools.UseAsConfigurationSource(builder.Configuration)`, que quita user-secrets, variables de entorno y
+  línea de comandos, así que las `*Options` también salen de los appsettings.
+- **`EnvironmentData`**: datos de conexión de la sección `EnvironmentData`, leídos con `EnvironmentTools.GetData()`.
+  - Web: base de datos (`Host`, `Port`, `Database`, `Username`, `Password`) y `GetConnectionString()`.
+  - Worker: servidor DevArv (`Url`, `ApiKey`) y `GetBaseAddress()`.
+
+Reglas:
+
+- Los datos de conexión se leen con `EnvironmentTools.GetData()`; el resto de ajustes, con su clase `*Options` de
+  `Models/`, declarada también en `appsettings.json` (vacía si es un secreto).
+- Sólo `EnvironmentTools` puede llamar a `Environment.GetEnvironmentVariable` (para saber el entorno). No leas
+  user-secrets, variables de entorno ni archivos propios para obtener configuración o credenciales.
+- Si falta un dato o una credencial la app no arranca y el mensaje indica qué clave falta; no hay respaldo en la sesión
+  de `claude`, el Credential Manager de git ni variables de la PC.
 
 ## Organización de carpetas (proyecto `DevArv.Web`)
 
@@ -47,6 +57,7 @@ variables de entorno y línea de comandos.
 | `Constants/` | Constantes y plantillas (`DefaultPrompts`, `PermissionModes`) |
 | `DataModels/` | Entidades EF Core, **una clase por archivo** |
 | `DatabaseConnection/` | `AppDbContext`, `DbInitializer` |
+| `EnvironmentConfig/` | `EnvironmentData` (datos de conexión) y `EnvironmentTools` (carga y valida los appsettings) |
 | `Enums/<Dominio>/` | **Un enum por archivo**, agrupados por dominio (`Workflow`, `Tasks`, `Runs`) |
 | `Helpers/` | Utilidades sin estado (`Labels`, `Slug`, `FileSignature`, `MarkdownRenderer`, `ApiKeys`, `Clock`…) |
 | `Models/` | Opciones de configuración (`*Options`) y DTOs internos |
@@ -61,7 +72,7 @@ Reglas:
 - Los namespaces siguen la estructura de carpetas (`DevArv.Web.Repositories`, `DevArv.Web.Enums.Tasks`…).
 - Cada Repository nuevo se registra en `Program.cs` como `AddScoped`.
 - `DevArv.Contracts` es el contrato HTTP entre servidor y worker: solo DTOs (`Models/`), sin dependencias. Cambiarlo exige actualizar Web y Worker a la vez.
-- `DevArv.Worker` se organiza igual: `Helpers/` (sin estado), `Models/` (opciones y resultados), `Services/` (clases con dependencias).
+- `DevArv.Worker` se organiza igual: `EnvironmentConfig/`, `Helpers/` (sin estado), `Models/` (opciones y resultados), `Services/` (clases con dependencias).
 
 ## Pruebas
 

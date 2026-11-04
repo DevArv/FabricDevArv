@@ -53,19 +53,23 @@ Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador 
 
 | Clave | Quién la usa | Dónde se configura |
 |---|---|---|
+| Conexión a PostgreSQL | Servidor | `src/DevArv.Web/appsettings.Local.json` → `EnvironmentData` (`Host`, `Port`, `Database`, `Username`, `Password`) |
+| Conexión del worker al servidor | Worker | `src/DevArv.Worker/appsettings.Local.json` → `EnvironmentData` (`Url`, `ApiKey` de «Mis PCs») |
 | API key de Anthropic (`sk-ant-api03-…`) | Worker: se pasa a `claude -p` como `ANTHROPIC_API_KEY` | `src/DevArv.Worker/appsettings.Local.json` → `Worker:Claude:AnthropicApiKey` |
 | Token de GitHub del worker | Worker: `git clone`, `fetch` y `push` de las ramas de trabajo | `src/DevArv.Worker/appsettings.Local.json` → `Worker:Git:GitHubToken` |
 | Token de GitHub del servidor | Servidor: probar conexión, listar ramas, abrir PRs | `src/DevArv.Web/appsettings.Local.json` → `GitHub:Token` |
 
-**Toda la configuración se lee de los appsettings de cada app**: `appsettings.json` → `appsettings.{Entorno}.json` →
-`appsettings.Local.json`, cada uno sobrescribe al anterior. No se usan user-secrets, variables de entorno ni argumentos
+**Toda la configuración se lee de los appsettings de cada app**, a través de `EnvironmentConfig/EnvironmentTools`
+(igual que en ShopyCube): `appsettings.json` → `appsettings.{Entorno}.json` → `appsettings.Local.json`, cada uno
+sobrescribe al anterior. No se usan user-secrets, variables de entorno ni argumentos
 de línea de comandos (sólo las variables del host `ASPNETCORE_*`/`DOTNET_*`, como el entorno o las URLs de
-`launchSettings.json`, y nunca para una clave que exista en un appsettings). Para las credenciales: El worker no toma trabajos si falta alguna, no usa la
+`launchSettings.json`, y nunca para una clave que exista en un appsettings). Si falta un dato la app no arranca e indica
+qué clave falta. Para las credenciales: el worker no usa la
 sesión de `claude login` ni el Credential Manager de git, y quita del proceso de Claude cualquier `ANTHROPIC_API_KEY`,
 `ANTHROPIC_AUTH_TOKEN` o `CLAUDE_CODE_OAUTH_TOKEN` heredado de la PC. `appsettings.Local.json` está en `.gitignore` y se
 copia al `dotnet publish`, junto al ejecutable.
 
-La forma más simple es el script, que pide las claves ocultas, las guarda en los `appsettings.Local.json`
+La forma más simple es el script, que pide los datos de la base de datos y las claves (ocultas), las guarda en los `appsettings.Local.json`
 (ignorados por git) y comprueba que la API key responda y que el token alcance los repositorios:
 
 ```powershell
@@ -96,7 +100,7 @@ CREATE DATABASE devarv OWNER devarv;
 
 ```bash
 cd src/DevArv.Web
-cp appsettings.Local.example.json appsettings.Local.json   # completa ConnectionStrings, Admin y GitHub:Token
+cp appsettings.Local.example.json appsettings.Local.json   # completa EnvironmentData, Admin y GitHub:Token
 
 # Recomendado: generar la migración inicial (si no existe, el esquema se crea con EnsureCreated)
 dotnet tool install --global dotnet-ef
@@ -136,8 +140,8 @@ y ejecutar sus pruebas.
 
 ```json
 {
+  "EnvironmentData": { "Url": "https://devarv.miempresa.com", "ApiKey": "dvw_..." },
   "Worker": {
-    "Server": { "Url": "https://devarv.miempresa.com", "ApiKey": "dvw_..." },
     "Workspace": { "Root": "D:\\devarv-workspace" },
     "Claude": { "AnthropicApiKey": "sk-ant-api03-..." },
     "Git": { "GitHubToken": "github_pat_..." },
@@ -199,6 +203,7 @@ src/DevArv.Web         Razor Pages, EF Core (Npgsql), Identity, API de workers, 
   Constants/           Plantillas de prompts y constantes
   DataModels/          Entidades EF Core (una clase por archivo)
   DatabaseConnection/  AppDbContext y DbInitializer (siembra del flujo por defecto)
+  EnvironmentConfig/   EnvironmentData (conexión a la BD) y EnvironmentTools (carga y valida los appsettings)
   Enums/<Dominio>/     Enums por dominio: Workflow, Tasks, Runs
   Helpers/             Utilidades estáticas (Labels, Slug, FileSignature, MarkdownRenderer…)
   Models/              Opciones de configuración y DTOs internos
@@ -206,7 +211,7 @@ src/DevArv.Web         Razor Pages, EF Core (Npgsql), Identity, API de workers, 
   Repositories/        Acceso a datos y reglas de negocio de cada pantalla
   Services/            WorkflowService, Orchestrator, GitHubService, AttachmentStorage, PromptBuilder
   ViewModels/          Modelos de formularios y de lectura de las páginas
-src/DevArv.Worker      Servicio (Windows/systemd) que ejecuta Claude Code y git (Helpers/, Models/, Services/)
+src/DevArv.Worker      Servicio (Windows/systemd) que ejecuta Claude Code y git (EnvironmentConfig/, Helpers/, Models/, Services/)
 scripts/               Configurar-Claves.ps1 (claves de Anthropic y GitHub en appsettings.Local.json)
 tests/DevArv.Tests     xUnit, con carpetas espejo de src: Web/Helpers, Web/Services, Worker/Helpers, Worker/Services
 ```

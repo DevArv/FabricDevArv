@@ -1,8 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using DevArv.Contracts.Models;
-using Microsoft.Extensions.Options;
-using DevArv.Worker.Models;
+using DevArv.Worker.EnvironmentConfig;
 
 namespace DevArv.Worker.Services;
 
@@ -11,14 +10,12 @@ public sealed class ServerClient
 {
     private readonly HttpClient _http;
 
-    public ServerClient(HttpClient http, IOptions<WorkerOptions> options)
+    public ServerClient(HttpClient http, EnvironmentData environmentData)
     {
         _http = http;
-        var server = options.Value.Server;
-        if (!string.IsNullOrWhiteSpace(server.Url))
-            _http.BaseAddress = new Uri(server.Url.TrimEnd('/') + "/");
+        _http.BaseAddress = environmentData.GetBaseAddress();
         _http.DefaultRequestHeaders.Remove(WorkerHeaders.ApiKey);
-        _http.DefaultRequestHeaders.Add(WorkerHeaders.ApiKey, server.ApiKey);
+        _http.DefaultRequestHeaders.Add(WorkerHeaders.ApiKey, environmentData.ApiKey);
         _http.Timeout = TimeSpan.FromSeconds(100);
     }
 

@@ -1,5 +1,6 @@
 using DevArv.Web.Api;
 using DevArv.Web.DatabaseConnection;
+using DevArv.Web.EnvironmentConfig;
 using DevArv.Web.Helpers;
 using DevArv.Web.Models;
 using DevArv.Web.Repositories;
@@ -9,11 +10,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
-// Toda la configuración sale de los appsettings (ver AppSettingsConfiguration).
-builder.Configuration.UseAppSettingsOnly(builder.Environment.EnvironmentName);
+// Toda la configuración sale de los appsettings a través de EnvironmentTools.
+EnvironmentTools.UseAsConfigurationSource(builder.Configuration);
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("Falta ConnectionStrings:Default (PostgreSQL).");
+var connectionString = EnvironmentTools.GetData().GetConnectionString();
 
 builder.Services.AddDbContext<AppDbContext>(o => o.UseNpgsql(connectionString));
 

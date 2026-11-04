@@ -3,8 +3,8 @@ using DevArv.Worker.Models;
 namespace DevArv.Worker.Helpers;
 
 /// <summary>
-/// Ajustes que el worker exige en su appsettings antes de tomar trabajos. Las credenciales sólo se leen de ahí:
-/// no hay respaldo en la sesión de `claude`, en el Credential Manager de git ni en variables de la PC.
+/// Credenciales que el worker exige en su appsettings (la conexión al servidor la valida EnvironmentTools).
+/// No hay respaldo en la sesión de `claude`, en el Credential Manager de git ni en variables de la PC.
 /// </summary>
 public static class RequiredSettings
 {
@@ -16,11 +16,18 @@ public static class RequiredSettings
     public static IReadOnlyList<string> Missing(WorkerOptions options)
     {
         var missing = new List<string>();
-        if (IsEmpty(options.Server.Url)) missing.Add("Worker:Server:Url");
-        if (IsEmpty(options.Server.ApiKey)) missing.Add("Worker:Server:ApiKey");
         if (IsEmpty(options.Claude.AnthropicApiKey)) missing.Add("Worker:Claude:AnthropicApiKey");
         if (IsEmpty(options.Git.GitHubToken)) missing.Add("Worker:Git:GitHubToken");
         return missing;
+    }
+
+    /// <summary>Lanza <see cref="ArgumentException"/> si falta alguna credencial.</summary>
+    public static void EnsureComplete(WorkerOptions options)
+    {
+        var missing = Missing(options);
+        if (missing.Count > 0)
+            throw new ArgumentException($"Faltan en el appsettings del worker: {string.Join(", ", missing)}. " +
+                "Ejecuta scripts/Configurar-Claves.ps1 o completa appsettings.Local.json.");
     }
 
     private static bool IsEmpty(string? value) => string.IsNullOrWhiteSpace(value);
