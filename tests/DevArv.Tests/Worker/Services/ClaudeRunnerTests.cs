@@ -55,4 +55,24 @@ public class ClaudeRunnerTests
         Assert.Equal("3", env["DEVARV_TASK_ID"]);
         Assert.Equal("7", env["DEVARV_RUN_ID"]);
     }
+
+    [Fact]
+    public void EnvironmentPassesTheSubscriptionTokenAndDropsInheritedOnes()
+    {
+        var job = new AgentJob(
+            RunId: 8, TaskId: 4, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
+            BaseBranch: "master", WorkBranch: "sc-devarv-4-t", Prompt: "p", AppendSystemPrompt: null, Model: "opus",
+            PermissionMode: "acceptEdits", AllowedTools: [], DisallowedTools: [], MaxTurns: null,
+            ExtraArgs: [], PushChanges: true, TimeoutMinutes: 30, CommitMessage: "c", Attachments: []);
+        var options = new ClaudeOptions
+        {
+            OAuthToken = " sk-ant-oat01-settings ",
+            Environment = { ["ANTHROPIC_API_KEY"] = "otra", ["CLAUDE_CODE_OAUTH_TOKEN"] = "intruso" },
+        };
+
+        var env = ClaudeRunner.BuildEnvironment(options, job);
+
+        Assert.Equal("sk-ant-oat01-settings", env["CLAUDE_CODE_OAUTH_TOKEN"]);
+        Assert.DoesNotContain("ANTHROPIC_API_KEY", env.Keys);
+    }
 }

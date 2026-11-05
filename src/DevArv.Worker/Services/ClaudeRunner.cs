@@ -55,8 +55,8 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> options, ILogger<Claude
     }
 
     /// <summary>
-    /// Entorno del proceso de Claude. La única credencial es Worker:Claude:AnthropicApiKey del appsettings;
-    /// las credenciales que aparezcan en Worker:Claude:Environment se descartan.
+    /// Entorno del proceso de Claude. La única credencial es la del appsettings (Worker:Claude:OAuthToken o
+    /// Worker:Claude:AnthropicApiKey); las que aparezcan en Worker:Claude:Environment se descartan.
     /// </summary>
     internal static Dictionary<string, string> BuildEnvironment(ClaudeOptions options, AgentJob job)
     {
@@ -68,6 +68,8 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> options, ILogger<Claude
         env["DEVARV_RUN_ID"] = job.RunId.ToString();
         if (!string.IsNullOrWhiteSpace(options.AnthropicApiKey))
             env["ANTHROPIC_API_KEY"] = options.AnthropicApiKey.Trim();
+        if (!string.IsNullOrWhiteSpace(options.OAuthToken))
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = options.OAuthToken.Trim();
         return env;
     }
 
