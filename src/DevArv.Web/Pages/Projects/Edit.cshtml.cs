@@ -1,4 +1,3 @@
-using DevArv.Web.Helpers;
 using DevArv.Web.Repositories;
 using DevArv.Web.Services;
 using DevArv.Web.ViewModels;
@@ -27,25 +26,9 @@ public sealed class EditModel(ProjectsRepository projects, GitHubService github)
     public async Task<IActionResult> OnPostTestAsync(CancellationToken ct)
     {
         ModelState.Clear();
-        if (!GitHubRepositoryParser.TryParse(Input.Repository, out var owner, out var repo))
-        {
-            SetMessage("Formato de repositorio inválido. Usa owner/repo o https://github.com/owner/repo.", true);
-            return Page();
-        }
-        try
-        {
-            var details = await github.GetRepositoryAsync(owner, repo, ct);
-            var branches = await github.ListBranchesAsync(owner, repo, ct);
-            Input.Repository = details.FullName;
-            if (string.IsNullOrWhiteSpace(Input.DefaultBranch) || !branches.Contains(Input.DefaultBranch))
-                Input.DefaultBranch = details.DefaultBranch;
-            SetMessage($"✓ Conexión correcta con {details.FullName} ({(details.IsPrivate ? "privado" : "público")}). " +
-                       $"Ramas: {string.Join(", ", branches.Take(15))}{(branches.Count > 15 ? "…" : "")}", false);
-        }
-        catch (GitHubException ex)
-        {
-            SetMessage(ex.Message, true);
-        }
+        var result = await projects.TestConnectionAsync(Input, ct);
+        Message = result.Message;
+        MessageIsError = result.IsError;
         return Page();
     }
 
@@ -76,11 +59,5 @@ public sealed class EditModel(ProjectsRepository projects, GitHubService github)
     private void AddErrors(ValidationFailedException ex)
     {
         foreach (var (field, message) in ex.Errors) ModelState.AddModelError(field, message);
-    }
-
-    private void SetMessage(string message, bool isError)
-    {
-        Message = message;
-        MessageIsError = isError;
     }
 }

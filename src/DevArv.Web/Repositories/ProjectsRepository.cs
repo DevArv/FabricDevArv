@@ -1,12 +1,13 @@
 using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Helpers;
+using DevArv.Web.Services;
 using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Repositories;
 
-public class ProjectsRepository(AppDbContext db)
+public class ProjectsRepository(AppDbContext db, GitHubService github)
 {
     public Task<List<Project>> GetActiveAsync(CancellationToken ct) =>
         db.Projects.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync(ct);
@@ -35,6 +36,32 @@ public class ProjectsRepository(AppDbContext db)
                 Name = p.Name, Color = p.Color, Repository = p.RepoFullName, DefaultBranch = p.DefaultBranch,
                 BranchPrefix = p.BranchPrefix, AgentInstructions = p.AgentInstructions, IsActive = p.IsActive,
             };
+    }
+
+    /// <summary>
+    /// Prueba el acceso al repositorio de GitHub. Si la conexión es correcta normaliza <paramref name="record"/>:
+    /// el repositorio queda como «owner/repo» y, si la rama por defecto no existe, se usa la del repositorio.
+    /// </summary>
+    public async Task<ProjectConnectionTestViewModel> TestConnectionAsync(ProjectEditViewModel record, CancellationToken ct)
+    {
+        if (!GitHubRepositoryParser.TryParse(record.Repository, out var owner, out var repo))
+            return new ProjectConnectionTestViewModel(
+                "Formato de repositorio inválido. Usa owner/repo o https://github.com/owner/repo.", true);
+        try
+        {
+            var details = await github.GetRepositoryAsync(owner, repo, ct);
+            var branches = await github.ListBranchesAsync(owner, repo, ct);
+            record.Repository = details.FullName;
+            if (string.IsNullOrWhiteSpace(record.DefaultBranch) || !branches.Contains(record.DefaultBranch))
+                record.DefaultBranch = details.DefaultBranch;
+            return new ProjectConnectionTestViewModel(
+                $"✓ Conexión correcta con {details.FullName} ({(details.IsPrivate ? "privado" : "público")}). " +
+                $"Ramas: {string.Join(", ", branches.Take(15))}{(branches.Count > 15 ? "…" : "")}", false);
+        }
+        catch (GitHubException ex)
+        {
+            return new ProjectConnectionTestViewModel(ex.Message, true);
+        }
     }
 
     public void Validate(ProjectEditViewModel record)

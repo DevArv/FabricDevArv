@@ -10,7 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace DevArv.Web.Pages.Tasks;
 
 public sealed class CreateModel(
-    ProjectsRepository projects, WorkersRepository workers, TaskAttachmentsRepository attachments,
+    ProjectsRepository projects, WorkersRepository workers, TasksRepository tasks, TaskAttachmentsRepository attachments,
     WorkflowService workflow, UserManager<IdentityUser> users) : PageModel
 {
     [BindProperty] public TaskCreateViewModel Input { get; set; } = new();
@@ -23,12 +23,11 @@ public sealed class CreateModel(
 
     public async Task<IActionResult> OnGetAsync(int? projectId, CancellationToken ct)
     {
-        await LoadListsAsync(ct);
-        if (Projects.Count == 0) return Modal ? Content("<p class='empty'>Primero crea un proyecto en «Proyectos».</p>", "text/html") : RedirectToPage("/Projects/Edit");
+        var record = await tasks.NewCreateAsync(projectId, ct);
+        if (record is null) return Modal ? Content("<p class='empty'>Primero crea un proyecto en «Proyectos».</p>", "text/html") : RedirectToPage("/Projects/Edit");
 
-        var project = Projects.FirstOrDefault(p => p.Id == projectId) ?? Projects[0];
-        Input.ProjectId = project.Id;
-        Input.BaseBranch = project.DefaultBranch;
+        await LoadListsAsync(ct);
+        Input = record;
         return Page();
     }
 

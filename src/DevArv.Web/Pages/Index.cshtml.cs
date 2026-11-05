@@ -45,13 +45,9 @@ public sealed class IndexModel(
     /// <summary>Arrastrar y soltar una tarjeta en otra columna.</summary>
     public async Task<IActionResult> OnPostMoveAsync(int taskId, int stageId, CancellationToken ct)
     {
-        var task = await workflow.LoadTaskAsync(taskId, ct);
-        if (task is null) return NotFound();
-        // Soltar en la misma columna no hace nada (para re-ejecutar un agente se usa «Ejecutar de nuevo»).
-        if (task.StageId == stageId) return new JsonResult(new { ok = true });
         try
         {
-            await workflow.MoveAsync(task, stageId, User.Identity?.Name ?? "?", ct);
+            if (!await workflow.DropOnStageAsync(taskId, stageId, User.Identity?.Name ?? "?", ct)) return NotFound();
             return new JsonResult(new { ok = true });
         }
         catch (WorkflowException ex)

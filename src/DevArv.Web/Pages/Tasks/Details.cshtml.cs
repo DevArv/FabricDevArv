@@ -1,4 +1,3 @@
-using System.Text.Json;
 using DevArv.Contracts.Models;
 using DevArv.Web.DataModels;
 using DevArv.Web.Enums.Tasks;
@@ -12,18 +11,18 @@ using Microsoft.AspNetCore.Mvc;
 namespace DevArv.Web.Pages.Tasks;
 
 public sealed class DetailsModel(
-    TasksRepository tasks, StagesRepository stages, WorkersRepository workers, TaskAttachmentsRepository attachments,
-    WorkflowService workflow, Clock clock) : PageModel
+    TasksRepository tasks, TaskAttachmentsRepository attachments, WorkflowService workflow, Clock clock) : PageModel
 {
     [BindProperty(SupportsGet = true)] public int Id { get; set; }
     [BindProperty(SupportsGet = true)] public bool Modal { get; set; }
     [BindProperty(SupportsGet = true, Name = "run")] public long? RunId { get; set; }
 
-    public TaskItem Item { get; private set; } = null!;
-    public List<Stage> Stages { get; private set; } = [];
-    public List<WorkerNode> Workers { get; private set; } = [];
-    public TaskRun? SelectedRun { get; private set; }
-    public List<ChangedFile> SelectedRunFiles { get; private set; } = [];
+    public TaskDetailsViewModel Details { get; private set; } = null!;
+    public TaskItem Item => Details.Item;
+    public List<Stage> Stages => Details.Stages;
+    public List<WorkerNode> Workers => Details.Workers;
+    public TaskRun? SelectedRun => Details.SelectedRun;
+    public List<ChangedFile> SelectedRunFiles => Details.SelectedRunFiles;
     public Clock Clock => clock;
     public string? Error => TempData["Error"] as string;
     public string? Notice => TempData["Notice"] as string;
@@ -39,7 +38,9 @@ public sealed class DetailsModel(
 
     public async Task<IActionResult> OnGetAsync(CancellationToken ct)
     {
-        if (!await LoadAsync(ct)) return NotFound();
+        var details = await tasks.GetDetailsViewAsync(Id, RunId, ct);
+        if (details is null) return NotFound();
+        Details = details;
         if (Modal) ViewData["Modal"] = true;
         return Page();
     }
@@ -80,12 +81,8 @@ public sealed class DetailsModel(
     public Task<IActionResult> OnPostArchiveAsync(bool archived, CancellationToken ct) =>
         ActAsync(t => workflow.SetArchivedAsync(t, archived, Actor, ct), archived ? "Tarea archivada." : "Tarea restaurada.", ct);
 
-    public Task<IActionResult> OnPostUpdateAsync(
-        Priority priority, Complexity complexity, string? labels, string? modelOverride, int? preferredWorkerId,
-        string? title, string? description, CancellationToken ct) =>
-        ActAsync(t => tasks.UpdateAsync(
-            t, new TaskUpdateViewModel(priority, complexity, labels, modelOverride, preferredWorkerId, title, description), Actor, ct),
-            "Cambios guardados.", ct);
+    public Task<IActionResult> OnPostUpdateAsync(TaskUpdateViewModel input, CancellationToken ct) =>
+        ActAsync(t => tasks.UpdateAsync(t, input, Actor, ct), "Cambios guardados.", ct);
 
     public Task<IActionResult> OnPostUploadAsync(List<IFormFile> files, CancellationToken ct) =>
         ActAsync(t => attachments.AddAsync(t.Id, files, Actor, ct), "Archivos adjuntados.", ct);
@@ -129,23 +126,6 @@ public sealed class DetailsModel(
             .ToDictionary(kv => kv.Key, kv => (string?)kv.Value.ToString());
         keep["task"] = Id.ToString();
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("", keep);
-    }
-
-    private async Task<bool> LoadAsync(CancellationToken ct)
-    {
-        var task = await tasks.GetDetailsAsync(Id, ct);
-        if (task is null) return false;
-
-        Item = task;
-        Stages = await stages.GetAllAsync(ct);
-        Workers = await workers.GetEnabledAsync(ct);
-        SelectedRun = task.Runs.FirstOrDefault(r => r.Id == RunId) ?? task.Runs.FirstOrDefault();
-        if (SelectedRun?.ChangedFilesJson is { } json)
-        {
-            try { SelectedRunFiles = JsonSerializer.Deserialize<List<ChangedFile>>(json) ?? []; }
-            catch (JsonException) { SelectedRunFiles = []; }
-        }
-        return true;
     }
 
     public string HandlerUrl(string handler) => $"/Tasks/Details/{Id}?handler={handler}&modal={(Modal ? "true" : "false")}";

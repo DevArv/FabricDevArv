@@ -29,9 +29,9 @@
 }
 
 <form method="post" asp-page-handler="Create" class="inline add-worker">
-    <input asp-for="NewName" placeholder="Nombre de la PC (ej. agents-vm)" required />
+    <input asp-for="Input.Name" placeholder="Nombre de la PC (ej. agents-vm)" required />
     <button class="btn btn-primary">+ Registrar PC</button>
-    <span asp-validation-for="NewName" class="validation"></span>
+    <span asp-validation-for="Input.Name" class="validation"></span>
 </form>
 
 <table class="table">
