@@ -32,6 +32,11 @@ public class Stage
     public string? ExtraArgs { get; set; }
     public string? PromptTemplate { get; set; }
     public string? AppendSystemPrompt { get; set; }
+    /// <summary>
+    /// Skill de Claude Code con el que el agente aplica la etapa (p. ej. <c>revision</c>, en
+    /// <c>.claude/skills/revision/SKILL.md</c> del repositorio). Nulo si no usa skill.
+    /// </summary>
+    public string? Skill { get; set; }
     /// <summary>Si es true el worker hace commit y push de los cambios al terminar.</summary>
     public bool PushChanges { get; set; }
     /// <summary>Si es true el agente debe terminar con "VEREDICTO: APROBADO/RECHAZADO".</summary>

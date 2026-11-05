@@ -26,7 +26,8 @@
                     @if (s.Kind == StageKind.Agent)
                     {
                         <text> · modelo <code>@(s.Model ?? "por defecto")</code> · permisos <code>@s.PermissionMode</code>
-                        @(s.PushChanges ? " · hace commit y push" : "")@(s.RequiresDecision ? " · emite veredicto" : "") · máx. @s.TimeoutMinutes min</text>
+                        @(s.PushChanges ? " · hace commit y push" : "")@(s.RequiresDecision ? " · emite veredicto" : "")
+                        @if (!string.IsNullOrWhiteSpace(s.Skill)) { <text> · skill <code>@s.Skill</code></text> } · máx. @s.TimeoutMinutes min</text>
                     }
                     @if (s.Kind == StageKind.System) { <text> · @Labels.Of(s.SystemAction)</text> }
                 </div>

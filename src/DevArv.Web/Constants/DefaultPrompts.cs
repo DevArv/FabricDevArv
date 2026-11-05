@@ -4,10 +4,14 @@ namespace DevArv.Web.Constants;
 /// Plantillas por defecto de los agentes. Se editan desde la pantalla "Flujo".
 /// Variables disponibles: {{task.id}} {{task.title}} {{task.description}} {{task.priority}}
 /// {{task.complexity}} {{task.labels}} {{project.name}} {{repo}} {{baseBranch}} {{workBranch}}
-/// {{attachments}} {{feedback}}
+/// {{attachments}} {{feedback}} {{skill}}
 /// </summary>
 public static class DefaultPrompts
 {
+    /// <summary>Skill con el que revisa el Revisor de Código por defecto (<c>.claude/skills/revision</c>, como en ShopyCube).</summary>
+    public const string ReviewerSkill = "revision";
+
+
     public const string Developer = """
         Eres el agente **Desarrollador** de DevArv. Trabajas en el repositorio {{repo}} (proyecto {{project.name}}),
         en la rama `{{workBranch}}`, que parte de `{{baseBranch}}`.
@@ -42,6 +46,8 @@ public static class DefaultPrompts
         {{attachments}}
 
         {{feedback}}
+
+        {{skill}}
 
         ## Cómo revisar
         - Usa `git diff origin/{{baseBranch}}...HEAD`, `git log origin/{{baseBranch}}..HEAD` y lee los archivos necesarios.

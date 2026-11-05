@@ -38,7 +38,7 @@ public class StagesRepository(AppDbContext db)
                 SuccessStageId = s.SuccessStageId, RejectStageId = s.RejectStageId, Model = s.Model,
                 PermissionMode = s.PermissionMode, AllowedTools = s.AllowedTools, DisallowedTools = s.DisallowedTools,
                 MaxTurns = s.MaxTurns, ExtraArgs = s.ExtraArgs, PromptTemplate = s.PromptTemplate,
-                AppendSystemPrompt = s.AppendSystemPrompt, PushChanges = s.PushChanges,
+                AppendSystemPrompt = s.AppendSystemPrompt, Skill = s.Skill, PushChanges = s.PushChanges,
                 RequiresDecision = s.RequiresDecision, TimeoutMinutes = s.TimeoutMinutes, SystemAction = s.SystemAction,
             };
     }
@@ -101,6 +101,7 @@ public class StagesRepository(AppDbContext db)
         stage.ExtraArgs = record.ExtraArgs;
         stage.PromptTemplate = record.PromptTemplate;
         stage.AppendSystemPrompt = record.AppendSystemPrompt;
+        stage.Skill = record.Kind == StageKind.Agent ? NormalizeSkill(record.Skill) : null;
         stage.PushChanges = record.Kind == StageKind.Agent && record.PushChanges;
         stage.RequiresDecision = record.Kind == StageKind.Agent && record.RequiresDecision;
         stage.TimeoutMinutes = record.TimeoutMinutes;
@@ -146,6 +147,13 @@ public class StagesRepository(AppDbContext db)
         if (stage is null) return;
         db.Stages.Remove(stage);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Nombre del skill sin espacios ni la barra de <c>/revision</c>; nulo si está vacío.</summary>
+    private static string? NormalizeSkill(string? skill)
+    {
+        var name = (skill ?? "").Trim().TrimStart('/').Trim();
+        return name.Length == 0 ? null : name;
     }
 
     private static IEnumerable<string> Lines(string? text) =>
