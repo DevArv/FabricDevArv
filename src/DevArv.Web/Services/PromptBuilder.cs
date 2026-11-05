@@ -33,7 +33,12 @@ public sealed class PromptBuilder(Clock clock)
             ["workBranch"] = task.WorkBranch ?? "",
             ["attachments"] = BuildAttachments(task),
             ["feedback"] = BuildFeedback(task),
+            ["skill"] = BuildSkill(stage),
         };
+
+        // Las plantillas anteriores a {{skill}} (ya guardadas en la base) reciben el bloque al final.
+        if (!template.Contains("{{skill}}") && values["skill"].Length > 0)
+            template = template.TrimEnd() + "\n\n{{skill}}";
 
         var sb = new StringBuilder(template);
         foreach (var (key, value) in values)
@@ -48,6 +53,36 @@ public sealed class PromptBuilder(Clock clock)
             .Select(p => p!.Trim())
             .ToList();
         return parts.Count == 0 ? null : string.Join("\n\n", parts);
+    }
+
+    /// <summary>
+    /// Herramientas permitidas de la etapa (una por línea en la columna). Si la etapa usa un skill, agrega
+    /// <c>Skill(nombre)</c> para que el agente pueda invocarlo sin pedir permiso en modo no interactivo.
+    /// </summary>
+    public static List<string> BuildAllowedTools(Stage stage)
+    {
+        var tools = (stage.AllowedTools ?? "")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        if (string.IsNullOrWhiteSpace(stage.Skill)) return tools;
+
+        var skillTool = $"Skill({stage.Skill.Trim()})";
+        if (!tools.Contains("Skill") && !tools.Contains(skillTool)) tools.Add(skillTool);
+        return tools;
+    }
+
+    private static string BuildSkill(Stage stage)
+    {
+        if (string.IsNullOrWhiteSpace(stage.Skill)) return "";
+        var name = stage.Skill.Trim();
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Skill `{name}`");
+        sb.AppendLine($"Aplica esta etapa con el skill `{name}` del repositorio: antes de empezar, invócalo con la herramienta "
+                      + $"Skill (equivale a `/{name}`) y sigue sus pautas y su checklist.");
+        sb.AppendLine("Si el skill no está disponible en este repositorio, dilo en tu respuesta y continúa con las pautas de este prompt.");
+        sb.AppendLine("Si el skill pide otro formato de respuesta, el formato de este prompt tiene prioridad "
+                      + "(en especial la línea final de VEREDICTO, si se pide).");
+        return sb.ToString();
     }
 
     private static string BuildAttachments(TaskItem task)

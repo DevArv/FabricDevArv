@@ -55,6 +55,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.Property(s => s.Icon).HasMaxLength(16);
             b.Property(s => s.Model).HasMaxLength(100);
             b.Property(s => s.PermissionMode).HasMaxLength(32);
+            b.Property(s => s.Skill).HasMaxLength(100);
             b.HasOne<Stage>().WithMany().HasForeignKey(s => s.SuccessStageId).OnDelete(DeleteBehavior.SetNull);
             b.HasOne<Stage>().WithMany().HasForeignKey(s => s.RejectStageId).OnDelete(DeleteBehavior.SetNull);
             b.HasIndex(s => s.Order);

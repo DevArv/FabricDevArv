@@ -72,7 +72,7 @@ public static class WorkerApi
             AppendSystemPrompt: PromptBuilder.BuildSystemAppend(task, stage),
             Model: run.Model,
             PermissionMode: string.IsNullOrWhiteSpace(stage.PermissionMode) ? "default" : stage.PermissionMode,
-            AllowedTools: Lines(stage.AllowedTools),
+            AllowedTools: PromptBuilder.BuildAllowedTools(stage),
             DisallowedTools: Lines(stage.DisallowedTools),
             MaxTurns: stage.MaxTurns,
             ExtraArgs: Lines(stage.ExtraArgs),

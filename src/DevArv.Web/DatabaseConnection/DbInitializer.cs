@@ -26,6 +26,8 @@ public static class DbInitializer
             await db.Database.EnsureCreatedAsync(ct);
         }
 
+        await AddStageSkillColumnAsync(db, ct);
+
         if (!await db.Stages.AnyAsync(ct))
         {
             await SeedDefaultWorkflowAsync(db, ct);
@@ -48,6 +50,27 @@ public static class DbInitializer
         }
     }
 
+    /// <summary>
+    /// Bases creadas antes de existir <see cref="Stage.Skill"/> (EnsureCreated no altera tablas existentes):
+    /// agrega la columna y, sólo esa vez, asigna el skill de revisión a las etapas de agente con veredicto.
+    /// No hace nada si la columna ya existe.
+    /// </summary>
+    private static Task AddStageSkillColumnAsync(AppDbContext db, CancellationToken ct) =>
+        db.Database.ExecuteSqlRawAsync(AddStageSkillColumnSql, ct);
+
+    // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
+    private const string AddStageSkillColumnSql = $"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'Stages' AND column_name = 'Skill') THEN
+                ALTER TABLE "Stages" ADD COLUMN "Skill" character varying(100) NULL;
+                UPDATE "Stages" SET "Skill" = '{DefaultPrompts.ReviewerSkill}'
+                WHERE "Kind" = 'Agent' AND "RequiresDecision";
+            END IF;
+        END $$;
+        """;
+
     public static async Task SeedDefaultWorkflowAsync(AppDbContext db, CancellationToken ct)
     {
         var backlog = new Stage { Name = "Backlog", Icon = "📥", Kind = StageKind.Manual, IsInitial = true,
@@ -68,7 +91,7 @@ public static class DbInitializer
             Name = "Revisor de Código", Icon = "🔍", Kind = StageKind.Agent, Model = "sonnet",
             PermissionMode = "default", AllowedTools = DefaultPrompts.ReviewerAllowedTools,
             DisallowedTools = DefaultPrompts.ReviewerDisallowedTools, PromptTemplate = DefaultPrompts.Reviewer,
-            RequiresDecision = true, TimeoutMinutes = 30,
+            Skill = DefaultPrompts.ReviewerSkill, RequiresDecision = true, TimeoutMinutes = 30,
             Description = "Claude revisa el diff y aprueba o devuelve al desarrollador.",
         };
         var prCreator = new Stage { Name = "Creador de PR", Icon = "🔀", Kind = StageKind.System,

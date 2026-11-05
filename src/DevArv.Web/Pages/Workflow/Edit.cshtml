@@ -82,6 +82,14 @@
                 <label class="check"><input asp-for="Input.RequiresDecision" /> Debe emitir veredicto APROBADO/RECHAZADO (revisor)</label>
                 <label>Máx. turnos (opcional) <input asp-for="Input.MaxTurns" type="number" min="1" max="500" /></label>
             </div>
+            <label>Skill (opcional)
+                <input asp-for="Input.Skill" list="skills-w" placeholder="revision" class="mono" />
+                <datalist id="skills-w"><option value="@DefaultPrompts.ReviewerSkill"></option></datalist>
+                <small>Skill de Claude Code del repositorio del proyecto (<code>.claude/skills/&lt;nombre&gt;/SKILL.md</code>) con el que
+                    el agente aplica la etapa; p. ej. <code>revision</code> para el revisor. Se agrega
+                    <code>Skill(&lt;nombre&gt;)</code> a las herramientas permitidas y las instrucciones van en <code>{{skill}}</code>
+                    (o al final del prompt si la plantilla no lo incluye).</small>
+            </label>
             <div class="grid-2">
                 <label>Herramientas permitidas (una por línea)
                     <textarea asp-for="Input.AllowedTools" rows="8" class="mono"></textarea>
@@ -96,7 +104,7 @@
                 <textarea asp-for="Input.PromptTemplate" rows="18" class="mono"></textarea>
                 <small>Variables: <code>{{task.id}}</code> <code>{{task.title}}</code> <code>{{task.description}}</code> <code>{{task.priority}}</code>
                     <code>{{task.complexity}}</code> <code>{{task.labels}}</code> <code>{{project.name}}</code> <code>{{repo}}</code>
-                    <code>{{baseBranch}}</code> <code>{{workBranch}}</code> <code>{{attachments}}</code> <code>{{feedback}}</code></small>
+                    <code>{{baseBranch}}</code> <code>{{workBranch}}</code> <code>{{attachments}}</code> <code>{{feedback}}</code> <code>{{skill}}</code></small>
             </label>
             <label>Texto extra para el system prompt (opcional)
                 <textarea asp-for="Input.AppendSystemPrompt" rows="4" class="mono"></textarea>

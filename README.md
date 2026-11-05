@@ -38,6 +38,12 @@ Al crear una tarea puedes marcar «Enviar directo al agente desarrollador» para
 Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador en su siguiente prompt.
 **Pedir cambios** (humano) funciona igual: el texto se inyecta en el prompt del agente.
 
+**Skill de la etapa:** cada columna de agente puede indicar un *skill* de Claude Code (campo **Skill** en **Flujo**).
+El Revisor de Código usa por defecto `revision`, el mismo skill de ShopyCube (`.claude/skills/revision/SKILL.md` en el
+repositorio del proyecto). El servidor agrega `Skill(<nombre>)` a las herramientas permitidas y pone en el prompt la
+instrucción de invocarlo (variable `{{skill}}`, o al final si la plantilla no la usa). Si el repositorio no tiene ese
+skill, el agente lo dice y revisa con las pautas del prompt; el formato de `VEREDICTO` siempre manda.
+
 ## Guía de configuración paso a paso
 
 DevArv tiene dos aplicaciones que se configuran por separado:
