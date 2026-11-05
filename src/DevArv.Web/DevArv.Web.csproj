@@ -23,6 +23,6 @@
   </ItemGroup>
   <ItemGroup>
     <!-- Plantilla de referencia: no se copia a la salida ni al publish. -->
-    <Content Update="appsettings.Local.example.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="appsettings.Development.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>
