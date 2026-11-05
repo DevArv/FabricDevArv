@@ -178,6 +178,56 @@ public sealed class WorkflowService(AppDbContext db, AttachmentStorage storage, 
         await db.SaveChangesAsync(ct);
     }
 
+    // ------------------------------------------------------------------ merge del pull request
+
+    /// <summary>
+    /// Pull requests a vigilar: tareas activas con PR aún no integrado que están antes de la columna destino del merge
+    /// (<see cref="Stage.IsMergeDestination"/>). Vacío si ninguna columna está marcada.
+    /// </summary>
+    public async Task<List<WatchedPullRequest>> GetPullRequestsToWatchAsync(CancellationToken ct)
+    {
+        var destination = await GetMergeDestinationAsync(ct);
+        if (destination is null) return [];
+
+        var tasks = await db.Tasks.AsNoTracking()
+            .Include(t => t.Stage).Include(t => t.Project)
+            .Where(t => t.ArchivedAt == null && t.PullRequestNumber != null && t.PullRequestMergedAt == null
+                        && t.Project.IsActive)
+            .ToListAsync(ct);
+
+        return tasks
+            .Where(t => MergedPullRequestRule.ShouldMove(t.Stage, destination))
+            .Select(t => new WatchedPullRequest(t.Id, t.Project.RepoOwner, t.Project.RepoName, t.PullRequestNumber!.Value))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Registra que el pull request <paramref name="number"/> de la tarea se integró y, si la tarea sigue antes de la
+    /// columna destino del merge, la hace entrar a ella. No hace nada si la tarea ya cambió de pull request.
+    /// </summary>
+    public async Task OnPullRequestMergedAsync(int taskId, int number, string actor, CancellationToken ct)
+    {
+        var task = await LoadTaskAsync(taskId, ct);
+        if (task is null || task.PullRequestNumber != number || task.PullRequestMergedAt is not null) return;
+
+        task.PullRequestMergedAt = DateTimeOffset.UtcNow;
+        var destination = await GetMergeDestinationAsync(ct);
+        if (destination is not null && task.ArchivedAt is null && MergedPullRequestRule.ShouldMove(task.Stage, destination))
+        {
+            await EnterStageAsync(task, destination, actor,
+                $"Se hizo merge del pull request #{number} en GitHub → «{destination.Name}»", ct);
+        }
+        else
+        {
+            task.UpdatedAt = DateTimeOffset.UtcNow;
+            AddEvent(task.Id, actor, $"Se hizo merge del pull request #{number} en GitHub");
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    private Task<Stage?> GetMergeDestinationAsync(CancellationToken ct) =>
+        db.Stages.Where(s => s.IsMergeDestination).OrderBy(s => s.Order).FirstOrDefaultAsync(ct);
+
     // ------------------------------------------------------------------ motor
 
     /// <summary>Coloca la tarea en una columna y, si es automática, encola una ejecución. No guarda.</summary>

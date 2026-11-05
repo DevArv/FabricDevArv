@@ -10,6 +10,7 @@ public sealed class StageEditViewModel
     public StageKind Kind { get; set; } = StageKind.Manual;
     [MaxLength(500)] public string? Description { get; set; }
     public bool IsInitial { get; set; }
+    public bool IsMergeDestination { get; set; }
     public int? SuccessStageId { get; set; }
     public int? RejectStageId { get; set; }
 

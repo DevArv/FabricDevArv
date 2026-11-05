@@ -20,6 +20,8 @@ public class TaskItem
     public string? WorkBranch { get; set; }
     public int? PullRequestNumber { get; set; }
     public string? PullRequestUrl { get; set; }
+    /// <summary>Cuándo DevArv detectó (o hizo) el merge del pull request actual; nulo si sigue sin integrarse.</summary>
+    public DateTimeOffset? PullRequestMergedAt { get; set; }
 
     /// <summary>Si se define, sólo este worker (PC) puede ejecutar las etapas de agente.</summary>
     public int? PreferredWorkerId { get; set; }

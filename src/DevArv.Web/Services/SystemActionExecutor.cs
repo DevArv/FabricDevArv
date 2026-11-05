@@ -53,6 +53,7 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
 
         task.PullRequestNumber = pr.Number;
         task.PullRequestUrl = pr.HtmlUrl;
+        task.PullRequestMergedAt = null;
         return Success(open is null ? $"Pull request creado: {pr.HtmlUrl}" : $"Se reutilizó el pull request abierto: {pr.HtmlUrl}");
     }
 
@@ -62,8 +63,14 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
             return Failure("La tarea no tiene pull request para hacer merge.");
         var p = task.Project;
         var pr = await github.GetPullRequestAsync(p.RepoOwner, p.RepoName, number, ct);
-        if (pr.Merged) return Success($"El pull request #{number} ya estaba integrado.");
+        // La columna de merge ya decide el destino (su ✓); se marca para que el orquestador no la mueva otra vez.
+        if (pr.Merged)
+        {
+            task.PullRequestMergedAt ??= DateTimeOffset.UtcNow;
+            return Success($"El pull request #{number} ya estaba integrado.");
+        }
         await github.MergePullRequestAsync(p.RepoOwner, p.RepoName, number, $"#{task.Id} {task.Title}", ct);
+        task.PullRequestMergedAt = DateTimeOffset.UtcNow;
         return Success($"Merge (squash) del pull request #{number} realizado.");
     }
 

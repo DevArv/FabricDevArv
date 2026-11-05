@@ -13,6 +13,11 @@ public class Stage
     public string? Description { get; set; }
     /// <summary>Columna donde nacen las tareas nuevas.</summary>
     public bool IsInitial { get; set; }
+    /// <summary>
+    /// Columna a la que entra automáticamente una tarea cuando se hace merge de su pull request en GitHub
+    /// (por defecto «Pendiente Deploy»). Sólo una columna puede tenerla marcada.
+    /// </summary>
+    public bool IsMergeDestination { get; set; }
 
     /// <summary>Destino cuando la etapa termina bien / se aprueba (✓).</summary>
     public int? SuccessStageId { get; set; }
