@@ -3,6 +3,7 @@ using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Enums.Runs;
 using DevArv.Web.Enums.Workflow;
+using DevArv.Web.Helpers;
 using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Services;
@@ -48,7 +49,7 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
         var open = await github.FindOpenPullRequestAsync(p.RepoOwner, p.RepoName, task.WorkBranch, ct);
         var pr = open ?? await github.CreatePullRequestAsync(
             p.RepoOwner, p.RepoName, task.WorkBranch, task.BaseBranch,
-            $"#{task.Id} {task.Title}", await BuildBodyAsync(task, ct), ct);
+            PullRequestTitle.FromBranch(task.WorkBranch), await BuildBodyAsync(task, ct), ct);
 
         task.PullRequestNumber = pr.Number;
         task.PullRequestUrl = pr.HtmlUrl;
