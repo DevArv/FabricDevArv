@@ -1,4 +1,6 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using DevArv.Contracts.Models;
 using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Enums.Tasks;
@@ -55,8 +57,49 @@ public class TasksRepository(AppDbContext db)
         };
     }
 
+    /// <summary>
+    /// Formulario de nueva tarea con el proyecto activo indicado (o el primero por nombre) y su rama por defecto.
+    /// Devuelve null si no hay proyectos activos.
+    /// </summary>
+    public async Task<TaskCreateViewModel?> NewCreateAsync(int? projectId, CancellationToken ct)
+    {
+        var active = db.Projects.AsNoTracking().Where(p => p.IsActive);
+        var project = (projectId is null ? null : await active.FirstOrDefaultAsync(p => p.Id == projectId, ct))
+                      ?? await active.OrderBy(p => p.Name).FirstOrDefaultAsync(ct);
+        return project is null
+            ? null
+            : new TaskCreateViewModel { ProjectId = project.Id, BaseBranch = project.DefaultBranch };
+    }
+
+    /// <summary>
+    /// Pantalla de detalle: la tarea, las columnas, las PCs habilitadas y la ejecución elegida
+    /// (<paramref name="runId"/> o la más reciente) con sus archivos cambiados. Devuelve null si la tarea no existe.
+    /// </summary>
+    public async Task<TaskDetailsViewModel?> GetDetailsViewAsync(int id, long? runId, CancellationToken ct)
+    {
+        var task = await GetDetailsAsync(id, ct);
+        if (task is null) return null;
+
+        var selectedRun = task.Runs.FirstOrDefault(r => r.Id == runId) ?? task.Runs.FirstOrDefault();
+        return new TaskDetailsViewModel
+        {
+            Item = task,
+            Stages = await db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(ct),
+            Workers = await db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(ct),
+            SelectedRun = selectedRun,
+            SelectedRunFiles = ParseChangedFiles(selectedRun?.ChangedFilesJson),
+        };
+    }
+
+    private static List<ChangedFile> ParseChangedFiles(string? json)
+    {
+        if (json is null) return [];
+        try { return JsonSerializer.Deserialize<List<ChangedFile>>(json) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
     /// <summary>Tarea con todo su detalle (proyecto, columna, adjuntos, comentarios, eventos y ejecuciones más recientes primero).</summary>
-    public async Task<TaskItem?> GetDetailsAsync(int id, CancellationToken ct)
+    private async Task<TaskItem?> GetDetailsAsync(int id, CancellationToken ct)
     {
         var task = await db.Tasks
             .Include(t => t.Project)

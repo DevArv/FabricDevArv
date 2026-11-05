@@ -94,6 +94,18 @@ public sealed class WorkflowService(AppDbContext db, AttachmentStorage storage, 
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Arrastrar y soltar una tarjeta del tablero. Soltarla en su misma columna no hace nada
+    /// (para re-ejecutar un agente se usa «Ejecutar de nuevo»). Devuelve false si la tarea no existe.
+    /// </summary>
+    public async Task<bool> DropOnStageAsync(int taskId, int stageId, string actor, CancellationToken ct)
+    {
+        var task = await LoadTaskAsync(taskId, ct);
+        if (task is null) return false;
+        if (task.StageId != stageId) await MoveAsync(task, stageId, actor, ct);
+        return true;
+    }
+
     public async Task ApproveAsync(TaskItem task, string actor, CancellationToken ct)
     {
         if (task.Stage.Kind is not (StageKind.HumanApproval or StageKind.Manual))

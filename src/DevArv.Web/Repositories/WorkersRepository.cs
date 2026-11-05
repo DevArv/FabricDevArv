@@ -2,6 +2,7 @@ using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Enums.Runs;
 using DevArv.Web.Helpers;
+using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Repositories;
@@ -28,20 +29,20 @@ public class WorkersRepository(AppDbContext db)
     }
 
     /// <summary>Registra una PC y devuelve su API key en claro (única vez que se conoce).</summary>
-    public async Task<string> InsertAsync(string name, CancellationToken ct)
+    public async Task<WorkerKeyViewModel> InsertAsync(WorkerCreateViewModel record, CancellationToken ct)
     {
-        name = name.Trim();
+        var name = record.Name.Trim();
         if (await db.Workers.AnyAsync(w => w.Name == name, ct))
-            throw new ValidationFailedException(nameof(name), $"Ya existe una PC llamada «{name}».");
+            throw new ValidationFailedException("Input.Name", $"Ya existe una PC llamada «{name}».");
 
         var key = ApiKeys.Generate();
         db.Workers.Add(new WorkerNode { Name = name, KeyHash = ApiKeys.Hash(key), KeyPrefix = key[..10] });
         await db.SaveChangesAsync(ct);
-        return key;
+        return new WorkerKeyViewModel(name, key);
     }
 
     /// <summary>Genera una API key nueva. Devuelve null si la PC no existe.</summary>
-    public async Task<(string Name, string Key)?> RegenerateKeyAsync(int id, CancellationToken ct)
+    public async Task<WorkerKeyViewModel?> RegenerateKeyAsync(int id, CancellationToken ct)
     {
         var worker = await db.Workers.FindAsync([id], ct);
         if (worker is null) return null;
@@ -49,7 +50,7 @@ public class WorkersRepository(AppDbContext db)
         worker.KeyHash = ApiKeys.Hash(key);
         worker.KeyPrefix = key[..10];
         await db.SaveChangesAsync(ct);
-        return (worker.Name, key);
+        return new WorkerKeyViewModel(worker.Name, key);
     }
 
     public async Task<bool> ToggleEnabledAsync(int id, CancellationToken ct)

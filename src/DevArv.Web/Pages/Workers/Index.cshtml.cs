@@ -1,6 +1,6 @@
-using System.ComponentModel.DataAnnotations;
 using DevArv.Web.DataModels;
 using DevArv.Web.Repositories;
+using DevArv.Web.ViewModels;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,9 +11,7 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
     public List<WorkerNode> Workers { get; private set; } = [];
     public Dictionary<int, string> CurrentRuns { get; private set; } = [];
 
-    [BindProperty, Required(ErrorMessage = "Escribe un nombre."), MaxLength(100)]
-    [RegularExpression(@"^[A-Za-z0-9._\-]+$", ErrorMessage = "Usa letras, números, punto, guion o guion bajo.")]
-    public string NewName { get; set; } = "";
+    [BindProperty] public WorkerCreateViewModel Input { get; set; } = new();
 
     [TempData] public string? NewKey { get; set; }
     [TempData] public string? NewKeyWorker { get; set; }
@@ -30,8 +28,7 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
         }
         try
         {
-            NewKey = await workers.InsertAsync(NewName, ct);
-            NewKeyWorker = NewName.Trim();
+            ShowKey(await workers.InsertAsync(Input, ct));
         }
         catch (ValidationFailedException ex)
         {
@@ -44,7 +41,7 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
     {
         var result = await workers.RegenerateKeyAsync(id, ct);
         if (result is null) return NotFound();
-        (NewKeyWorker, NewKey) = result.Value;
+        ShowKey(result);
         return RedirectToPage();
     }
 
@@ -65,6 +62,12 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
             Error = ex.Message;
         }
         return RedirectToPage();
+    }
+
+    private void ShowKey(WorkerKeyViewModel result)
+    {
+        NewKeyWorker = result.WorkerName;
+        NewKey = result.Key;
     }
 
     private async Task LoadAsync(CancellationToken ct)
