@@ -2,7 +2,6 @@ namespace DevArv.Worker.Models;
 
 public sealed class WorkerOptions
 {
-    public ServerOptions Server { get; set; } = new();
     public WorkspaceOptions Workspace { get; set; } = new();
     public ClaudeOptions Claude { get; set; } = new();
     public GitOptions Git { get; set; } = new();

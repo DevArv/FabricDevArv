@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <RootNamespace>DevArv.Web</RootNamespace>
-    <UserSecretsId>devarv-web-6b1f3e0a</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,5 +20,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="DevArv.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Plantilla de referencia: no se copia a la salida ni al publish. -->
+    <Content Update="appsettings.Development.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

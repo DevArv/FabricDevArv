@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
   <PropertyGroup>
     <RootNamespace>DevArv.Worker</RootNamespace>
-    <UserSecretsId>devarv-worker-91d2c7b4</UserSecretsId>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
 
@@ -18,5 +17,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="DevArv.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Plantilla de referencia: no se copia a la salida ni al publish. -->
+    <Content Update="appsettings.Local.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

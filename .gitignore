@@ -654,3 +654,5 @@ src/DevArv.Web/wwwroot/js/**/*.js.map
 
 # Local-only configuration
 appsettings.Development.json
+appsettings.Local.json
+.env

@@ -97,7 +97,7 @@ public sealed class GitHubService
     {
         if (!IsConfigured)
             throw new GitHubException(HttpStatusCode.Unauthorized,
-                "Falta configurar GitHub:Token en el servidor (user-secrets o variable de entorno GitHub__Token).");
+                "Falta configurar GitHub:Token en el appsettings del servidor (appsettings.Local.json).");
 
         using var request = new HttpRequestMessage(method, url);
         if (payload is not null) request.Content = JsonContent.Create(payload);

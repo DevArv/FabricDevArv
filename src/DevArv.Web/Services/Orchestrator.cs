@@ -22,6 +22,13 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
         // Pequeña espera para que la base de datos termine de inicializarse.
         await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
 
+        using (var scope = scopes.CreateScope())
+        {
+            if (!scope.ServiceProvider.GetRequiredService<GitHubService>().IsConfigured)
+                logger.LogWarning("GitHub:Token no está configurado: no se podrán conectar repositorios ni abrir pull requests. " +
+                    "Defínelo en el appsettings del servidor (appsettings.Local.json).");
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

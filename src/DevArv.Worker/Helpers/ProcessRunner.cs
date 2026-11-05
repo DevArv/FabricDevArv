@@ -28,6 +28,7 @@ public static class ProcessRunner
         };
         if (spec.RawArguments is not null) psi.Arguments = spec.RawArguments;
         else foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
+        foreach (var key in spec.RemovedEnvironment) psi.Environment.Remove(key);
         foreach (var (key, value) in spec.Environment) psi.Environment[key] = value;
 
         using var process = new Process { StartInfo = psi };
