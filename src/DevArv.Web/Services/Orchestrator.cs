@@ -9,13 +9,16 @@ namespace DevArv.Web.Services;
 /// <summary>
 /// Proceso en segundo plano del servidor:
 /// 1) ejecuta las columnas de sistema (crear PR, merge) y
-/// 2) marca como fallidas las ejecuciones de workers que dejaron de responder o excedieron su tiempo.
+/// 2) marca como fallidas las ejecuciones de workers que dejaron de responder o excedieron su tiempo y
+/// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub.
 /// </summary>
 public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrator> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan WorkerSilence = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan MergeCheckInterval = TimeSpan.FromMinutes(1);
     private DateTimeOffset _lastWatchdog = DateTimeOffset.MinValue;
+    private DateTimeOffset _lastMergeCheck = DateTimeOffset.MinValue;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -38,6 +41,11 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
                 {
                     await WatchdogAsync(stoppingToken);
                     _lastWatchdog = DateTimeOffset.UtcNow;
+                }
+                if (DateTimeOffset.UtcNow - _lastMergeCheck > MergeCheckInterval)
+                {
+                    _lastMergeCheck = DateTimeOffset.UtcNow;
+                    await MoveMergedPullRequestsAsync(stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -75,6 +83,35 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
                 completion = SystemActionExecutor.Failure(ex.Message);
             }
             await workflow.CompleteRunAsync(run.Id, completion, "Sistema", ct);
+        }
+    }
+
+    /// <summary>
+    /// Consulta en GitHub los pull requests abiertos de las tareas y, si alguno se integró (merge),
+    /// hace entrar la tarea a la columna marcada como destino del merge (por defecto «Pendiente Deploy»).
+    /// </summary>
+    private async Task MoveMergedPullRequestsAsync(CancellationToken ct)
+    {
+        using var scope = scopes.CreateScope();
+        var github = scope.ServiceProvider.GetRequiredService<GitHubService>();
+        if (!github.IsConfigured) return;
+        var workflow = scope.ServiceProvider.GetRequiredService<WorkflowService>();
+
+        foreach (var watched in await workflow.GetPullRequestsToWatchAsync(ct))
+        {
+            try
+            {
+                var pr = await github.GetPullRequestAsync(watched.RepoOwner, watched.RepoName, watched.Number, ct);
+                if (!pr.Merged) continue;
+                logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
+                    watched.Number, watched.TaskId);
+                await workflow.OnPullRequestMergedAsync(watched.TaskId, watched.Number, "Sistema", ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "No se pudo revisar el pull request #{Number} de la tarea {TaskId}",
+                    watched.Number, watched.TaskId);
+            }
         }
     }
 

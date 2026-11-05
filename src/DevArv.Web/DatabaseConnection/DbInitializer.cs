@@ -27,6 +27,7 @@ public static class DbInitializer
         }
 
         await AddStageSkillColumnAsync(db, ct);
+        await AddMergeColumnsAsync(db, ct);
 
         if (!await db.Stages.AnyAsync(ct))
         {
@@ -71,6 +72,33 @@ public static class DbInitializer
         END $$;
         """;
 
+    /// <summary>
+    /// Bases creadas antes de mover tareas al hacer merge del PR: agrega <see cref="Stage.IsMergeDestination"/>
+    /// (y, sólo esa vez, la marca en la columna «Pendiente Deploy» si existe) y <see cref="TaskItem.PullRequestMergedAt"/>.
+    /// No hace nada si las columnas ya existen.
+    /// </summary>
+    private static Task AddMergeColumnsAsync(AppDbContext db, CancellationToken ct) =>
+        db.Database.ExecuteSqlRawAsync(AddMergeColumnsSql, ct);
+
+    // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
+    private const string AddMergeColumnsSql = $"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'Stages' AND column_name = 'IsMergeDestination') THEN
+                ALTER TABLE "Stages" ADD COLUMN "IsMergeDestination" boolean NOT NULL DEFAULT FALSE;
+                UPDATE "Stages" SET "IsMergeDestination" = TRUE
+                WHERE "Id" = (SELECT "Id" FROM "Stages" WHERE "Name" = '{PendingDeployStageName}' ORDER BY "Order" LIMIT 1);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'Tasks' AND column_name = 'PullRequestMergedAt') THEN
+                ALTER TABLE "Tasks" ADD COLUMN "PullRequestMergedAt" timestamp with time zone NULL;
+            END IF;
+        END $$;
+        """;
+
+    private const string PendingDeployStageName = "Pendiente Deploy";
+
     public static async Task SeedDefaultWorkflowAsync(AppDbContext db, CancellationToken ct)
     {
         var backlog = new Stage { Name = "Backlog", Icon = "📥", Kind = StageKind.Manual, IsInitial = true,
@@ -100,7 +128,8 @@ public static class DbInitializer
             Description = "Producto valida el resultado. «Pedir cambios» devuelve al desarrollador." };
         var manualReview = new Stage { Name = "Revisión Código Manual", Icon = "🧐", Kind = StageKind.HumanApproval,
             Description = "Un desarrollador revisa el PR en GitHub." };
-        var pendingDeploy = new Stage { Name = "Pendiente Deploy", Icon = "🚀", Kind = StageKind.Manual };
+        var pendingDeploy = new Stage { Name = PendingDeployStageName, Icon = "🚀", Kind = StageKind.Manual,
+            IsMergeDestination = true, Description = "La tarea entra sola aquí cuando se hace merge de su pull request." };
         var pendingTest = new Stage { Name = "Pendiente Prueba", Icon = "🧪", Kind = StageKind.Manual };
         var done = new Stage { Name = "Terminado", Icon = "🏁", Kind = StageKind.Terminal };
         var discarded = new Stage { Name = "Descartado", Icon = "🗑️", Kind = StageKind.Terminal };

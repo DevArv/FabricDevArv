@@ -35,6 +35,7 @@ public class StagesRepository(AppDbContext db)
             : new StageEditViewModel
             {
                 Name = s.Name, Icon = s.Icon, Kind = s.Kind, Description = s.Description, IsInitial = s.IsInitial,
+                IsMergeDestination = s.IsMergeDestination,
                 SuccessStageId = s.SuccessStageId, RejectStageId = s.RejectStageId, Model = s.Model,
                 PermissionMode = s.PermissionMode, AllowedTools = s.AllowedTools, DisallowedTools = s.DisallowedTools,
                 MaxTurns = s.MaxTurns, ExtraArgs = s.ExtraArgs, PromptTemplate = s.PromptTemplate,
@@ -116,6 +117,11 @@ public class StagesRepository(AppDbContext db)
         {
             stage.IsInitial = false;
         }
+
+        // Sólo una columna recibe las tareas cuyo pull request se integró.
+        if (record.IsMergeDestination)
+            await db.Stages.Where(s => s.IsMergeDestination).ForEachAsync(s => s.IsMergeDestination = false, ct);
+        stage.IsMergeDestination = record.IsMergeDestination;
 
         await db.SaveChangesAsync(ct);
         return true;

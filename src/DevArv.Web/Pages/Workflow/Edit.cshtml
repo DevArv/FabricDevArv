@@ -48,6 +48,8 @@
             </label>
         </div>
         <label class="check"><input asp-for="Input.IsInitial" /> Columna inicial (donde nacen las tareas nuevas)</label>
+        <label class="check"><input asp-for="Input.IsMergeDestination" /> Al hacer merge del pull request en GitHub, la tarea entra aquí
+            <small>(sólo si está en una columna anterior y no finalizada; se revisa cada minuto)</small></label>
 
         <fieldset data-kind-show="System">
             <legend>Acción automática del servidor</legend>

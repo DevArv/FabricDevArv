@@ -38,6 +38,13 @@ Al crear una tarea puedes marcar «Enviar directo al agente desarrollador» para
 Si rechaza, sus hallazgos se guardan como comentario y vuelven al desarrollador en su siguiente prompt.
 **Pedir cambios** (humano) funciona igual: el texto se inyecta en el prompt del agente.
 
+**Merge del pull request:** cada minuto el servidor consulta en GitHub los pull requests abiertos de las tareas. Cuando
+uno se integra (merge, hecho a mano en GitHub o por la acción «Hacer merge del pull request»), la tarea entra sola a la
+columna marcada en **Flujo** con «Al hacer merge del pull request en GitHub, la tarea entra aquí» (por defecto
+🚀 Pendiente Deploy) y queda registrado en su historial. Sólo se mueven las tareas que están en una columna anterior y
+no finalizada: no se regresa una tarea que ya avanzó ni se reabre una descartada o archivada. Si se crea un pull request
+nuevo para la tarea, se vuelve a vigilar.
+
 **Skill de la etapa:** cada columna de agente puede indicar un *skill* de Claude Code (campo **Skill** en **Flujo**).
 El Revisor de Código usa por defecto `revision`, el mismo skill de ShopyCube (`.claude/skills/revision/SKILL.md` en el
 repositorio del proyecto). El servidor agrega `Skill(<nombre>)` a las herramientas permitidas y pone en el prompt la
@@ -409,6 +416,6 @@ Las reglas de arquitectura y de organización del código están en [CLAUDE.md](
 ## Próximos pasos sugeridos
 
 - API pública con token para crear tareas desde otros sistemas (Jira, formularios).
-- Webhooks de GitHub para mover tareas al hacer merge del PR.
+- Webhooks de GitHub para detectar el merge del PR al instante (hoy se consulta cada minuto).
 - Dependencias entre tareas, métricas de costo por proyecto y modo TV.
 - Agente «Analista» antes de Aprobación Tarea que mejore la descripción y estime complejidad.
