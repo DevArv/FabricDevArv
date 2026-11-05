@@ -119,6 +119,18 @@ public static class Labels
         return $"{Math.Max(0, t.Seconds)}s";
     }
 
+    /// <summary>Cronómetro para las tarjetas: "05:07" o, desde una hora, "1:05:07". Debe coincidir con site.js.</summary>
+    public static string Stopwatch(TimeSpan elapsed)
+    {
+        var total = Math.Max(0L, (long)elapsed.TotalSeconds);
+        var hours = total / 3600;
+        var minutes = total / 60 % 60;
+        var seconds = total % 60;
+        return hours > 0
+            ? string.Create(CultureInfo.InvariantCulture, $"{hours}:{minutes:00}:{seconds:00}")
+            : string.Create(CultureInfo.InvariantCulture, $"{minutes:00}:{seconds:00}");
+    }
+
     public static string Initials(string? nameOrEmail)
     {
         if (string.IsNullOrWhiteSpace(nameOrEmail)) return "?";

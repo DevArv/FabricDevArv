@@ -1,7 +1,7 @@
-@model TaskItem
+@model BoardCardViewModel
 @inject Clock Clock
 @{
-    var t = Model;
+    var t = Model.Item;
 }
 <article class="card @Labels.StatusCss(t.Status)" draggable="true" data-task-id="@t.Id"
          style="--project:@t.Project.Color" title="@t.Project.Name">
@@ -12,6 +12,11 @@
     @if (t.Status != WorkStatus.Idle)
     {
         <div class="status-pill @Labels.StatusCss(t.Status)">@Labels.StatusIcon(t.Status) @Labels.Of(t.Status)</div>
+    }
+    @if (Model.DevelopmentElapsed is { } elapsed)
+    {
+        <span class="dev-timer" title="Tiempo que lleva el desarrollador implementando la tarea"
+              data-elapsed="@((long)elapsed.TotalSeconds)">⏱ <span data-timer-text>@Labels.Stopwatch(elapsed)</span></span>
     }
     <h3><span class="task-id">#@t.Id</span> @t.Title</h3>
     <p class="excerpt">@Labels.Excerpt(t.Description)</p>
