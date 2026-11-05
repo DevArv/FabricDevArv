@@ -6,8 +6,8 @@
     Escribe (o actualiza sin borrar lo demás) estos archivos, que git ignora:
       src/DevArv.Web/appsettings.Local.json     → EnvironmentData (Host, Port, Database, Username, Password)
                                                   y GitHub:Token (crear y consultar pull requests)
-      src/DevArv.Worker/appsettings.Local.json  → EnvironmentData (Url, ApiKey), Worker:Claude:AnthropicApiKey,
-                                                  Worker:Git:GitHubToken, Worker:Workspace:Root
+      src/DevArv.Worker/appsettings.Local.json  → EnvironmentData (Url, ApiKey), Worker:Claude:OAuthToken (suscripción)
+                                                  o Worker:Claude:AnthropicApiKey (API key), Worker:Git:GitHubToken, Worker:Workspace:Root
     Las claves se piden ocultas. Después verifica que la API key responda y que el token alcance los repositorios.
 
     El appsettings es la única fuente de credenciales: el worker no usa la sesión de `claude login`,
@@ -196,10 +196,12 @@ if ($configureWorker) {
     Assert-Prefix $WorkerGitHubToken @('github_pat_', 'ghp_') 'El token de GitHub del worker'
 
     if (-not $AnthropicApiKey) {
-        $AnthropicApiKey = Read-Secret 'API key de Anthropic (sk-ant-api03-…)'
+        $AnthropicApiKey = Read-Secret 'Credencial de Claude: token de suscripción (sk-ant-oat…, de `claude setup-token`) o API key (sk-ant-api…)'
     }
-    if (-not $AnthropicApiKey) { throw 'La API key de Anthropic es obligatoria.' }
-    Assert-Prefix $AnthropicApiKey @('sk-ant-api') 'La API key de Anthropic'
+    if (-not $AnthropicApiKey) { throw 'La credencial de Claude es obligatoria.' }
+    Assert-Prefix $AnthropicApiKey @('sk-ant-oat', 'sk-ant-api') 'La credencial de Claude'
+    # Por el prefijo se sabe de qué tipo es: suscripción (OAuthToken) o API key de pago por uso (AnthropicApiKey).
+    $UsesSubscription = $AnthropicApiKey.StartsWith('sk-ant-oat')
 
     $current = Read-JsonFile $workerFile
     $defaultUrl = (Get-Value $current 'EnvironmentData:Url')
@@ -238,8 +240,16 @@ if ($configureWorker) {
     Remove-Value $worker 'Worker:Server'
     if ($WorkspaceRoot) { Set-Value $worker 'Worker:Workspace:Root' $WorkspaceRoot }
 
-    Set-Value $worker 'Worker:Claude:AnthropicApiKey' $AnthropicApiKey
-    # Las credenciales de Anthropic sólo van en AnthropicApiKey; el worker descarta las de Claude:Environment.
+    # Sólo una credencial de Claude a la vez (el worker no arranca con las dos); se limpia la otra.
+    if ($UsesSubscription) {
+        Set-Value $worker 'Worker:Claude:OAuthToken' $AnthropicApiKey
+        Remove-Value $worker 'Worker:Claude:AnthropicApiKey'
+    }
+    else {
+        Set-Value $worker 'Worker:Claude:AnthropicApiKey' $AnthropicApiKey
+        Remove-Value $worker 'Worker:Claude:OAuthToken'
+    }
+    # El worker descarta las credenciales de Anthropic que haya en Claude:Environment.
     foreach ($name in 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN') {
         Remove-Value $worker "Worker:Claude:Environment:$name"
     }
@@ -253,7 +263,10 @@ if (-not $SinVerificar) {
     Write-Host 'Verificando:' -ForegroundColor Cyan
     Test-GitHubToken $GitHubToken 'del servidor'
     if ($configureWorker -and $WorkerGitHubToken -ne $GitHubToken) { Test-GitHubToken $WorkerGitHubToken 'del worker' }
-    if ($configureWorker) { Test-AnthropicKey $AnthropicApiKey }
+    if ($configureWorker -and -not $UsesSubscription) { Test-AnthropicKey $AnthropicApiKey }
+    if ($configureWorker -and $UsesSubscription) {
+        Write-Host '  ℹ El token de suscripción no se puede verificar desde aquí; se comprueba al ejecutar la primera tarea.' -ForegroundColor Yellow
+    }
 }
 
 Write-Host ''

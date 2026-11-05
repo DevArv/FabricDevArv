@@ -55,7 +55,7 @@ se genera en el servidor ya en marcha).
 |---|---|---|---|
 | 1 | Programas: .NET, PostgreSQL, git, Claude Code | En cada PC | Compilar y ejecutar las apps y los agentes |
 | 2 | Token de GitHub | `GitHub:Token` (servidor) y `Worker:Git:GitHubToken` (worker) | Leer los repos, hacer push de ramas y abrir PRs |
-| 3 | API key de Anthropic | `Worker:Claude:AnthropicApiKey` (worker) | Que Claude Code pueda trabajar |
+| 3 | Credencial de Claude: suscripción Pro/Max o API key | `Worker:Claude:OAuthToken` o `Worker:Claude:AnthropicApiKey` (worker) | Que Claude Code pueda trabajar |
 | 4 | Base de datos PostgreSQL | `EnvironmentData` (servidor) | Guardar tareas, flujo, usuarios y PCs |
 | 5 | Administrador y URL pública | `Admin`, `App:PublicUrl` (servidor) | Entrar al tablero y enlazar los PR a la tarea |
 | 6 | Arrancar el servidor | — | Crear el esquema y el flujo por defecto |
@@ -80,8 +80,8 @@ dato obligatorio, la app **no arranca** y el mensaje dice exactamente qué clave
 
 **El script `scripts/Configurar-Claves.ps1`** hace los pasos 2 a 5 y 9 por ti: pregunta cada dato (las claves sin
 mostrarlas), escribe los `appsettings.Local.json` sin borrar lo que ya tengan y comprueba que el token de GitHub
-alcance los repos y que la API key de Anthropic responda. Funciona con Windows PowerShell 5.1 y con PowerShell 7 (`pwsh`,
-también en Linux y macOS). Si Windows bloquea scripts, ejecútalo así:
+alcance los repos y que la API key de Anthropic responda (el token de suscripción no se puede verificar fuera de Claude Code). Está probado con PowerShell 7 (`pwsh`, disponible en Windows, Linux y macOS: `brew install powershell`); en Windows
+PowerShell 5.1 no se ha probado. Si Windows bloquea scripts, ejecútalo así:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Configurar-Claves.ps1
@@ -101,7 +101,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\Configurar-Claves.ps1
 | Cada PC worker | Lo que necesite compilar el repo de tus proyectos (para ShopyCube: **.NET 8 SDK**) | `dotnet --list-sdks` |
 
 En Windows conviene el instalador nativo de Claude Code (`claude.exe`). Si lo instalaste con npm, el worker detecta
-`claude.cmd` y ejecuta `node cli.js` directamente. **No hace falta `claude login`**: el worker usa la API key del paso 3.
+`claude.cmd` y ejecuta `node cli.js` directamente. **No hace falta `claude login`**: el worker usa la credencial del paso 3.
 
 ### Paso 2. Crear el token de GitHub
 
@@ -125,16 +125,30 @@ y hacer push de las ramas de trabajo.
 Puedes usar el mismo token en el servidor y en el worker (lo más simple) o uno distinto en cada uno
 (`-TokenSeparadoParaWorker` en el script).
 
-### Paso 3. Obtener la API key de Anthropic
+### Paso 3. Credencial de Claude (suscripción o API key)
 
-Claude Code la usa para trabajar en las tareas; el consumo se cobra a esa cuenta (el tablero muestra el costo de cada
-ejecución).
+Claude Code necesita una credencial para trabajar en las tareas. Hay dos opciones; **elige una sola**:
 
-1. Entra a [console.anthropic.com](https://console.anthropic.com) → **API Keys → Create Key**.
-2. Copia la clave (`sk-ant-api03-…`).
+| | Suscripción Claude Pro/Max | API key de Anthropic |
+|---|---|---|
+| Costo | La cuota que ya pagas; el uso cuenta contra los límites de tu plan | Se paga por uso con saldo cargado en la consola, aparte de la suscripción |
+| Clave | Token `sk-ant-oat…` | `sk-ant-api…` |
+| Se guarda en | `Worker:Claude:OAuthToken` | `Worker:Claude:AnthropicApiKey` |
+| Límites | Los de tu plan por ventanas de tiempo: con varias tareas seguidas pueden agotarse | Los de tu cuenta de la consola; puedes fijar un tope de gasto mensual |
 
-Sólo se guarda en el worker (`Worker:Claude:AnthropicApiKey`). Es la **única** credencial de Claude que se usa: el
-worker no usa la sesión de `claude login` y descarta cualquier `ANTHROPIC_API_KEY` que tenga la PC.
+**Opción A: suscripción.** En una PC con Claude Code instalado y con la sesión iniciada con tu cuenta:
+
+1. Ejecuta `claude setup-token`.
+2. Copia el token `sk-ant-oat…` que muestra (sólo aparece una vez).
+
+Revisa en la documentación de Anthropic que los términos de tu plan permitan este uso automatizado.
+
+**Opción B: API key.** Entra a [console.anthropic.com](https://console.anthropic.com) → **Plans & Billing** (carga saldo)
+→ **API Keys → Create Key** y copia la clave (`sk-ant-api…`). El tablero muestra el costo de cada ejecución.
+
+Sólo se guarda en el worker. Es la **única** credencial de Claude que se usa: el worker no usa la sesión de
+`claude login`, descarta cualquier credencial de Anthropic que tenga la PC o `Worker:Claude:Environment`, y **no arranca
+si defines las dos** (con las dos, Claude Code usaría la API key y se cobraría por uso).
 
 ### Paso 4. Crear la base de datos
 
@@ -247,7 +261,7 @@ En la PC worker (con el repo clonado), ejecuta el script para el worker:
 ./scripts/Configurar-Claves.ps1 -Destino Worker -Repositorio DevArv/ShopyCube
 ```
 
-Te pedirá el token de GitHub (paso 2), la API key de Anthropic (paso 3), la URL del servidor, la clave de la PC (paso 8)
+Te pedirá el token de GitHub (paso 2), la credencial de Claude (paso 3; reconoce por el prefijo si es suscripción o API key), la URL del servidor, la clave de la PC (paso 8)
 y la carpeta de trabajo. El resultado es `src/DevArv.Worker/appsettings.Local.json`:
 
 ```json
@@ -255,7 +269,7 @@ y la carpeta de trabajo. El resultado es `src/DevArv.Worker/appsettings.Local.js
   "EnvironmentData": { "Url": "https://localhost:5001", "ApiKey": "dvw_..." },
   "Worker": {
     "Workspace": { "Root": "D:\\devarv-workspace" },
-    "Claude": { "AnthropicApiKey": "sk-ant-api03-..." },
+    "Claude": { "OAuthToken": "sk-ant-oat01-..." },
     "Git": { "GitHubToken": "github_pat_..." },
     "MaxParallelJobs": 1
   }
@@ -266,7 +280,7 @@ y la carpeta de trabajo. El resultado es `src/DevArv.Worker/appsettings.Local.js
 |---|---|---|
 | `EnvironmentData:Url` | Sí | URL del servidor (la de `App:PublicUrl`). Si el worker está en otra PC, debe poder abrirla y su certificado HTTPS debe ser de confianza. |
 | `EnvironmentData:ApiKey` | Sí | Clave `dvw_…` del paso 8. |
-| `Worker:Claude:AnthropicApiKey` | Sí | API key del paso 3. |
+| `Worker:Claude:OAuthToken` **o** `Worker:Claude:AnthropicApiKey` | Sí, una de las dos | Token de suscripción o API key del paso 3 (no ambas). |
 | `Worker:Git:GitHubToken` | Sí | Token del paso 2 (Contents: Read & write). |
 | `Worker:Workspace:Root` | No | Carpeta donde se clonan los repos. Por defecto `~/devarv-workspace`. Necesita espacio para un clon por repo y una copia por tarea. |
 | `Worker:MaxParallelJobs` | No | Tareas al mismo tiempo en esta PC (por defecto 1). |
@@ -326,14 +340,16 @@ Si llegas al PR en GitHub, todo quedó bien configurado.
 | Al abrir el PR: `GitHub 403` | Falta *Pull requests: Read & write* en el token del servidor | Paso 2 |
 | Worker: `EnvironmentData:ApiKey no puede estar vacío (clave generada en «Mis PCs»).` | Falta la clave de la PC | Pasos 8 y 9 |
 | Worker: `EnvironmentData:Url debe ser la URL http(s) del servidor DevArv.` | URL vacía o mal escrita | Usa la URL completa, con `https://` |
-| Worker: `Faltan en el appsettings del worker: Worker:Claude:AnthropicApiKey…` | Falta una credencial | Pasos 2, 3 y 9 |
+| Worker: `Faltan en el appsettings del worker: Worker:Claude:OAuthToken … o Worker:Claude:AnthropicApiKey` | Falta la credencial de Claude o el token de GitHub | Pasos 2, 3 y 9 |
+| Worker: `Define sólo una credencial de Claude… no ambas` | Hay `OAuthToken` y `AnthropicApiKey` | Deja una; el script limpia la otra |
 | Worker: `No se pudo contactar al servidor` | URL incorrecta, servidor apagado o certificado no confiable | Abre la URL desde esa PC en el navegador; en local ejecuta `dotnet dev-certs https --trust` |
 | Worker: `No se encontró Claude Code` | `claude` no está en el PATH | Instálalo (paso 1) o define `Worker:Claude:Executable` |
 | La PC aparece «Sin conexión» | El worker no está corriendo o no llega al servidor | Revisa el log del worker |
 | Worker: `Servidor respondió 401 (revisa EnvironmentData:ApiKey…)` | Clave incorrecta, PC deshabilitada o clave regenerada | En **Mis PCs**, habilita la PC o pulsa **Nueva clave** y repite el paso 9 |
 | Tarea falla: `La rama base «main» no existe en el repositorio remoto.` | La rama por defecto del proyecto no existe | Corrígela en **Proyectos** (ShopyCube usa `master`) |
 | Tarea falla en `git clone` / `push` con 403 | El token del worker no tiene *Contents: Read & write* | Paso 2 |
-| La ejecución de Claude falla con un error de autenticación («Invalid API key») | API key de Anthropic incorrecta o revocada | Crea otra (paso 3) y repite el script |
+| La ejecución de Claude falla con un error de autenticación («Invalid API key» / «Invalid bearer token») | Credencial incorrecta, revocada o token de suscripción vencido | Genera otra (paso 3) y repite el script |
+| La ejecución se detiene por límite de uso («usage limit reached») | Con suscripción, se agotó el límite de tu plan | Espera a que se renueve la ventana, o cambia a API key |
 
 ## Qué hace el worker en cada etapa de agente
 
