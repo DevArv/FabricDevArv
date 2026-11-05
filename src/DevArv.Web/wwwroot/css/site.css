@@ -169,6 +169,8 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; }
 .status-pill.st-failed { background: #7f1d1d; color: #fecaca; }
 .status-pill.st-done { background: #14532d; color: #bbf7d0; }
 .status-pill.st-idle { background: #1e293b; color: #cbd5e1; }
+.dev-timer { display: inline-block; margin: 6px 0 0 4px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+  background: #0b1130; border: 1px solid #2563eb; color: #bfdbfe; font-variant-numeric: tabular-nums; }
 .excerpt { margin: 0 0 6px; color: #b9c0e0; font-size: 12.5px; }
 .meta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; }
 .prio { font-size: 11px; padding: 0 8px; border-radius: 999px; border: 1px solid; }

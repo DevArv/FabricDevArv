@@ -3,7 +3,9 @@ using System.Text.RegularExpressions;
 using DevArv.Contracts.Models;
 using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
+using DevArv.Web.Enums.Runs;
 using DevArv.Web.Enums.Tasks;
+using DevArv.Web.Enums.Workflow;
 using DevArv.Web.Helpers;
 using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
@@ -41,12 +43,22 @@ public class TasksRepository(AppDbContext db)
             .ThenBy(t => t.CreatedAt)
             .Take(MAX_BOARD_TASKS)
             .ToListAsync(ct);
-        var byStage = tasks.GroupBy(t => t.StageId).ToDictionary(g => g.Key, g => g.ToList());
+        var now = DateTimeOffset.UtcNow;
+        var developingSince = await GetDevelopingSinceAsync(stages, tasks, ct);
+        var byStage = tasks
+            .Select(t => new BoardCardViewModel
+            {
+                Item = t,
+                DevelopmentElapsed = developingSince.TryGetValue(t.Id, out var since) && now > since ? now - since : null,
+            })
+            .GroupBy(c => c.Item.StageId)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         return new BoardViewModel
         {
             Compact = filter.Compact,
             HideEmpty = filter.HideEmpty,
+            GeneratedAt = now,
             Columns = stages.Select(s => new BoardColumnViewModel
             {
                 Stage = s,
@@ -55,6 +67,29 @@ public class TasksRepository(AppDbContext db)
                 RejectName = s.RejectStageId is { } ko ? names.GetValueOrDefault(ko) : null,
             }).ToList(),
         };
+    }
+
+    /// <summary>
+    /// Para las tareas que el agente desarrollador (columna de agente que hace commit y push) está implementando
+    /// ahora, el momento en que una PC tomó la ejecución en curso de esa columna. Clave: id de la tarea.
+    /// </summary>
+    private async Task<Dictionary<int, DateTimeOffset>> GetDevelopingSinceAsync(
+        List<Stage> stages, List<TaskItem> tasks, CancellationToken ct)
+    {
+        var developerStages = stages.Where(s => s.Kind == StageKind.Agent && s.PushChanges).Select(s => s.Id).ToHashSet();
+        var running = tasks.Where(t => t.Status == WorkStatus.Running && developerStages.Contains(t.StageId))
+            .ToDictionary(t => t.Id, t => t.StageId);
+        if (running.Count == 0) return new Dictionary<int, DateTimeOffset>();
+
+        var ids = running.Keys.ToList();
+        var runs = await db.TaskRuns.AsNoTracking()
+            .Where(r => ids.Contains(r.TaskId) && r.Status == RunStatus.Running && r.StartedAt != null)
+            .Select(r => new { r.TaskId, r.StageId, StartedAt = r.StartedAt!.Value })
+            .ToListAsync(ct);
+
+        return runs.Where(r => running[r.TaskId] == r.StageId)
+            .GroupBy(r => r.TaskId)
+            .ToDictionary(g => g.Key, g => g.Max(r => r.StartedAt));
     }
 
     /// <summary>

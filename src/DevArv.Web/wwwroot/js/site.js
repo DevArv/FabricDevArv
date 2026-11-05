@@ -123,7 +123,11 @@
       if (!res.ok || dragging) return;
       const scrollers = $$('.dropzone', board).map(z => [z.closest('.column')?.dataset.stageId, z.scrollTop]);
       const left = $('.columns', board)?.scrollLeft ?? 0;
+      const origins = new Map($$('.card[data-task-id] .dev-timer', board)
+        .filter(el => el._origin !== undefined)
+        .map(el => [el.closest('.card').dataset.taskId, el._origin]));
       board.innerHTML = await res.text();
+      keepTimerOrigins(origins);
       const cols = $('.columns', board);
       if (cols) cols.scrollLeft = left;
       scrollers.forEach(([id, top]) => {
@@ -136,8 +140,41 @@
     } catch { /* sin conexión: reintenta luego */ }
   }
 
+  // Contador del desarrollador: el servidor manda los segundos transcurridos al generar el tablero
+  // (data-elapsed) y aquí se suman los del reloj del navegador, sin depender de que ambos relojes coincidan.
+  // El formato debe coincidir con Labels.Stopwatch.
+  function stopwatch(totalSeconds) {
+    const total = Math.max(0, Math.floor(totalSeconds));
+    const h = Math.floor(total / 3600);
+    const m = String(Math.floor(total / 60) % 60).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  }
+
+  function tickTimers() {
+    const now = Date.now();
+    $$('.dev-timer[data-elapsed]', board).forEach(el => {
+      if (el._origin === undefined) el._origin = now - Number(el.dataset.elapsed) * 1000;
+      const text = $('[data-timer-text]', el);
+      if (text) text.textContent = stopwatch((now - el._origin) / 1000);
+    });
+  }
+
+  // Tras refrescar el tablero conserva el origen de cada contador para que no retroceda por la latencia;
+  // si difiere mucho (otra ejecución, PC suspendida) manda el valor del servidor.
+  function keepTimerOrigins(origins) {
+    const now = Date.now();
+    $$('.card[data-task-id] .dev-timer[data-elapsed]', board).forEach(el => {
+      const fresh = now - Number(el.dataset.elapsed) * 1000;
+      const previous = origins.get(el.closest('.card').dataset.taskId);
+      el._origin = previous !== undefined && Math.abs(previous - fresh) < 5000 ? previous : fresh;
+    });
+    tickTimers();
+  }
+
   if (board) {
     setInterval(refreshBoard, 5000);
+    setInterval(tickTimers, 1000);
 
     board.addEventListener('dragstart', (e) => {
       const card = e.target.closest('.card[data-task-id]');
