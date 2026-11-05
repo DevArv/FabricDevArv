@@ -14,7 +14,7 @@
 </head>
 <body class="@(ViewData["BodyClass"] as string)">
     <header class="topbar">
-        <a class="brand" href="/">DevArv <small>v@(version)</small></a>
+        <a class="brand" href="/">Fabric DevArv <small>v@(version)</small></a>
         @if (SignInManager.IsSignedIn(User))
         {
             <a class="btn btn-primary" href="/Tasks/Create" data-modal="/Tasks/Create?modal=true">+ Nueva tarea</a>
