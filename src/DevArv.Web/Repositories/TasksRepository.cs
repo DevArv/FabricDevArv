@@ -17,6 +17,9 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
 {
     private const int MAX_BOARD_TASKS = 1000;
 
+    /// <summary>Estados de una ejecución en cola o en curso (se traduce a SQL con <c>Contains</c>).</summary>
+    private static readonly RunStatus[] ActiveRunStatuses = [RunStatus.Queued, RunStatus.Running];
+
     public Task<int> CountWaitingAsync(CancellationToken ct) =>
         db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WaitingApproval, ct);
 
@@ -56,11 +59,17 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
             .ToListAsync(ct);
         var now = DateTimeOffset.UtcNow;
         var developingSince = await GetDevelopingSinceAsync(stages, tasks, ct);
+        var stagesById = stages.ToDictionary(s => s.Id);
+        var resolvingConflicts = await GetResolvingConflictsAsync(tasks, ct);
         var byStage = tasks
             .Select(t => new BoardCardViewModel
             {
                 Item = t,
                 DevelopmentElapsed = developingSince.TryGetValue(t.Id, out var since) && now > since ? now - since : null,
+                ShowConflicts = PullRequestConflictRule.ShowConflicts(t),
+                CanResolveConflicts = stagesById.TryGetValue(t.StageId, out var stage)
+                                      && PullRequestConflictRule.CanResolve(t, stage),
+                ResolvingConflicts = resolvingConflicts.Contains(t.Id),
             })
             .GroupBy(c => c.Item.StageId)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -105,6 +114,23 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
     }
 
     /// <summary>
+    /// Ids de las tareas en cola o en ejecución cuya ejecución activa es un arreglo de conflictos del pull request
+    /// (<see cref="TaskRun.ResolveConflicts"/>).
+    /// </summary>
+    private async Task<HashSet<int>> GetResolvingConflictsAsync(List<TaskItem> tasks, CancellationToken ct)
+    {
+        var ids = tasks.Where(t => t.Status is WorkStatus.Queued or WorkStatus.Running).Select(t => t.Id).ToList();
+        if (ids.Count == 0) return [];
+
+        var resolving = await db.TaskRuns.AsNoTracking()
+            .Where(r => ids.Contains(r.TaskId) && r.ResolveConflicts && ActiveRunStatuses.Contains(r.Status))
+            .Select(r => r.TaskId)
+            .Distinct()
+            .ToListAsync(ct);
+        return resolving.ToHashSet();
+    }
+
+    /// <summary>
     /// Formulario de nueva tarea con el proyecto activo indicado (o el primero por nombre) y su rama por defecto.
     /// Devuelve null si no hay proyectos activos.
     /// </summary>
@@ -135,6 +161,11 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
             Workers = await db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(ct),
             SelectedRun = selectedRun,
             SelectedRunFiles = ParseChangedFiles(selectedRun?.ChangedFilesJson),
+            ShowConflicts = PullRequestConflictRule.ShowConflicts(task),
+            CanResolveConflicts = PullRequestConflictRule.CanResolve(task, task.Stage),
+            // GetDetailsAsync ordena las ejecuciones de la más reciente a la más antigua.
+            ResolvingConflicts = task.Runs.FirstOrDefault() is { ResolveConflicts: true } last
+                                 && ActiveRunStatuses.Contains(last.Status),
         };
     }
 

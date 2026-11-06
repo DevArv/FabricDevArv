@@ -23,6 +23,9 @@ public sealed class DetailsModel(
     public List<WorkerNode> Workers => Details.Workers;
     public TaskRun? SelectedRun => Details.SelectedRun;
     public List<ChangedFile> SelectedRunFiles => Details.SelectedRunFiles;
+    public bool ShowConflicts => Details.ShowConflicts;
+    public bool CanResolveConflicts => Details.CanResolveConflicts;
+    public bool ResolvingConflicts => Details.ResolvingConflicts;
     public Clock Clock => clock;
     public string? Error => TempData["Error"] as string;
     public string? Notice => TempData["Notice"] as string;
@@ -74,6 +77,9 @@ public sealed class DetailsModel(
 
     public Task<IActionResult> OnPostCancelAsync(CancellationToken ct) =>
         ActAsync(t => workflow.CancelAsync(t, Actor, ct), "Cancelación solicitada.", ct);
+
+    public Task<IActionResult> OnPostResolveConflictsAsync(CancellationToken ct) =>
+        ActAsync(t => workflow.ResolveConflictsAsync(t, Actor, ct), "La tarea regresó al desarrollador para arreglar los conflictos.", ct);
 
     public Task<IActionResult> OnPostMoveAsync(int stageId, CancellationToken ct) =>
         ActAsync(t => workflow.MoveAsync(t, stageId, Actor, ct), "Tarea movida.", ct);

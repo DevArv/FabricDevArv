@@ -95,6 +95,45 @@ public class PromptBuilderTests
     }
 
     [Fact]
+    public void Build_ResolveConflicts_AppendsConflictInstructionsAfterTheTemplate()
+    {
+        var task = ReviewTask();
+        task.PullRequestNumber = 31;
+        var stage = new Stage { Kind = StageKind.Agent, PushChanges = true, PromptTemplate = DefaultPrompts.Developer };
+
+        var prompt = Builder().Build(task, stage, resolveConflicts: true);
+
+        Assert.Contains("## Arreglar conflictos con `main`", prompt);
+        Assert.Contains("El pull request #31", prompt);
+        Assert.Contains("`origin/main`", prompt);
+        Assert.Contains("git diff --name-only --diff-filter=U", prompt);
+        Assert.True(prompt.IndexOf("## Cómo trabajar", StringComparison.Ordinal)
+                    < prompt.IndexOf("## Arreglar conflictos", StringComparison.Ordinal));
+        Assert.DoesNotContain("{{", prompt);
+    }
+
+    [Fact]
+    public void Build_ResolveConflicts_UsesConflictsVariableWhenTheTemplateHasIt()
+    {
+        var stage = new Stage { Kind = StageKind.Agent, PushChanges = true, PromptTemplate = "{{conflicts}}\nTarea {{task.id}}." };
+
+        var prompt = Builder().Build(ReviewTask(), stage, resolveConflicts: true);
+
+        Assert.StartsWith("## Arreglar conflictos", prompt);
+        Assert.EndsWith("Tarea 4.", prompt);
+    }
+
+    [Fact]
+    public void Build_WithoutResolveConflicts_LeavesNoConflictBlock()
+    {
+        var stage = new Stage { Kind = StageKind.Agent, PushChanges = true, PromptTemplate = "Tarea {{task.id}}. {{conflicts}}" };
+
+        var prompt = Builder().Build(ReviewTask(), stage);
+
+        Assert.Equal("Tarea 4.", prompt);
+    }
+
+    [Fact]
     public void BuildAllowedTools_AddsSkillPermissionOnce()
     {
         var stage = new Stage { AllowedTools = "Read\r\nGrep\n\n Bash(git diff:*) ", Skill = "revision" };

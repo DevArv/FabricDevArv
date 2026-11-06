@@ -22,6 +22,11 @@ public class TaskItem
     public string? PullRequestUrl { get; set; }
     /// <summary>Cuándo DevArv detectó (o hizo) el merge del pull request actual; nulo si sigue sin integrarse.</summary>
     public DateTimeOffset? PullRequestMergedAt { get; set; }
+    /// <summary>
+    /// GitHub informó que el pull request actual tiene conflictos con la rama base (no se puede integrar).
+    /// Lo actualiza el orquestador al consultar el pull request.
+    /// </summary>
+    public bool PullRequestHasConflicts { get; set; }
 
     /// <summary>Si se define, sólo este worker (PC) puede ejecutar las etapas de agente.</summary>
     public int? PreferredWorkerId { get; set; }

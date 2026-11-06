@@ -55,7 +55,8 @@ public static class WorkerApi
             return Results.NoContent();
         }
 
-        var prompt = prompts.Build(task, stage);
+        var mergeBaseBranch = run.ResolveConflicts && stage.PushChanges;
+        var prompt = prompts.Build(task, stage, resolveConflicts: mergeBaseBranch);
         run.PromptSnapshot = prompt;
         await db.SaveChangesAsync(ct);
 
@@ -82,7 +83,8 @@ public static class WorkerApi
             Attachments: task.Attachments
                 .OrderBy(a => a.Id)
                 .Select(a => new AttachmentInfo(a.Id, a.FileName, a.ContentType, a.Size))
-                .ToList());
+                .ToList(),
+            MergeBaseBranch: mergeBaseBranch);
 
         return Results.Ok(job);
     }

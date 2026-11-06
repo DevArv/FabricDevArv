@@ -13,7 +13,12 @@ public sealed class PromptBuilder(Clock clock)
     private const int MaxFeedbackItems = 6;
 
     /// <param name="task">Tarea con Project, Attachments y Comments cargados.</param>
-    public string Build(TaskItem task, Stage stage)
+    /// <param name="stage">Columna de agente que se ejecuta.</param>
+    /// <param name="resolveConflicts">
+    /// La ejecución es para arreglar los conflictos del pull request: agrega las instrucciones (variable
+    /// <c>{{conflicts}}</c>, o al final si la plantilla no la usa).
+    /// </param>
+    public string Build(TaskItem task, Stage stage, bool resolveConflicts = false)
     {
         var template = string.IsNullOrWhiteSpace(stage.PromptTemplate)
             ? (stage.RequiresDecision ? DefaultPrompts.Reviewer : DefaultPrompts.Developer)
@@ -34,11 +39,15 @@ public sealed class PromptBuilder(Clock clock)
             ["attachments"] = BuildAttachments(task),
             ["feedback"] = BuildFeedback(task),
             ["skill"] = BuildSkill(stage),
+            ["conflicts"] = resolveConflicts ? BuildConflicts(task) : "",
         };
 
         // Las plantillas anteriores a {{skill}} (ya guardadas en la base) reciben el bloque al final.
         if (!template.Contains("{{skill}}") && values["skill"].Length > 0)
             template = template.TrimEnd() + "\n\n{{skill}}";
+        // Igual con los conflictos: al final, después de «Cómo trabajar», para que prevalezcan sobre implementar la tarea.
+        if (!template.Contains("{{conflicts}}") && values["conflicts"].Length > 0)
+            template = template.TrimEnd() + "\n\n{{conflicts}}";
 
         var sb = new StringBuilder(template);
         foreach (var (key, value) in values)
@@ -82,6 +91,29 @@ public sealed class PromptBuilder(Clock clock)
         sb.AppendLine("Si el skill no está disponible en este repositorio, dilo en tu respuesta y continúa con las pautas de este prompt.");
         sb.AppendLine("Si el skill pide otro formato de respuesta, el formato de este prompt tiene prioridad "
                       + "(en especial la línea final de VEREDICTO, si se pide).");
+        return sb.ToString();
+    }
+
+    private static string BuildConflicts(TaskItem task)
+    {
+        var pr = task.PullRequestNumber is { } number ? $"El pull request #{number}" : "El pull request";
+        var baseBranch = task.BaseBranch;
+        var sb = new StringBuilder();
+        sb.AppendLine($"## Arreglar conflictos con `{baseBranch}` (prioritario: reemplaza los pasos anteriores)");
+        sb.AppendLine($"{pr} de esta tarea tiene conflictos con `{baseBranch}` en GitHub. La tarea ya está implementada en "
+                      + $"`{task.WorkBranch}`: en esta ejecución tu trabajo es **sólo** resolver esos conflictos, sin cambiar "
+                      + "el alcance de la tarea.");
+        sb.AppendLine($"Antes de iniciarte, el orquestador integró `origin/{baseBranch}` en la rama (`git merge`) y dejó sin "
+                      + "resolver los archivos en conflicto (con marcadores `<<<<<<<`, `=======` y `>>>>>>>`).");
+        sb.AppendLine("1. Lista los archivos en conflicto con `git diff --name-only --diff-filter=U` (o `git status`).");
+        sb.AppendLine($"2. En cada uno combina ambos lados: conserva lo que llegó de `{baseBranch}` y los cambios de esta tarea. "
+                      + "Elimina todos los marcadores de conflicto.");
+        sb.AppendLine("3. Compila y ejecuta las pruebas; corrige lo que rompa la integración.");
+        sb.AppendLine("4. No ejecutes `git merge --abort`, `git reset`, `git rebase` ni cambies de rama: el orquestador hace el "
+                      + "commit del merge y el push. Si quedan marcadores de conflicto, no se hará push.");
+        sb.AppendLine("5. Si no hay archivos en conflicto (la integración fue limpia), sólo verifica que compile y que pasen las pruebas.");
+        sb.AppendLine();
+        sb.AppendLine("Termina con un resumen breve en español: archivos que tenían conflictos, cómo resolviste cada uno y cómo se probó.");
         return sb.ToString();
     }
 

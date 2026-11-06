@@ -56,6 +56,22 @@ public sealed class IndexModel(
         }
     }
 
+    /// <summary>Botón 🔧 de la tarjeta: regresa la tarea al desarrollador para arreglar los conflictos de su pull request.</summary>
+    public async Task<IActionResult> OnPostResolveConflictsAsync(int taskId, CancellationToken ct)
+    {
+        var task = await workflow.LoadTaskAsync(taskId, ct);
+        if (task is null) return NotFound();
+        try
+        {
+            await workflow.ResolveConflictsAsync(task, User.Identity?.Name ?? "?", ct);
+            return new JsonResult(new { ok = true });
+        }
+        catch (WorkflowException ex)
+        {
+            return BadRequest(new { ok = false, error = ex.Message });
+        }
+    }
+
     private Task<BoardViewModel> LoadBoardAsync(CancellationToken ct) =>
         tasks.GetBoardAsync(new BoardFilterViewModel
         {
