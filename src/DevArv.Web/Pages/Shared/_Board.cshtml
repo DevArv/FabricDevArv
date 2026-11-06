@@ -1,7 +1,7 @@
 @model BoardViewModel
 @inject Clock Clock
 
-<div class="columns @(Model.Compact ? "compact" : "")" data-generated="@Clock.Format(Model.GeneratedAt, "HH:mm:ss")">
+<div class="columns @(Model.Compact ? "compact" : "")" data-generated="@Clock.Format(Model.GeneratedAt, "HH:mm:ss")" data-developing="@Model.DevelopingCount">
     @foreach (var col in Model.Columns)
     {
         if (Model.HideEmpty && col.Tasks.Count == 0) { continue; }

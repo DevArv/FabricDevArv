@@ -56,6 +56,10 @@ h1 { font-size: 22px; } h2 { font-size: 18px; } h3 { font-size: 15px; } h4 { fon
 .mainnav a.active { background: var(--primary); }
 .mainnav a:hover { text-decoration: none; background: var(--panel-2); }
 .mainnav a.active:hover { background: var(--primary); }
+.running-badge {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px;
+  background: #1d4ed8; color: #fff; font-size: 12px; white-space: nowrap;
+}
 
 /* ---------- botones e inputs ---------- */
 .btn {
