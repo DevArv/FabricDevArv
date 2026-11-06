@@ -7,7 +7,8 @@ namespace DevArv.Worker.EnvironmentConfig;
 /// <summary>
 /// Única fuente de configuración de la aplicación: appsettings.json → appsettings.{Entorno}.json → appsettings.Local.json
 /// (cada uno sobrescribe al anterior; las credenciales van en appsettings.Local.json, ignorado por git).
-/// No se leen user-secrets, variables de entorno ni argumentos de línea de comandos.
+/// No se leen user-secrets, variables de entorno ni argumentos de línea de comandos para obtener configuración; las únicas
+/// variables del sistema que se consultan (aquí) son ASPNETCORE_/DOTNET_ENVIRONMENT y el PATH para ubicar ejecutables.
 /// </summary>
 public static class EnvironmentTools
 {
@@ -24,6 +25,29 @@ public static class EnvironmentTools
 
     /// <summary>Retorna los datos de conexión al servidor DevArv (sección EnvironmentData).</summary>
     public static EnvironmentData GetData() => GetSectionData(_Root, SECTION_NAME);
+
+    /// <summary>Extensiones que Windows prueba al buscar un ejecutable sin extensión si <c>PATHEXT</c> no está definida.</summary>
+    internal const string DEFAULT_PATHEXT = ".EXE;.CMD;.BAT";
+
+    /// <summary>
+    /// Directorios del <c>PATH</c> del sistema, donde se busca el ejecutable de Claude Code. No es configuración de la
+    /// aplicación (esa sale de los appsettings): es el entorno del sistema operativo, y sólo esta clase lo lee.
+    /// </summary>
+    public static IReadOnlyList<string> GetExecutableSearchDirectories() =>
+        ParseSearchDirectories(Environment.GetEnvironmentVariable("PATH"));
+
+    /// <summary>Extensiones de ejecutable de Windows (<c>PATHEXT</c>), con un valor por defecto si no está definida.</summary>
+    public static IReadOnlyList<string> GetExecutableExtensions() =>
+        ParseExtensions(Environment.GetEnvironmentVariable("PATHEXT"));
+
+    internal static IReadOnlyList<string> ParseSearchDirectories(string? Value) =>
+        (Value ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => directory.Trim().Trim('"'))
+            .Where(directory => directory.Length > 0)
+            .ToList();
+
+    internal static IReadOnlyList<string> ParseExtensions(string? Value) =>
+        (string.IsNullOrWhiteSpace(Value) ? DEFAULT_PATHEXT : Value).Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     /// <summary>
     /// Deja la configuración de EnvironmentTools como fuente de la configuración del host (Options, logging, etc.).

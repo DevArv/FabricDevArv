@@ -44,7 +44,8 @@ Reglas:
 
 - Los datos de conexión se leen con `EnvironmentTools.GetData()`; el resto de ajustes, con su clase `*Options` de
   `Models/`, declarada también en `appsettings.json` (vacía si es un secreto).
-- Sólo `EnvironmentTools` puede llamar a `Environment.GetEnvironmentVariable` (para saber el entorno). No leas
+- Sólo `EnvironmentTools` puede llamar a `Environment.GetEnvironmentVariable` (para saber el entorno y, en el worker, el
+  `PATH`/`PATHEXT` con que se ubican `git` y `claude`: `GetExecutableSearchDirectories`). No leas
   user-secrets, variables de entorno ni archivos propios para obtener configuración o credenciales.
 - Si falta un dato o una credencial la app no arranca y el mensaje indica qué clave falta; no hay respaldo en la sesión
   de `claude`, el Credential Manager de git ni variables de la PC.

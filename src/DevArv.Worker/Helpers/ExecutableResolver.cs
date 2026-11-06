@@ -1,3 +1,5 @@
+using DevArv.Worker.EnvironmentConfig;
+
 namespace DevArv.Worker.Helpers;
 
 /// <summary>
@@ -12,7 +14,10 @@ public static class ExecutableResolver
     {
         if (!ProcessRunner.IsWindows) return new Command(Executable, []);
 
-        var path = FindOnPath(Executable);
+        var path = FindOnPath(
+            Executable: Executable,
+            Directories: EnvironmentTools.GetExecutableSearchDirectories(),
+            Extensions: EnvironmentTools.GetExecutableExtensions());
         if (path is null) return new Command(Executable, []);
 
         var ext = Path.GetExtension(path).ToLowerInvariant();
@@ -30,18 +35,19 @@ public static class ExecutableResolver
         return new Command(path, []);
     }
 
-    private static string? FindOnPath(string Executable)
+    /// <summary>
+    /// Ruta del ejecutable: la misma si ya es absoluta; si no, la primera coincidencia en <paramref name="Directories"/>
+    /// probando <paramref name="Extensions"/> (sólo si el nombre no trae extensión). Null si no existe.
+    /// </summary>
+    internal static string? FindOnPath(string Executable, IReadOnlyList<string> Directories, IReadOnlyList<string> Extensions)
     {
         if (Path.IsPathRooted(Executable)) return File.Exists(Executable) ? Executable : null;
-        var exts = Path.HasExtension(Executable)
-            ? new[] { "" }
-            : (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';', StringSplitOptions.RemoveEmptyEntries);
-        var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var dir in dirs)
+        var extensions = Path.HasExtension(Executable) ? [""] : Extensions;
+        foreach (var directory in Directories)
         {
-            foreach (var ext in exts)
+            foreach (var extension in extensions)
             {
-                var candidate = Path.Combine(dir.Trim('"'), Executable + ext);
+                var candidate = Path.Combine(directory, Executable + extension);
                 if (File.Exists(candidate)) return candidate;
             }
         }

@@ -112,4 +112,42 @@ public sealed class EnvironmentToolsTests : IDisposable
 
         Assert.StartsWith(Expected, ex.Message);
     }
+
+    // ------------------------------------------------------------------ PATH / PATHEXT
+
+    [Fact]
+    public void ParseSearchDirectories_SplitsTrimsAndDropsQuotesAndEmptyEntries()
+    {
+        var separator = Path.PathSeparator;
+
+        var directories = EnvironmentTools.ParseSearchDirectories($" /usr/bin {separator}\"/opt/mi herramienta\"{separator}{separator}   {separator}/bin");
+
+        Assert.Equal(["/usr/bin", "/opt/mi herramienta", "/bin"], directories);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void ParseSearchDirectories_WithoutValue_ReturnsNoDirectories(string? Value) =>
+        Assert.Empty(EnvironmentTools.ParseSearchDirectories(Value));
+
+    [Fact]
+    public void ParseExtensions_TrimsAndKeepsTheOrder() =>
+        Assert.Equal([".COM", ".EXE"], EnvironmentTools.ParseExtensions(" .COM; .EXE;;"));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseExtensions_WithoutValue_UsesTheWindowsDefault(string? Value) =>
+        Assert.Equal([".EXE", ".CMD", ".BAT"], EnvironmentTools.ParseExtensions(Value));
+
+    [Fact]
+    public void ExecutableSearchDirectories_ComeFromThePathOfTheSystem()
+    {
+        var expected = EnvironmentTools.ParseSearchDirectories(Environment.GetEnvironmentVariable("PATH"));
+
+        Assert.Equal(expected, EnvironmentTools.GetExecutableSearchDirectories());
+        Assert.NotEmpty(EnvironmentTools.GetExecutableExtensions());
+    }
 }
