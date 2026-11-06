@@ -31,6 +31,7 @@ public static class DbInitializer
         // Estas dos adaptaciones usan los nombres antiguos de tabla, así que van antes del renombrado.
         await AddStageSkillColumnAsync(db, CT);
         await AddMergeColumnsAsync(db, CT);
+        await AddConflictColumnsAsync(db, CT);
         await RenameTablesToModuleNamesAsync(db, CT);
 
         if (!await db.Stages.AnyAsync(CT))
@@ -62,7 +63,7 @@ public static class DbInitializer
         Db.Database.ExecuteSqlRawAsync(ADD_STAGE_SKILL_COLUMN_SQL, CT);
 
     // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
-    private const string ADD_STAGE_SKILL_COLUMN_SQL = $"""
+    internal const string ADD_STAGE_SKILL_COLUMN_SQL = $"""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.tables
@@ -85,7 +86,7 @@ public static class DbInitializer
         Db.Database.ExecuteSqlRawAsync(ADD_MERGE_COLUMNS_SQL, CT);
 
     // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
-    private const string ADD_MERGE_COLUMNS_SQL = $"""
+    internal const string ADD_MERGE_COLUMNS_SQL = $"""
         DO $$
         BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.tables
@@ -148,6 +149,33 @@ public static class DbInitializer
     }
 
     private const string PENDING_DEPLOY_STAGE_NAME = "Pendiente Deploy";
+
+    /// <summary>
+    /// Bases creadas antes de detectar conflictos en los pull requests: agrega <see cref="TaskItem.PullRequestHasConflicts"/>
+    /// y <see cref="TaskRun.ResolveConflicts"/>. No hace nada si las columnas ya existen o si la base ya usa los nombres
+    /// de tabla por módulo.
+    /// </summary>
+    private static Task AddConflictColumnsAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ADD_CONFLICT_COLUMNS_SQL, CT);
+
+    // Sin llaves en el SQL: EF Core lo pasa por string.Format.
+    internal const string ADD_CONFLICT_COLUMNS_SQL = """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = current_schema() AND table_name = 'Tasks')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = 'Tasks' AND column_name = 'PullRequestHasConflicts') THEN
+                ALTER TABLE "Tasks" ADD COLUMN "PullRequestHasConflicts" boolean NOT NULL DEFAULT FALSE;
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = current_schema() AND table_name = 'TaskRuns')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = 'TaskRuns' AND column_name = 'ResolveConflicts') THEN
+                ALTER TABLE "TaskRuns" ADD COLUMN "ResolveConflicts" boolean NOT NULL DEFAULT FALSE;
+            END IF;
+        END $$;
+        """;
 
     public static async Task SeedDefaultWorkflowAsync(AppDbContext Db, CancellationToken CT)
     {

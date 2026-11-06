@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net;
 using System.Text.Json;
+using DevArv.Web.Helpers;
 using DevArv.Web.Models;
 using Microsoft.Extensions.Options;
 
@@ -115,11 +116,22 @@ public sealed class GitHubService
             CT: CT);
     }
 
+    /// <remarks>
+    /// <c>mergeable</c> y <c>mergeable_state</c> sólo vienen al consultar un pull request (no en el listado) y GitHub los
+    /// calcula en segundo plano: la primera consulta después de un push puede traer <c>mergeable = null</c>.
+    /// </remarks>
     private static PullRequestInfo ToPullRequest(JsonElement PullRequest) => new(
         PullRequest.GetProperty("number").GetInt32(),
         PullRequest.GetProperty("html_url").GetString()!,
         PullRequest.GetProperty("state").GetString()!,
-        PullRequest.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True);
+        PullRequest.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True,
+        PullRequestConflictRule.FromGitHub(
+            Mergeable: PullRequest.TryGetProperty("mergeable", out var mergeable) && mergeable.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? mergeable.GetBoolean()
+                : null,
+            MergeableState: PullRequest.TryGetProperty("mergeable_state", out var state) && state.ValueKind == JsonValueKind.String
+                ? state.GetString()
+                : null));
 
     private async Task<JsonDocument> SendAsync(HttpMethod Method, string Url, object? Payload, CancellationToken CT)
     {

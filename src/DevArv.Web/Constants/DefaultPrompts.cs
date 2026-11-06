@@ -4,7 +4,8 @@ namespace DevArv.Web.Constants;
 /// Plantillas por defecto de los agentes. Se editan desde la pantalla "Flujo".
 /// Variables disponibles: {{task.id}} {{task.title}} {{task.description}} {{task.priority}}
 /// {{task.complexity}} {{task.labels}} {{project.name}} {{repo}} {{baseBranch}} {{workBranch}}
-/// {{attachments}} {{feedback}} {{skill}}
+/// {{attachments}} {{feedback}} {{skill}} {{conflicts}}
+/// ({{conflicts}} sólo tiene contenido al arreglar los conflictos del pull request; si la plantilla no la usa, se agrega al final).
 /// </summary>
 public static class DefaultPrompts
 {

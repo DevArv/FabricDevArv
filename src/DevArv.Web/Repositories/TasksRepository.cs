@@ -30,6 +30,9 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     internal const string LOCK_TASK_SQL = $$"""SELECT "Id" AS "Value" FROM "{{TableNames.TASKS}}" WHERE "Id" = {0} FOR UPDATE""";
     internal const string LOCK_RUNS_SQL = $$"""SELECT "Id" AS "Value" FROM "{{TableNames.TASK_RUNS}}" WHERE "TaskId" = {0} FOR UPDATE""";
 
+    /// <summary>Estados de una ejecución en cola o en curso (se traduce a SQL con <c>Contains</c>).</summary>
+    private static readonly RunStatus[] _ActiveRunStatuses = [RunStatus.QUEUED, RunStatus.RUNNING];
+
     public Task<int> CountWaitingAsync(CancellationToken CT) =>
         Db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WAITING_APPROVAL, CT);
 
@@ -88,6 +91,7 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
                 PullRequestNumber = t.PullRequestNumber,
                 PullRequestUrl = t.PullRequestUrl,
                 PullRequestMergedAt = t.PullRequestMergedAt,
+                PullRequestHasConflicts = t.PullRequestHasConflicts,
                 LastWorkerName = t.LastWorkerName,
                 LastError = t.LastError,
                 CreatedByName = t.CreatedByName,
@@ -104,11 +108,19 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             Stages: stages,
             Tasks: tasks,
             CT: CT);
+        var stagesByID = stages.ToDictionary(s => s.ID);
+        var resolvingConflicts = await GetResolvingConflictsAsync(
+            Tasks: tasks,
+            CT: CT);
         var byStage = tasks
             .Select(t => new BoardCardViewModel
             {
                 Item = t,
                 DevelopmentElapsed = developingSince.TryGetValue(t.ID, out var since) && now > since ? now - since : null,
+                ShowConflicts = PullRequestConflictRule.ShowConflicts(t),
+                CanResolveConflicts = stagesByID.TryGetValue(t.StageID, out var stage)
+                                      && PullRequestConflictRule.CanResolve(t, stage),
+                ResolvingConflicts = resolvingConflicts.Contains(t.ID),
             })
             .GroupBy(c => c.Item.StageID)
             .ToDictionary(g => g.Key, g => g.ToList());
@@ -157,6 +169,23 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     }
 
     /// <summary>
+    /// IDs de las tareas en cola o en ejecución cuya ejecución activa es un arreglo de conflictos del pull request
+    /// (<see cref="TaskRun.ResolveConflicts"/>).
+    /// </summary>
+    private async Task<HashSet<int>> GetResolvingConflictsAsync(List<TaskItem> Tasks, CancellationToken CT)
+    {
+        var ids = Tasks.Where(t => t.Status is WorkStatus.QUEUED or WorkStatus.RUNNING).Select(t => t.ID).ToList();
+        if (ids.Count == 0) return [];
+
+        var resolving = await Db.TaskRuns.AsNoTracking()
+            .Where(r => ids.Contains(r.TaskID) && r.ResolveConflicts && _ActiveRunStatuses.Contains(r.Status))
+            .Select(r => r.TaskID)
+            .Distinct()
+            .ToListAsync(CT);
+        return resolving.ToHashSet();
+    }
+
+    /// <summary>
     /// Formulario de nueva tarea con el proyecto activo indicado (o el primero por nombre) y su rama por defecto.
     /// Devuelve null si no hay proyectos activos.
     /// </summary>
@@ -189,6 +218,11 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             Workers = await Db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(CT),
             SelectedRun = selectedRun,
             SelectedRunFiles = ParseChangedFiles(selectedRun?.ChangedFilesJson),
+            ShowConflicts = PullRequestConflictRule.ShowConflicts(task),
+            CanResolveConflicts = PullRequestConflictRule.CanResolve(task, task.Stage),
+            // GetDetailsAsync ordena las ejecuciones de la más reciente a la más antigua.
+            ResolvingConflicts = task.Runs.FirstOrDefault() is { ResolveConflicts: true } last
+                                 && _ActiveRunStatuses.Contains(last.Status),
         };
     }
 

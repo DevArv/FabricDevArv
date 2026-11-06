@@ -106,7 +106,8 @@
                 <textarea asp-for="Input.PromptTemplate" rows="18" class="mono"></textarea>
                 <small>Variables: <code>{{task.id}}</code> <code>{{task.title}}</code> <code>{{task.description}}</code> <code>{{task.priority}}</code>
                     <code>{{task.complexity}}</code> <code>{{task.labels}}</code> <code>{{project.name}}</code> <code>{{repo}}</code>
-                    <code>{{baseBranch}}</code> <code>{{workBranch}}</code> <code>{{attachments}}</code> <code>{{feedback}}</code> <code>{{skill}}</code></small>
+                    <code>{{baseBranch}}</code> <code>{{workBranch}}</code> <code>{{attachments}}</code> <code>{{feedback}}</code> <code>{{skill}}</code>
+                    <code>{{conflicts}}</code> (instrucciones para arreglar los conflictos del pull request; si no está, se agregan al final)</small>
             </label>
             <label>Texto extra para el system prompt (opcional)
                 <textarea asp-for="Input.AppendSystemPrompt" rows="4" class="mono"></textarea>

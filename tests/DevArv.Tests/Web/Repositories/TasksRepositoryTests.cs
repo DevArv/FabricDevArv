@@ -599,6 +599,235 @@ public sealed class TasksRepositoryTests : IDisposable
         Assert.Single(requested.Workers);
     }
 
+    // ------------------------------------------------------------------ conflictos del pull request
+
+    private const int APPROVAL_STAGE_ID = 1;
+    private const int DEVELOPER_STAGE_ID = 2;
+    private const int TERMINAL_STAGE_ID = 3;
+
+    [Theory]
+    [InlineData(RunStatus.QUEUED, true)]
+    [InlineData(RunStatus.RUNNING, true)]
+    [InlineData(RunStatus.SUCCEEDED, false)]
+    [InlineData(RunStatus.FAILED, false)]
+    [InlineData(RunStatus.CANCELLED, false)]
+    public async Task GetBoardAsync_ResolvingConflicts_OnlyWithAnActiveResolveConflictsRun(RunStatus RunStatus, bool Expected)
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus, ResolveConflicts: true)]);
+
+        var card = await GetBoardCardAsync(taskID);
+
+        Assert.Equal(Expected, card.ResolvingConflicts);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_ActiveRunWithoutResolveConflicts_IsNotResolvingConflicts()
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus.RUNNING, ResolveConflicts: false)]);
+
+        var card = await GetBoardCardAsync(taskID);
+
+        Assert.False(card.ResolvingConflicts);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_ResolveConflictsRunOfAnotherTask_DoesNotMarkTheTask()
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus.RUNNING, ResolveConflicts: false)]);
+        var otherID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.QUEUED,
+            Runs: [(RunStatus.QUEUED, ResolveConflicts: true)]);
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
+
+        Assert.False(cards[taskID].ResolvingConflicts);
+        Assert.True(cards[otherID].ResolvingConflicts);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_IdleTaskWithALeftoverActiveRun_IsNotResolvingConflicts()
+    {
+        // Sólo se consideran las tareas en cola o en ejecución.
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.IDLE,
+            Runs: [(RunStatus.QUEUED, ResolveConflicts: true)]);
+
+        var card = await GetBoardCardAsync(taskID);
+
+        Assert.False(card.ResolvingConflicts);
+    }
+
+    [Theory]
+    // Aprobación Producto con conflictos: se muestra el estado y el botón 🔧.
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, true, false, true, true)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.IDLE, true, true, false, true, true)]
+    // Sin conflictos, sin pull request o ya integrado: nada.
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, false, true, false, false, false)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, false, false, false, false)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, true, true, false, false)]
+    // En ejecución o en una columna final: se muestra el estado, pero no el botón.
+    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.RUNNING, true, true, false, true, false)]
+    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.QUEUED, true, true, false, true, false)]
+    [InlineData(TERMINAL_STAGE_ID, WorkStatus.DONE, true, true, false, true, false)]
+    public async Task GetBoardAsync_SetsShowAndCanResolveConflicts(
+        int StageID, WorkStatus Status, bool HasConflicts, bool HasPullRequest, bool Merged,
+        bool ExpectedShow, bool ExpectedCanResolve)
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: StageID,
+            Status: Status,
+            Runs: [],
+            HasConflicts: HasConflicts,
+            HasPullRequest: HasPullRequest,
+            Merged: Merged);
+
+        var card = await GetBoardCardAsync(taskID);
+
+        Assert.Equal(ExpectedShow, card.ShowConflicts);
+        Assert.Equal(ExpectedCanResolve, card.CanResolveConflicts);
+    }
+
+    [Theory]
+    // La más reciente es el arreglo de conflictos activo.
+    [InlineData(RunStatus.FAILED, false, RunStatus.QUEUED, true, true)]
+    [InlineData(RunStatus.SUCCEEDED, false, RunStatus.RUNNING, true, true)]
+    // La más reciente es un arreglo que ya terminó.
+    [InlineData(RunStatus.SUCCEEDED, false, RunStatus.FAILED, true, false)]
+    // Una ejecución anterior de arreglo, aunque siga activa, no cuenta si la más reciente no es un arreglo.
+    [InlineData(RunStatus.QUEUED, true, RunStatus.RUNNING, false, false)]
+    public async Task GetDetailsViewAsync_ResolvingConflicts_UsesTheMostRecentRun(
+        RunStatus OlderStatus, bool OlderResolve, RunStatus NewerStatus, bool NewerResolve, bool Expected)
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(OlderStatus, OlderResolve), (NewerStatus, NewerResolve)]);
+
+        await using var db = CreateDbContext();
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.Equal(Expected, details.ResolvingConflicts);
+    }
+
+    [Fact]
+    public async Task GetDetailsViewAsync_SetsShowAndCanResolveConflictsFromTheTaskAndItsStage()
+    {
+        await SeedStagesAsync();
+        var approvalID = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [(RunStatus.SUCCEEDED, ResolveConflicts: false)]);
+        var terminalID = await SeedConflictTaskAsync(
+            StageID: TERMINAL_STAGE_ID,
+            Status: WorkStatus.DONE,
+            Runs: []);
+
+        await using var db = CreateDbContext();
+        var repository = CreateRepository(db);
+        var approval = await repository.GetDetailsViewAsync(
+            ID: approvalID,
+            RunID: null,
+            CT: CancellationToken.None);
+        var terminal = await repository.GetDetailsViewAsync(
+            ID: terminalID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(approval);
+        Assert.True(approval.ShowConflicts);
+        Assert.True(approval.CanResolveConflicts);
+        Assert.False(approval.ResolvingConflicts);
+        Assert.NotNull(terminal);
+        Assert.True(terminal.ShowConflicts);
+        Assert.False(terminal.CanResolveConflicts);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_KeepsTheConflictFlagOfEachTask_EvenThoughTheBoardOnlyLoadsSomeColumns()
+    {
+        // La proyección del tablero recorta columnas: este campo tiene que seguir viajando.
+        await SeedStagesAsync();
+        var withConflicts = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [],
+            HasConflicts: true);
+        var withoutConflicts = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [],
+            HasConflicts: false);
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
+
+        Assert.True(cards[withConflicts].Item.PullRequestHasConflicts);
+        Assert.False(cards[withoutConflicts].Item.PullRequestHasConflicts);
+    }
+
+    private async Task<BoardCardViewModel> GetBoardCardAsync(int TaskID)
+    {
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        return board.Columns.SelectMany(c => c.Tasks).Single(c => c.Item.ID == TaskID);
+    }
+
+    /// <summary>Proyecto y columnas «Aprobación Producto» (aprobación humana), «Desarrollador» (agente con push) y «Terminado».</summary>
+    private async Task SeedStagesAsync()
+    {
+        await using var db = CreateDbContext();
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Stages.AddRange(
+            new Stage { ID = APPROVAL_STAGE_ID, Name = "Aprobación Producto", Order = 3, Kind = StageKind.HUMAN_APPROVAL },
+            new Stage { ID = DEVELOPER_STAGE_ID, Name = "Desarrollador", Order = 1, Kind = StageKind.AGENT, PushChanges = true },
+            new Stage { ID = TERMINAL_STAGE_ID, Name = "Terminado", Order = 9, Kind = StageKind.TERMINAL });
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>Crea una tarea con pull request y sus ejecuciones, de la más antigua a la más reciente; devuelve su ID.</summary>
+    private async Task<int> SeedConflictTaskAsync(
+        int StageID, WorkStatus Status, (RunStatus Status, bool ResolveConflicts)[] Runs,
+        bool HasConflicts = true, bool HasPullRequest = true, bool Merged = false)
+    {
+        await using var db = CreateDbContext();
+        var task = NewTask("Tarea");
+        task.StageID = StageID;
+        task.Status = Status;
+        task.PullRequestHasConflicts = HasConflicts;
+        task.PullRequestNumber = HasPullRequest ? 42 : null;
+        task.PullRequestMergedAt = Merged ? DateTimeOffset.UtcNow : null;
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+
+        foreach (var run in Runs)
+        {
+            db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = StageID, Status = run.Status, ResolveConflicts = run.ResolveConflicts });
+            await db.SaveChangesAsync(); // Uno por uno para que los IDs sigan el orden de creación.
+        }
+        return task.ID;
+    }
+
     private bool CanNotDelete(string StoredName)
     {
         try

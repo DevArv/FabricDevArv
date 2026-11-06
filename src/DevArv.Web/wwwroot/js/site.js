@@ -87,8 +87,11 @@
     const inner = e.target.closest('a[data-modal-link]');
     if (inner && modal.open) { e.preventDefault(); openModal(inner.getAttribute('href')); return; }
 
+    const fix = e.target.closest('[data-resolve-conflicts]');
+    if (fix) { e.preventDefault(); resolveConflicts(fix); return; }
+
     const card = e.target.closest('.card[data-task-id]');
-    if (card && !e.target.closest('a')) {
+    if (card && !e.target.closest('a, button')) {
       const id = card.dataset.taskId;
       openModal(`/Tasks/Details/${id}?modal=true`, { pushTask: id });
       return;
@@ -111,6 +114,27 @@
   });
 
   // ------------------------------------------------------------------ tablero
+
+  // Botón 🔧 de la tarjeta: la tarea regresa al desarrollador para arreglar los conflictos de su pull request.
+  async function resolveConflicts(button) {
+    if (!confirm('La tarea regresará a «Desarrollador»: el agente integrará la rama base y resolverá los conflictos del pull request. ¿Continuar?')) return;
+    button.disabled = true;
+    const body = new FormData();
+    body.set('taskId', button.dataset.resolveConflicts);
+    body.set('__RequestVerificationToken', $('input[name="__RequestVerificationToken"]')?.value ?? '');
+    try {
+      const res = await fetch('/?handler=ResolveConflicts', { method: 'POST', body, credentials: 'same-origin' });
+      if (!res.ok) {
+        let message = `No se pudo pedir el arreglo de conflictos (HTTP ${res.status}).`;
+        try { message = (await res.json()).error ?? message; } catch { /* sin cuerpo JSON */ }
+        alert(message);
+      }
+    } catch (err) {
+      alert(`No se pudo pedir el arreglo de conflictos: ${err.message}`);
+    }
+    button.disabled = false;
+    refreshBoard();
+  }
 
   async function refreshBoard() {
     if (!board || dragging || document.hidden) return;

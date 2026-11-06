@@ -15,7 +15,11 @@ public sealed partial class PromptBuilder(Clock Clock)
 
     /// <param name="Item">Tarea con Project, Attachments y Comments cargados.</param>
     /// <param name="Stage">Columna de agente cuya plantilla se usa.</param>
-    public string Build(TaskItem Item, Stage Stage)
+    /// <param name="ResolveConflicts">
+    /// La ejecución es para arreglar los conflictos del pull request: agrega las instrucciones (variable
+    /// <c>{{conflicts}}</c>, o al final si la plantilla no la usa).
+    /// </param>
+    public string Build(TaskItem Item, Stage Stage, bool ResolveConflicts = false)
     {
         var template = string.IsNullOrWhiteSpace(Stage.PromptTemplate)
             ? (Stage.RequiresDecision ? DefaultPrompts.REVIEWER : DefaultPrompts.DEVELOPER)
@@ -36,11 +40,15 @@ public sealed partial class PromptBuilder(Clock Clock)
             ["attachments"] = BuildAttachments(Item),
             ["feedback"] = BuildFeedback(Item),
             ["skill"] = BuildSkill(Stage),
+            ["conflicts"] = ResolveConflicts ? BuildConflicts(Item) : "",
         };
 
         // Las plantillas anteriores a {{skill}} (ya guardadas en la base) reciben el bloque al final.
         if (!template.Contains("{{skill}}") && values["skill"].Length > 0)
             template = template.TrimEnd() + "\n\n{{skill}}";
+        // Igual con los conflictos: al final, después de «Cómo trabajar», para que prevalezcan sobre implementar la tarea.
+        if (!template.Contains("{{conflicts}}") && values["conflicts"].Length > 0)
+            template = template.TrimEnd() + "\n\n{{conflicts}}";
 
         // Una sola pasada: un «{{x}}» escrito dentro de la descripción o de un comentario no se vuelve a expandir.
         var filled = Placeholder().Replace(template, match =>
@@ -84,6 +92,29 @@ public sealed partial class PromptBuilder(Clock Clock)
         builder.AppendLine("Si el skill no está disponible en este repositorio, dilo en tu respuesta y continúa con las pautas de este prompt.");
         builder.AppendLine("Si el skill pide otro formato de respuesta, el formato de este prompt tiene prioridad "
                            + "(en especial la línea final de VEREDICTO, si se pide).");
+        return builder.ToString();
+    }
+
+    private static string BuildConflicts(TaskItem Item)
+    {
+        var pr = Item.PullRequestNumber is { } number ? $"El pull request #{number}" : "El pull request";
+        var baseBranch = Item.BaseBranch;
+        var builder = new StringBuilder();
+        builder.AppendLine($"## Arreglar conflictos con `{baseBranch}` (prioritario: reemplaza los pasos anteriores)");
+        builder.AppendLine($"{pr} de esta tarea tiene conflictos con `{baseBranch}` en GitHub. La tarea ya está implementada en "
+                           + $"`{Item.WorkBranch}`: en esta ejecución tu trabajo es **sólo** resolver esos conflictos, sin cambiar "
+                           + "el alcance de la tarea.");
+        builder.AppendLine($"Antes de iniciarte, el orquestador integró `origin/{baseBranch}` en la rama (`git merge`) y dejó sin "
+                           + "resolver los archivos en conflicto (con marcadores `<<<<<<<`, `=======` y `>>>>>>>`).");
+        builder.AppendLine("1. Lista los archivos en conflicto con `git diff --name-only --diff-filter=U` (o `git status`).");
+        builder.AppendLine($"2. En cada uno combina ambos lados: conserva lo que llegó de `{baseBranch}` y los cambios de esta tarea. "
+                           + "Elimina todos los marcadores de conflicto.");
+        builder.AppendLine("3. Compila y ejecuta las pruebas; corrige lo que rompa la integración.");
+        builder.AppendLine("4. No ejecutes `git merge --abort`, `git reset`, `git rebase` ni cambies de rama: el orquestador hace el "
+                           + "commit del merge y el push. Si quedan marcadores de conflicto, no se hará push.");
+        builder.AppendLine("5. Si no hay archivos en conflicto (la integración fue limpia), sólo verifica que compile y que pasen las pruebas.");
+        builder.AppendLine();
+        builder.AppendLine("Termina con un resumen breve en español: archivos que tenían conflictos, cómo resolviste cada uno y cómo se probó.");
         return builder.ToString();
     }
 

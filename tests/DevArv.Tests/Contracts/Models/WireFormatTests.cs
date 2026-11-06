@@ -43,6 +43,10 @@ public class WireFormatTests
     }
 
     [Fact]
+    public void AgentJob_PublishesMergeBaseBranchForTheConflictFix() =>
+        Assert.Contains("mergeBaseBranch", KeysOf(NewJob(), _Options[0]));
+
+    [Fact]
     public void AttachmentInfo_KeepsTheJsonNameID_AndStillPublishesLocalFileName()
     {
         foreach (var options in _Options)

@@ -6,7 +6,8 @@ namespace DevArv.Web.Services;
 /// Proceso en segundo plano del servidor:
 /// 1) ejecuta las columnas de sistema (crear PR, merge) y
 /// 2) marca como fallidas las ejecuciones de workers que dejaron de responder o excedieron su tiempo y
-/// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub.
+/// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub y marca las que
+///    tienen conflictos con la rama base.
 /// </summary>
 public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrator> Logger) : BackgroundService
 {
@@ -44,7 +45,7 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
                 if (DateTimeOffset.UtcNow - _LastMergeCheck > _MergeCheckInterval)
                 {
                     _LastMergeCheck = DateTimeOffset.UtcNow;
-                    await MoveMergedPullRequestsAsync(StoppingToken);
+                    await CheckPullRequestsAsync(StoppingToken);
                 }
             }
             catch (OperationCanceledException) when (StoppingToken.IsCancellationRequested)
@@ -90,10 +91,11 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
     }
 
     /// <summary>
-    /// Consulta en GitHub los pull requests abiertos de las tareas y, si alguno se integró (merge),
-    /// hace entrar la tarea a la columna marcada como destino del merge (por defecto «Pendiente Deploy»).
+    /// Consulta en GitHub los pull requests abiertos de las tareas: si alguno se integró (merge), hace entrar la tarea a
+    /// la columna marcada como destino del merge (por defecto «Pendiente Deploy»); si no, registra si tiene conflictos
+    /// con la rama base (un pull request cerrado sin merge deja de marcarse con conflictos).
     /// </summary>
-    private async Task MoveMergedPullRequestsAsync(CancellationToken CT)
+    private async Task CheckPullRequestsAsync(CancellationToken CT)
     {
         using var scope = Scopes.CreateScope();
         var github = scope.ServiceProvider.GetRequiredService<GitHubService>();
@@ -109,14 +111,31 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
                     Repo: watched.RepoName,
                     Number: watched.Number,
                     CT: CT);
-                if (!pr.Merged) continue;
-                Logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
-                    watched.Number, watched.TaskID);
-                await workflow.OnPullRequestMergedAsync(
-                    TaskID: watched.TaskID,
-                    Number: watched.Number,
-                    Actor: "Sistema",
-                    CT: CT);
+                if (pr.Merged)
+                {
+                    Logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
+                        watched.Number, watched.TaskID);
+                    await workflow.OnPullRequestMergedAsync(
+                        TaskID: watched.TaskID,
+                        Number: watched.Number,
+                        Actor: "Sistema",
+                        CT: CT);
+                    continue;
+                }
+
+                // null: GitHub aún calcula si se puede integrar; se conserva lo último registrado.
+                var hasConflicts = pr.State == "open" ? pr.HasConflicts : false;
+                if (hasConflicts is { } value && value != watched.HasConflicts)
+                {
+                    Logger.LogInformation("Pull request #{Number} de la tarea {TaskId}: conflictos = {HasConflicts}.",
+                        watched.Number, watched.TaskID, value);
+                    await workflow.OnPullRequestConflictsCheckedAsync(
+                        TaskID: watched.TaskID,
+                        Number: watched.Number,
+                        HasConflicts: value,
+                        Actor: "Sistema",
+                        CT: CT);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -45,6 +45,17 @@ columna marcada en **Flujo** con «Al hacer merge del pull request en GitHub, la
 no finalizada: no se regresa una tarea que ya avanzó ni se reabre una descartada o archivada. Si se crea un pull request
 nuevo para la tarea, se vuelve a vigilar.
 
+**Conflictos del pull request:** en esa misma consulta el servidor lee si GitHub puede integrar el pull request
+(`mergeable` / `mergeable_state`). Si informa conflictos con la rama base, la tarjeta muestra el estado
+«⚠️ El PR tiene conflictos» (normalmente en 🧑‍💼 Aprobación Producto) y un botón 🔧 (también «🔧 Arreglar conflictos» en
+el detalle de la tarea). Al pulsarlo, la tarea regresa a 💻 Desarrollador: el worker integra `origin/<rama base>` en la
+rama de trabajo (`git merge`), deja los archivos en conflicto para el agente, que los resuelve (instrucciones en la
+variable `{{conflicts}}` del prompt, o al final si la plantilla no la usa), y luego hace el commit del merge y el push.
+Si quedan marcadores de conflicto no hace push y la ejecución falla («Reintentar» vuelve a integrar la rama base).
+Después sigue el flujo normal (Revisor de Código → Creador de PR, que reutiliza el PR abierto → Aprobación Producto).
+El estado desaparece solo cuando GitHub deja de informar conflictos; el botón no se muestra mientras la tarea tiene una
+ejecución en cola o en curso. Los workers deben actualizarse junto con el servidor para soportar este arreglo.
+
 **Skill de la etapa:** cada columna de agente puede indicar un *skill* de Claude Code (campo **Skill** en **Flujo**).
 El Revisor de Código usa por defecto `revision`, el mismo skill de ShopyCube (`.claude/skills/revision/SKILL.md` en el
 repositorio del proyecto). El servidor agrega `Skill(<nombre>)` a las herramientas permitidas y pone en el prompt la

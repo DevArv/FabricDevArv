@@ -124,8 +124,63 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
         }
     }
 
+    /// <summary>
+    /// Arreglo de conflictos del pull request: integra <c>origin/{base}</c> en la rama de trabajo. Si hay conflictos deja
+    /// el merge a medias (archivos con marcadores) para que el agente los resuelva y devuelve los archivos en conflicto;
+    /// si la integración es limpia, git crea el commit del merge y devuelve una lista vacía.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> MergeBaseAsync(AgentJob Job, PreparedWorkspace Workspace, Action<string> Log, CancellationToken CT)
+    {
+        var worktree = Workspace.WorktreePath;
+        var source = $"origin/{Job.BaseBranch}";
+        Log($"$ git merge --no-edit {source}");
+        var merge = await RunGitAsync(
+            Cwd: worktree,
+            Args: ["merge", "--no-edit", "-m", $"Merge {source} en {Job.WorkBranch} (DevArv #{Job.TaskID}: conflictos del pull request)", source],
+            CT: CT);
+
+        if (merge.Ok)
+        {
+            Log($"{source} se integró sin conflictos.");
+            return [];
+        }
+
+        var conflicted = await ConflictedFilesAsync(
+            Worktree: worktree,
+            CT: CT);
+        if (conflicted.Count == 0)
+        {
+            var err = string.IsNullOrWhiteSpace(merge.StdErr) ? merge.StdOut : merge.StdErr;
+            throw new GitException($"git merge falló ({merge.ExitCode}): {Redact(err.Trim())}");
+        }
+
+        Log($"Conflictos en {conflicted.Count} archivo(s): {string.Join(", ", conflicted)}");
+        return conflicted;
+    }
+
+    private async Task<List<string>> ConflictedFilesAsync(string Worktree, CancellationToken CT)
+    {
+        // -z separa con NUL y no entrecomilla ni escapa nombres con caracteres no ASCII (español.txt), igual que
+        // las rutas que imprime «git diff --check», con las que luego se comparan.
+        var r = await GitAsync(
+            Cwd: Worktree,
+            Args: ["diff", "--name-only", "-z", "--diff-filter=U"],
+            CT: CT);
+        return ParseNulSeparated(r.StdOut);
+    }
+
+    /// <summary>Nombres separados por NUL. Git añade un «\n» suelto tras las rutas sin fusionar: se descarta.</summary>
+    internal static List<string> ParseNulSeparated(string Output) =>
+        Output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
+
     /// <summary>Commit de lo pendiente y push de la rama de trabajo.</summary>
-    public async Task<PushResult> CommitAndPushAsync(AgentJob Job, PreparedWorkspace Workspace, Action<string> Log, CancellationToken CT)
+    /// <param name="ConflictedFiles">
+    /// Archivos que quedaron en conflicto al integrar la rama base (<see cref="MergeBaseAsync"/>): si alguno conserva
+    /// marcadores de conflicto no se hace commit ni push.
+    /// </param>
+    public async Task<PushResult> CommitAndPushAsync(
+        AgentJob Job, PreparedWorkspace Workspace, Action<string> Log, CancellationToken CT,
+        IReadOnlyCollection<string>? ConflictedFiles = null)
     {
         var worktree = Workspace.WorktreePath;
 
@@ -140,11 +195,34 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
             Cwd: worktree,
             Args: ["add", "-A"],
             CT: CT);
+
+        if (ConflictedFiles is { Count: > 0 })
+        {
+            // --check marca las líneas agregadas que parecen marcadores de conflicto (también avisa de espacios al final,
+            // que se ignoran); sólo cuentan los archivos que estaban en conflicto. Se compara contra el commit inicial
+            // para incluir lo que el agente haya confirmado por su cuenta.
+            var check = await RunGitAsync(
+                Cwd: worktree,
+                Args: ["diff", "--cached", "--check", Workspace.StartCommit],
+                CT: CT);
+            var leftovers = LeftoverConflictMarkers(
+                CheckOutput: check.StdOut,
+                Files: ConflictedFiles);
+            if (leftovers.Count > 0)
+                throw new GitException("Quedan marcadores de conflicto sin resolver; no se hizo commit ni push: "
+                                       + string.Join(", ", leftovers.Take(10)) + (leftovers.Count > 10 ? "…" : ""));
+        }
+
         var staged = await RunGitAsync(
             Cwd: worktree,
             Args: ["diff", "--cached", "--quiet"],
             CT: CT);
-        if (staged.ExitCode == 1)
+        // Un merge a medias se cierra con su commit aunque la resolución no cambie archivos respecto a HEAD.
+        var mergeInProgress = (await RunGitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "-q", "--verify", "MERGE_HEAD"],
+            CT: CT)).Ok;
+        if (staged.ExitCode == 1 || mergeInProgress)
         {
             Log("$ git commit");
             await GitAsync(
@@ -198,6 +276,25 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
             Args: ["diff", "--name-status", "-M", $"origin/{BaseBranch}...HEAD"],
             CT: CT);
         return ParseNameStatus(r.StdOut);
+    }
+
+    /// <summary>
+    /// Ubicaciones (<c>archivo:línea</c>) de la salida de <c>git diff --check</c> que son marcadores de conflicto, sólo de
+    /// los archivos indicados.
+    /// </summary>
+    internal static List<string> LeftoverConflictMarkers(string CheckOutput, IReadOnlyCollection<string> Files)
+    {
+        var result = new List<string>();
+        foreach (var line in CheckOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            const string marker = ": leftover conflict marker";
+            if (!line.EndsWith(marker, StringComparison.Ordinal)) continue;
+            var location = line[..^marker.Length];
+            var colon = location.LastIndexOf(':');
+            if (colon <= 0) continue;
+            if (Files.Contains(location[..colon])) result.Add(location);
+        }
+        return result;
     }
 
     internal static List<ChangedFile> ParseNameStatus(string Output)

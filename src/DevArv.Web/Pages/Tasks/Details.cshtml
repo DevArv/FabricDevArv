@@ -70,6 +70,29 @@
             }
         </div>
     }
+    @if (Model.ShowConflicts)
+    {
+        <div class="alert conflicts">
+            <strong>⚠️ El PR tiene conflictos:</strong> GitHub informa que el pull request #@t.PullRequestNumber no se puede
+            integrar en <code>@t.BaseBranch</code>.
+            @if (Model.CanResolveConflicts)
+            {
+                <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("ResolveConflicts")" class="inline"
+                      data-confirm="La tarea regresará a «Desarrollador»: el agente integrará @t.BaseBranch en la rama y resolverá los conflictos. ¿Continuar?">
+                    <input type="hidden" name="returnQuery" />
+                    <button class="btn btn-warn" title="La tarea regresa al desarrollador para resolver los conflictos">🔧 Arreglar conflictos</button>
+                </form>
+            }
+            else if (Model.ResolvingConflicts)
+            {
+                <span>🔧 El desarrollador está integrando <code>@t.BaseBranch</code> y resolviendo los conflictos.</span>
+            }
+            else if (t.Status is WorkStatus.QUEUED or WorkStatus.RUNNING)
+            {
+                <span class="muted">Se podrán arreglar cuando termine la ejecución en curso.</span>
+            }
+        </div>
+    }
     @if (t.Status == WorkStatus.FAILED)
     {
         <div class="alert error">

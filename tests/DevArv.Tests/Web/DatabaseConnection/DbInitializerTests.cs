@@ -45,6 +45,29 @@ public class DbInitializerTests
         Assert.Equal(DbInitializer.TABLE_RENAMES.Length, Regex.Matches(sql, "NOT EXISTS").Count);
     }
 
+    [Theory]
+    [InlineData("ADD_STAGE_SKILL_COLUMN_SQL")]
+    [InlineData("ADD_MERGE_COLUMNS_SQL")]
+    [InlineData("ADD_CONFLICT_COLUMNS_SQL")]
+    public void LegacyColumnMigrations_OnlyActWhenTheOldTableExists(string ConstantName)
+    {
+        // Usan los nombres antiguos de tabla. En una base nueva (o ya renombrada) esa tabla no existe y, sin esta
+        // guarda, el ALTER TABLE fallaría al arrancar.
+        var sql = (string)typeof(DbInitializer)
+            .GetField(ConstantName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+            .GetRawConstantValue()!;
+
+        var alters = Regex.Matches(sql, "ALTER TABLE \"(\\w+)\"").Select(m => m.Groups[1].Value).Distinct().ToList();
+        Assert.NotEmpty(alters);
+        foreach (var table in alters)
+        {
+            Assert.Matches(
+                $@"IF EXISTS \(SELECT 1 FROM information_schema\.tables\s+WHERE table_schema = current_schema\(\) AND table_name = '{table}'\)",
+                sql);
+        }
+        Assert.Contains("NOT EXISTS (SELECT 1 FROM information_schema.columns", sql);
+    }
+
     [Fact]
     public void RenameSql_IsOneAtomicBlock_WithoutBracesThatEfCoreWouldTreatAsPlaceholders()
     {

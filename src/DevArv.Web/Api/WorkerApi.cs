@@ -59,7 +59,11 @@ public static class WorkerApi
             return Results.NoContent();
         }
 
-        var prompt = Prompts.Build(task, stage);
+        var mergeBaseBranch = run.ResolveConflicts && stage.PushChanges;
+        var prompt = Prompts.Build(
+            Item: task,
+            Stage: stage,
+            ResolveConflicts: mergeBaseBranch);
         await Workflow.SavePromptSnapshotAsync(
             Run: run,
             Prompt: prompt,
@@ -88,7 +92,8 @@ public static class WorkerApi
             Attachments: task.Attachments
                 .OrderBy(a => a.ID)
                 .Select(a => new AttachmentInfo(a.ID, a.FileName, a.ContentType, a.Size))
-                .ToList());
+                .ToList(),
+            MergeBaseBranch: mergeBaseBranch);
 
         return Results.Ok(job);
     }

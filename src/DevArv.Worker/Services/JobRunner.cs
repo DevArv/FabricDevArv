@@ -36,6 +36,15 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
             }
             if (Job.Attachments.Count > 0) shipper.Write($"{Job.Attachments.Count} adjunto(s) descargado(s).");
 
+            // Arreglo de conflictos del pull request: se integra la rama base y el agente resuelve lo que quede en conflicto.
+            IReadOnlyList<string> conflicted = Job.MergeBaseBranch && Job.PushChanges
+                ? await Git.MergeBaseAsync(
+                    Job: Job,
+                    Workspace: ws,
+                    Log: shipper.Write,
+                    CT: jobCts.Token)
+                : [];
+
             outcome = await Claude.RunAsync(
                 Job: Job,
                 Workspace: ws,
@@ -55,7 +64,8 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
                         Job: Job,
                         Workspace: ws,
                         Log: shipper.Write,
-                        CT: jobCts.Token)
+                        CT: jobCts.Token,
+                        ConflictedFiles: conflicted)
                     : new PushResult(await Git.HeadAsync(ws, jobCts.Token) ?? "", false, []);
                 completion = Success(outcome, push);
                 shipper.Write("✔ Etapa completada.");

@@ -908,24 +908,6 @@ public sealed class WorkflowServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetPullRequestsToWatchAsync_WithoutMergeDestination_ReturnsNothing()
-    {
-        await SeedFlowAsync();
-        var taskID = await CreateTaskAsync();
-        await SetPullRequestAsync(taskID, 11);
-        await using (var db = CreateDbContext())
-        {
-            (await db.Stages.SingleAsync(s => s.ID == PENDING_DEPLOY)).IsMergeDestination = false;
-            await db.SaveChangesAsync();
-        }
-
-        await using var check = CreateDbContext();
-        var watched = await CreateService(check).GetPullRequestsToWatchAsync(CancellationToken.None);
-
-        Assert.Empty(watched);
-    }
-
-    [Fact]
     public async Task OnPullRequestMergedAsync_TaskBeforeTheDestination_MovesItAndRecordsTheMerge()
     {
         await SeedFlowAsync();
@@ -997,6 +979,295 @@ public sealed class WorkflowServiceTests : IDisposable
             Number: 1,
             Actor: "Sistema",
             CT: CancellationToken.None);
+    }
+
+    // ------------------------------------------------------------------ conflictos del pull request
+
+    /// <summary>Una tarea con el PR #12 en «Aprobación» (columna anterior a la de merge); requiere SeedFlowAsync.</summary>
+    private async Task<int> SeedPullRequestTaskAsync(bool HasConflicts, WorkStatus Status = WorkStatus.WAITING_APPROVAL)
+    {
+        await using var db = CreateDbContext();
+        var task = new TaskItem
+        {
+            Title = "Tarea", ProjectID = 1, StageID = APPROVAL, Status = Status, CreatedByName = "ana",
+            BaseBranch = "main", WorkBranch = "fd_/1-tarea", PullRequestNumber = 12,
+            PullRequestUrl = "https://github.com/acme/fabric/pull/12", PullRequestHasConflicts = HasConflicts,
+        };
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+        return task.ID;
+    }
+
+    [Fact]
+    public async Task ResolveConflictsAsync_ReturnsTheTaskToTheDeveloperWithAConflictRun()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: true);
+
+        await using (var db = CreateDbContext())
+        {
+            var service = CreateService(db);
+            var task = (await service.LoadTaskAsync(taskID, CancellationToken.None))!;
+            await service.ResolveConflictsAsync(
+                Item: task,
+                Actor: "ana",
+                CT: CancellationToken.None);
+        }
+
+        await using var check = CreateDbContext();
+        var saved = await check.Tasks.SingleAsync();
+        Assert.Equal(DEVELOPER, saved.StageID);
+        Assert.Equal(WorkStatus.QUEUED, saved.Status);
+        Assert.True(saved.PullRequestHasConflicts); // Lo limpia el orquestador cuando GitHub deja de informarlos.
+        var run = await check.TaskRuns.SingleAsync();
+        Assert.True(run.ResolveConflicts);
+        Assert.Equal(RunStatus.QUEUED, run.Status);
+        Assert.Equal(StageKind.AGENT, run.RunnerKind);
+        Assert.Contains(await check.TaskEvents.Select(e => e.Message).ToListAsync(),
+            message => message.Contains("arreglar los conflictos del pull request #12"));
+    }
+
+    [Fact]
+    public async Task ResolveConflictsAsync_WithoutConflicts_Throws()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: false);
+        await using var db = CreateDbContext();
+        var service = CreateService(db);
+        var task = (await service.LoadTaskAsync(taskID, CancellationToken.None))!;
+
+        var ex = await Assert.ThrowsAsync<WorkflowException>(() => service.ResolveConflictsAsync(
+            Item: task,
+            Actor: "ana",
+            CT: CancellationToken.None));
+
+        Assert.Contains("no informa conflictos", ex.Message);
+        Assert.Equal(0, await db.TaskRuns.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(WorkStatus.QUEUED)]
+    [InlineData(WorkStatus.RUNNING)]
+    public async Task ResolveConflictsAsync_WhileRunning_Throws(WorkStatus Status)
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: true, Status: Status);
+        await using var db = CreateDbContext();
+        var service = CreateService(db);
+        var task = (await service.LoadTaskAsync(taskID, CancellationToken.None))!;
+
+        var ex = await Assert.ThrowsAsync<WorkflowException>(() => service.ResolveConflictsAsync(
+            Item: task,
+            Actor: "ana",
+            CT: CancellationToken.None));
+
+        Assert.Contains("ya se está ejecutando", ex.Message);
+    }
+
+    [Fact]
+    public async Task ResolveConflictsAsync_ArchivedOrMergedTask_Throws()
+    {
+        await SeedFlowAsync();
+        var archivedID = await SeedPullRequestTaskAsync(HasConflicts: true);
+        var mergedID = await SeedPullRequestTaskAsync(HasConflicts: true);
+        await using (var arrange = CreateDbContext())
+        {
+            (await arrange.Tasks.SingleAsync(t => t.ID == archivedID)).ArchivedAt = DateTimeOffset.UtcNow;
+            (await arrange.Tasks.SingleAsync(t => t.ID == mergedID)).PullRequestMergedAt = DateTimeOffset.UtcNow;
+            await arrange.SaveChangesAsync();
+        }
+        await using var db = CreateDbContext();
+        var service = CreateService(db);
+
+        foreach (var taskID in new[] { archivedID, mergedID })
+        {
+            var task = (await service.LoadTaskAsync(taskID, CancellationToken.None))!;
+            await Assert.ThrowsAsync<WorkflowException>(() => service.ResolveConflictsAsync(
+                Item: task,
+                Actor: "ana",
+                CT: CancellationToken.None));
+        }
+    }
+
+    [Fact]
+    public async Task RetryAsync_AfterAFailedConflictRun_KeepsResolvingConflicts()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: true);
+        await using (var db = CreateDbContext())
+        {
+            var service = CreateService(db);
+            await service.ResolveConflictsAsync(
+                Item: (await service.LoadTaskAsync(taskID, CancellationToken.None))!,
+                Actor: "ana",
+                CT: CancellationToken.None);
+            (await db.TaskRuns.SingleAsync()).Status = RunStatus.FAILED;
+            (await db.Tasks.SingleAsync()).Status = WorkStatus.FAILED;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = CreateDbContext())
+        {
+            var service = CreateService(db);
+            await service.RetryAsync(
+                Item: (await service.LoadTaskAsync(taskID, CancellationToken.None))!,
+                Actor: "ana",
+                CT: CancellationToken.None);
+        }
+
+        await using var check = CreateDbContext();
+        var latest = await check.TaskRuns.OrderByDescending(r => r.ID).FirstAsync();
+        Assert.Equal(RunStatus.QUEUED, latest.Status);
+        Assert.True(latest.ResolveConflicts);
+    }
+
+    [Fact]
+    public async Task EnterStageAsync_ResolveConflicts_OnlyAppliesToAgentStagesThatPush()
+    {
+        await SeedFlowAsync();
+        var taskID = await CreateTaskAsync();
+        await using var db = CreateDbContext();
+        var service = CreateService(db);
+        var task = (await service.LoadTaskAsync(taskID, CancellationToken.None))!;
+        var reviewer = await db.Stages.SingleAsync(s => s.ID == REVIEWER); // agente sin push
+
+        await service.EnterStageAsync(
+            Item: task,
+            Stage: reviewer,
+            Actor: "ana",
+            Message: "m",
+            CT: CancellationToken.None,
+            ResolveConflicts: true);
+        await db.SaveChangesAsync();
+
+        Assert.False((await db.TaskRuns.SingleAsync(r => r.Status == RunStatus.QUEUED)).ResolveConflicts);
+    }
+
+    [Fact]
+    public async Task OnPullRequestConflictsCheckedAsync_RecordsChangesOnlyOnce()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: false);
+
+        await using (var db = CreateDbContext())
+        {
+            var service = CreateService(db);
+            for (var i = 0; i < 2; i++)
+            {
+                await service.OnPullRequestConflictsCheckedAsync(
+                    TaskID: taskID,
+                    Number: 12,
+                    HasConflicts: true,
+                    Actor: "Sistema",
+                    CT: CancellationToken.None);
+            }
+        }
+        await using (var check = CreateDbContext())
+        {
+            Assert.True((await check.Tasks.SingleAsync()).PullRequestHasConflicts);
+            Assert.Single(await check.TaskEvents.Where(e => e.Message.Contains("tiene conflictos")).ToListAsync());
+        }
+
+        await using (var db = CreateDbContext())
+        {
+            await CreateService(db).OnPullRequestConflictsCheckedAsync(
+                TaskID: taskID,
+                Number: 12,
+                HasConflicts: false,
+                Actor: "Sistema",
+                CT: CancellationToken.None);
+        }
+
+        await using var final = CreateDbContext();
+        Assert.False((await final.Tasks.SingleAsync()).PullRequestHasConflicts);
+        Assert.Single(await final.TaskEvents.Where(e => e.Message.Contains("ya no tiene conflictos")).ToListAsync());
+    }
+
+    [Fact]
+    public async Task OnPullRequestConflictsCheckedAsync_OtherPullRequest_IsIgnored()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: false);
+        await using (var db = CreateDbContext())
+        {
+            await CreateService(db).OnPullRequestConflictsCheckedAsync(
+                TaskID: taskID,
+                Number: 99,
+                HasConflicts: true,
+                Actor: "Sistema",
+                CT: CancellationToken.None);
+        }
+
+        await using var check = CreateDbContext();
+        Assert.False((await check.Tasks.SingleAsync()).PullRequestHasConflicts);
+        Assert.Equal(0, await check.TaskEvents.CountAsync());
+    }
+
+    [Fact]
+    public async Task OnPullRequestMergedAsync_ClearsConflicts()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: true);
+        await using (var db = CreateDbContext())
+        {
+            await CreateService(db).OnPullRequestMergedAsync(
+                TaskID: taskID,
+                Number: 12,
+                Actor: "Sistema",
+                CT: CancellationToken.None);
+        }
+
+        await using var check = CreateDbContext();
+        var task = await check.Tasks.SingleAsync();
+        Assert.False(task.PullRequestHasConflicts);
+        Assert.Equal(PENDING_DEPLOY, task.StageID);
+    }
+
+    [Fact]
+    public async Task GetPullRequestsToWatchAsync_IncludesTheLastKnownConflicts()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: true);
+        await using var db = CreateDbContext();
+
+        var watched = Assert.Single(await CreateService(db).GetPullRequestsToWatchAsync(CancellationToken.None));
+
+        Assert.Equal(taskID, watched.TaskID);
+        Assert.Equal(12, watched.Number);
+        Assert.True(watched.HasConflicts);
+    }
+
+    [Fact]
+    public async Task GetPullRequestsToWatchAsync_WithoutMergeDestination_StillWatchesForConflicts()
+    {
+        await SeedFlowAsync();
+        await SeedPullRequestTaskAsync(HasConflicts: false);
+        await using (var arrange = CreateDbContext())
+        {
+            (await arrange.Stages.SingleAsync(s => s.ID == PENDING_DEPLOY)).IsMergeDestination = false;
+            await arrange.SaveChangesAsync();
+        }
+
+        await using var check = CreateDbContext();
+
+        Assert.Single(await CreateService(check).GetPullRequestsToWatchAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetPullRequestsToWatchAsync_WithoutMergeDestination_IgnoresTasksInFinalColumns()
+    {
+        await SeedFlowAsync();
+        var taskID = await SeedPullRequestTaskAsync(HasConflicts: false);
+        await using (var arrange = CreateDbContext())
+        {
+            (await arrange.Stages.SingleAsync(s => s.ID == PENDING_DEPLOY)).IsMergeDestination = false;
+            (await arrange.Tasks.SingleAsync(t => t.ID == taskID)).StageID = DONE;
+            await arrange.SaveChangesAsync();
+        }
+
+        await using var check = CreateDbContext();
+
+        Assert.Empty(await CreateService(check).GetPullRequestsToWatchAsync(CancellationToken.None));
     }
 
     // ------------------------------------------------------------------ utilidades

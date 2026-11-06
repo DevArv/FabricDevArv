@@ -212,12 +212,17 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     {
         if (!Item.Stage.RunsAutomatically)
             throw new WorkflowException("Sólo se reintentan columnas de agente o automáticas.");
+        // Reintentar un arreglo de conflictos que falló vuelve a integrar la rama base, mientras sigan los conflictos.
+        var resolveConflicts = Item.PullRequestHasConflicts
+                               && await Db.TaskRuns.Where(r => r.TaskID == Item.ID && r.StageID == Item.StageID)
+                                   .OrderByDescending(r => r.ID).Select(r => r.ResolveConflicts).FirstOrDefaultAsync(CT);
         await EnterStageAsync(
             Item: Item,
             Stage: Item.Stage,
             Actor: Actor,
             Message: $"{Actor} reintentó «{Item.Stage.Name}»",
-            CT: CT);
+            CT: CT,
+            ResolveConflicts: resolveConflicts);
         await Db.SaveChangesAsync(CT);
     }
 
@@ -253,16 +258,15 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         await Db.SaveChangesAsync(CT);
     }
 
-    // ------------------------------------------------------------------ merge del pull request
+    // ------------------------------------------------------------------ merge y conflictos del pull request
 
     /// <summary>
-    /// Pull requests a vigilar: tareas activas con PR aún no integrado que están antes de la columna destino del merge
-    /// (<see cref="Stage.IsMergeDestination"/>). Vacío si ninguna columna está marcada.
+    /// Pull requests a vigilar (merge y conflictos): tareas activas con PR aún no integrado que están antes de la columna
+    /// destino del merge (<see cref="Stage.IsMergeDestination"/>) o, si ninguna está marcada, en una columna no final.
     /// </summary>
     public async Task<List<WatchedPullRequest>> GetPullRequestsToWatchAsync(CancellationToken CT)
     {
         var destination = await GetMergeDestinationAsync(CT);
-        if (destination is null) return [];
 
         var tasks = await Db.Tasks.AsNoTracking()
             .Include(t => t.Stage).Include(t => t.Project)
@@ -271,9 +275,62 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             .ToListAsync(CT);
 
         return tasks
-            .Where(t => MergedPullRequestRule.ShouldMove(t.Stage, destination))
-            .Select(t => new WatchedPullRequest(t.ID, t.Project.RepoOwner, t.Project.RepoName, t.PullRequestNumber!.Value))
+            .Where(t => PullRequestConflictRule.ShouldWatch(t.Stage, destination))
+            .Select(t => new WatchedPullRequest(t.ID, t.Project.RepoOwner, t.Project.RepoName, t.PullRequestNumber!.Value,
+                t.PullRequestHasConflicts))
             .ToList();
+    }
+
+    /// <summary>
+    /// Registra lo que GitHub informa sobre los conflictos del pull request <paramref name="Number"/> de la tarea y deja
+    /// constancia en el historial cuando cambia. No hace nada si la tarea cambió de pull request o ya se integró.
+    /// </summary>
+    public async Task OnPullRequestConflictsCheckedAsync(int TaskID, int Number, bool HasConflicts, string Actor, CancellationToken CT)
+    {
+        var task = await Db.Tasks.FirstOrDefaultAsync(t => t.ID == TaskID, CT);
+        if (task is null || task.PullRequestNumber != Number || task.PullRequestMergedAt is not null
+            || task.PullRequestHasConflicts == HasConflicts) return;
+
+        task.PullRequestHasConflicts = HasConflicts;
+        task.UpdatedAt = DateTimeOffset.UtcNow;
+        AddEvent(
+            TaskID: task.ID,
+            Actor: Actor,
+            Message: HasConflicts
+                ? $"El pull request #{Number} tiene conflictos con «{task.BaseBranch}» en GitHub"
+                : $"El pull request #{Number} ya no tiene conflictos");
+        await Db.SaveChangesAsync(CT);
+    }
+
+    /// <summary>
+    /// Botón «Arreglar conflictos»: regresa la tarea a la columna del desarrollador (primera columna de agente que hace
+    /// push) con una ejecución que integra la rama base en la rama de trabajo y pide al agente resolver los conflictos.
+    /// Lanza WorkflowException si el pull request no tiene conflictos o la tarea ya se está ejecutando.
+    /// </summary>
+    public async Task ResolveConflictsAsync(TaskItem Item, string Actor, CancellationToken CT)
+    {
+        if (Item.ArchivedAt is not null) throw new WorkflowException("La tarea está archivada.");
+        if (Item.PullRequestNumber is not { } number || Item.PullRequestMergedAt is not null)
+            throw new WorkflowException("La tarea no tiene un pull request abierto.");
+        if (!Item.PullRequestHasConflicts)
+            throw new WorkflowException($"GitHub no informa conflictos en el pull request #{number}.");
+        if (Item.Status is WorkStatus.QUEUED or WorkStatus.RUNNING)
+            throw new WorkflowException($"La tarea ya se está ejecutando en «{Item.Stage.Name}». Espera a que termine o cancélala.");
+        if (!PullRequestConflictRule.CanResolve(Item, Item.Stage))
+            throw new WorkflowException($"No se pueden arreglar conflictos de una tarea en «{Item.Stage.Name}».");
+
+        var developer = await Db.Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges)
+                            .OrderBy(s => s.Order).FirstOrDefaultAsync(CT)
+                        ?? throw new WorkflowException("No hay columna de desarrollador (agente que hace push) en el flujo.");
+
+        await EnterStageAsync(
+            Item: Item,
+            Stage: developer,
+            Actor: Actor,
+            Message: $"{Actor} pidió arreglar los conflictos del pull request #{number} → «{developer.Name}»",
+            CT: CT,
+            ResolveConflicts: true);
+        await Db.SaveChangesAsync(CT);
     }
 
     /// <summary>
@@ -288,6 +345,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         if (task is null || task.PullRequestNumber != Number || task.PullRequestMergedAt is not null) return;
 
         task.PullRequestMergedAt = DateTimeOffset.UtcNow;
+        task.PullRequestHasConflicts = false;
         var destination = await GetMergeDestinationAsync(CT);
         if (destination is not null && task.ArchivedAt is null && MergedPullRequestRule.ShouldMove(task.Stage, destination))
         {
@@ -315,7 +373,11 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     // ------------------------------------------------------------------ motor
 
     /// <summary>Coloca la tarea en una columna y, si es automática, encola una ejecución. No guarda.</summary>
-    public async Task EnterStageAsync(TaskItem Item, Stage Stage, string Actor, string Message, CancellationToken CT)
+    /// <param name="ResolveConflicts">
+    /// La ejecución de agente encolada es para arreglar los conflictos del pull request (<see cref="TaskRun.ResolveConflicts"/>).
+    /// </param>
+    public async Task EnterStageAsync(
+        TaskItem Item, Stage Stage, string Actor, string Message, CancellationToken CT, bool ResolveConflicts = false)
     {
         await CancelActiveRunsAsync(
             TaskID: Item.ID,
@@ -344,6 +406,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
                     RunnerKind = Stage.Kind,
                     Status = RunStatus.QUEUED,
                     PinnedWorkerID = Stage.Kind == StageKind.AGENT ? Item.PreferredWorkerID : null,
+                    ResolveConflicts = ResolveConflicts && Stage.Kind == StageKind.AGENT && Stage.PushChanges,
                     Model = Stage.Kind == StageKind.AGENT ? (Item.ModelOverride ?? Stage.Model) : null,
                     CreatedAt = now,
                 });
