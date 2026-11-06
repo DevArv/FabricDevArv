@@ -137,6 +137,9 @@
       const generated = $('.columns', board)?.dataset.generated;
       const label = $('#board-updated');
       if (generated && label) label.textContent = `Actualizado ${generated}`;
+      const developing = $('.columns', board)?.dataset.developing;
+      const running = $('#running-count');
+      if (developing !== undefined && running) running.textContent = developing;
     } catch { /* sin conexión: reintenta luego */ }
   }
 

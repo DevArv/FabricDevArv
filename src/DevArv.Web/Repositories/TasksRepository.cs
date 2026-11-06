@@ -19,6 +19,16 @@ public class TasksRepository(AppDbContext db)
     public Task<int> CountWaitingAsync(CancellationToken ct) =>
         db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WaitingApproval, ct);
 
+    /// <summary>
+    /// Tareas que el agente desarrollador (columna de agente que hace commit y push) está ejecutando ahora,
+    /// en todos los proyectos.
+    /// </summary>
+    public Task<int> CountDevelopingAsync(CancellationToken ct) =>
+        db.Tasks.CountAsync(t => t.ArchivedAt == null
+                                 && t.Status == WorkStatus.Running
+                                 && t.Stage.Kind == StageKind.Agent
+                                 && t.Stage.PushChanges, ct);
+
     public async Task<BoardViewModel> GetBoardAsync(BoardFilterViewModel filter, CancellationToken ct)
     {
         var stages = await db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(ct);
@@ -59,6 +69,7 @@ public class TasksRepository(AppDbContext db)
             Compact = filter.Compact,
             HideEmpty = filter.HideEmpty,
             GeneratedAt = now,
+            DevelopingCount = await CountDevelopingAsync(ct),
             Columns = stages.Select(s => new BoardColumnViewModel
             {
                 Stage = s,
