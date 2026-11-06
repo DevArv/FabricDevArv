@@ -72,7 +72,7 @@ public sealed class WorkflowService(AppDbContext db, AttachmentStorage storage, 
         db.Tasks.Add(task);
         await db.SaveChangesAsync(ct);
 
-        db.TaskAttachments.AddRange(await storage.StoreAsync(task.Id, uploads, ct));
+        db.TaskAttachments.AddRange(await storage.ReadAsync(task.Id, uploads, ct));
 
         var start = initial;
         if (record.StartNow)

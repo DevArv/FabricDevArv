@@ -80,10 +80,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
 
         builder.Entity<TaskAttachment>(b =>
         {
+            b.ToTable("TaskAttachments");
             b.Property(a => a.FileName).HasMaxLength(255);
             b.Property(a => a.ContentType).HasMaxLength(100);
-            b.Property(a => a.StoredName).HasMaxLength(100);
             b.HasOne(a => a.Task).WithMany(t => t.Attachments).HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Cascade);
+            // Table splitting: el contenido vive en la misma fila (columna "Content") pero sólo se lee con Include.
+            b.HasOne(a => a.Content).WithOne().HasForeignKey<TaskAttachmentContent>(c => c.Id).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<TaskAttachmentContent>(b =>
+        {
+            b.ToTable("TaskAttachments");
+            b.Property(c => c.Data).HasColumnName("Content");
         });
 
         builder.Entity<TaskRun>(b =>

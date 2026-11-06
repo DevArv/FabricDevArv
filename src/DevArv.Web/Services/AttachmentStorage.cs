@@ -2,32 +2,26 @@ using System.Text;
 using DevArv.Web.DataModels;
 using DevArv.Web.Helpers;
 using DevArv.Web.Models;
+using Microsoft.Extensions.Options;
 
 namespace DevArv.Web.Services;
 
-/// <summary>Guarda los adjuntos en disco con nombres aleatorios, fuera de wwwroot.</summary>
-public sealed class AttachmentStorage
+/// <summary>
+/// Valida los adjuntos y arma las entidades con su contenido, que se guarda en la base de datos
+/// (columna TaskAttachments.Content). No escribe nada en disco.
+/// </summary>
+public sealed class AttachmentStorage(IOptions<AttachmentOptions> options)
 {
     private const int HeadBytes = 4096;
-    private readonly AttachmentOptions _options;
-    private readonly string _root;
-
-    public AttachmentStorage(Microsoft.Extensions.Options.IOptions<AttachmentOptions> options, IWebHostEnvironment env)
-    {
-        _options = options.Value;
-        _root = Path.IsPathRooted(_options.StoragePath)
-            ? _options.StoragePath
-            : Path.Combine(env.ContentRootPath, _options.StoragePath);
-        Directory.CreateDirectory(_root);
-    }
+    private readonly AttachmentOptions _options = options.Value;
 
     public AttachmentOptions Options => _options;
 
-    /// <summary>Valida y guarda. Lanza AttachmentValidationException sin guardar nada si algún archivo es inválido.</summary>
-    public async Task<List<TaskAttachment>> SaveAsync(int taskId, IReadOnlyCollection<IFormFile> files, int existingCount, CancellationToken ct)
+    /// <summary>Valida y arma los adjuntos. Lanza AttachmentValidationException sin devolver nada si algún archivo es inválido.</summary>
+    public async Task<List<TaskAttachment>> CreateAsync(int taskId, IReadOnlyCollection<IFormFile> files, int existingCount, CancellationToken ct)
     {
         var validated = await ValidateAsync(files, existingCount, ct);
-        return await StoreAsync(taskId, validated, ct);
+        return await ReadAsync(taskId, validated, ct);
     }
 
     /// <summary>Valida cantidad, tamaño y tipo real de todos los archivos. Lanza AttachmentValidationException.</summary>
@@ -62,42 +56,29 @@ public sealed class AttachmentStorage
         return validated;
     }
 
-    public async Task<List<TaskAttachment>> StoreAsync(int taskId, IReadOnlyList<ValidatedUpload> validated, CancellationToken ct)
+    /// <summary>Lee el contenido completo de los archivos ya validados y arma las entidades (no las agrega al contexto).</summary>
+    public async Task<List<TaskAttachment>> ReadAsync(int taskId, IReadOnlyList<ValidatedUpload> validated, CancellationToken ct)
     {
-        var saved = new List<TaskAttachment>();
+        var attachments = new List<TaskAttachment>();
         foreach (var (file, type) in validated)
         {
-            var storedName = $"{Guid.NewGuid():N}{type.Extension}";
-            await using (var target = File.Create(Path.Combine(_root, storedName)))
+            var data = new byte[file.Length];
             await using (var source = file.OpenReadStream())
             {
-                await source.CopyToAsync(target, ct);
+                await source.ReadExactlyAsync(data, ct);
             }
 
-            saved.Add(new TaskAttachment
+            attachments.Add(new TaskAttachment
             {
                 TaskId = taskId,
                 FileName = SanitizeFileName(file.FileName),
                 ContentType = type.ContentType,
                 Kind = type.Kind,
-                Size = file.Length,
-                StoredName = storedName,
+                Size = data.LongLength,
+                Content = new TaskAttachmentContent { Data = data },
             });
         }
-        return saved;
-    }
-
-    public string PathOf(TaskAttachment attachment)
-    {
-        // StoredName lo genera el servidor, pero se valida igual para evitar path traversal.
-        var name = Path.GetFileName(attachment.StoredName);
-        return Path.Combine(_root, name);
-    }
-
-    public void Delete(TaskAttachment attachment)
-    {
-        var path = PathOf(attachment);
-        if (File.Exists(path)) File.Delete(path);
+        return attachments;
     }
 
     public static string SanitizeFileName(string fileName)

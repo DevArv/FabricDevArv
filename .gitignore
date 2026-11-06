@@ -652,6 +652,9 @@ src/DevArv.Web/wwwroot/js/**/*.js
 src/DevArv.Web/wwwroot/js/**/*.js.map
 !src/DevArv.Web/wwwroot/js/site.js
 
+# Adjuntos antiguos guardados en disco (ahora van en la base de datos): nunca se versionan
+**/App_Data/
+
 # Local-only configuration
 appsettings.Development.json
 appsettings.Local.json

@@ -135,19 +135,18 @@ public static class WorkerApi
     }
 
     private static async Task<IResult> DownloadAttachmentAsync(
-        long runId, long attachmentId, HttpContext http, AppDbContext db, AttachmentStorage storage, CancellationToken ct)
+        long runId, long attachmentId, HttpContext http, AppDbContext db, CancellationToken ct)
     {
         var worker = WorkerAuthFilter.Current(http);
         var attachment = await db.TaskRuns
             .Where(r => r.Id == runId && r.WorkerId == worker.Id && r.Status == RunStatus.Running)
             .SelectMany(r => r.Task.Attachments)
-            .FirstOrDefaultAsync(a => a.Id == attachmentId, ct);
-        if (attachment is null) return Results.NotFound();
-
-        var path = storage.PathOf(attachment);
-        return File.Exists(path)
-            ? TypedResults.PhysicalFile(path, attachment.ContentType, attachment.FileName)
-            : Results.NotFound();
+            .Where(a => a.Id == attachmentId && a.Content != null)
+            .Select(a => new { a.FileName, a.ContentType, a.Content!.Data })
+            .FirstOrDefaultAsync(ct);
+        return attachment is null
+            ? Results.NotFound()
+            : TypedResults.File(attachment.Data, attachment.ContentType, attachment.FileName);
     }
 
     private static List<string> Lines(string? text) =>

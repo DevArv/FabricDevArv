@@ -11,7 +11,7 @@ public class TaskAttachment
     public string ContentType { get; set; } = "";
     public long Size { get; set; }
     public AttachmentKind Kind { get; set; }
-    /// <summary>Nombre del archivo en disco (GUID + extensión). Nunca se usa el nombre del usuario.</summary>
-    public string StoredName { get; set; } = "";
+    /// <summary>Bytes del archivo, guardados en la base de datos. Sólo se carga con Include; null si no se cargó.</summary>
+    public TaskAttachmentContent? Content { get; set; }
     public DateTimeOffset UploadedAt { get; set; } = DateTimeOffset.UtcNow;
 }

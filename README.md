@@ -8,7 +8,7 @@ otro agente revisa, el servidor abre el pull request y una persona aprueba.
 ┌───────────────────────── Servidor (DevArv.Web) ─────────────────────────┐
 │ Razor Pages: tablero, tareas, proyectos, flujo, PCs                     │
 │ Motor de flujo (WorkflowService) · Orquestador (crea PRs, vigila)       │
-│ API /api/worker (clave por PC) · PostgreSQL · adjuntos en disco         │
+│ API /api/worker (clave por PC) · PostgreSQL (incluye los adjuntos)      │
 └──────────────▲───────────────────────────────────────┬──────────────────┘
                │ HTTPS: reclamar trabajo, log, resultado│ API de GitHub (PRs)
 ┌──────────────┴──────────── PC / VM (DevArv.Worker) ───┴──────────────────┐
@@ -227,7 +227,7 @@ Te pedirá los datos de la base (paso 4) y el token de GitHub (paso 2), y compro
 | `App:PublicUrl` | Recomendada | URL con la que se abre el tablero. Se usa para el enlace «Ver tarea en DevArv» dentro de cada PR. |
 | `App:TimeZone` | No | Zona horaria de las fechas (por defecto `America/Santo_Domingo`). |
 | `Auth:AllowRegistration` | No | `true` permite que otras personas se registren solas. Por defecto `false`. |
-| `Attachments:*` | No | Carpeta de adjuntos (`App_Data/attachments`), máximo de archivos por tarea (15) y tamaño (20 MB). |
+| `Attachments:*` | No | Máximo de archivos por tarea (15) y tamaño (20 MB). El contenido se guarda en la base de datos (`TaskAttachments.Content`). |
 
 ### Paso 6. Arrancar el servidor
 
@@ -391,7 +391,9 @@ El token de GitHub del worker viaja en una cabecera HTTP de git (igual que `acti
 
 - **Adjuntos:** máximo 15 por tarea y 20 MB cada uno (configurable en `Attachments`). El tipo se valida por **contenido**
   (firma PNG/JPEG/GIF/WEBP, `%PDF-`, documento HTML en UTF-8 válido), no sólo por extensión, y la extensión debe coincidir.
-  SVG, ejecutables y cualquier otro formato se rechazan. Se guardan con nombre aleatorio fuera de `wwwroot`.
+  SVG, ejecutables y cualquier otro formato se rechazan. Se guardan en la base de datos (columna `TaskAttachments.Content`),
+  nunca en disco ni dentro del repositorio. Al arrancar, los adjuntos antiguos de `App_Data/attachments` se copian a la
+  base de datos y se borran del disco.
   El HTML nunca se muestra en el dominio de la app: se descarga con `Content-Security-Policy: sandbox` y `nosniff`.
 - **Markdown:** el HTML crudo se escapa y los enlaces sólo pueden ser http(s), mailto o relativos.
 - **Workers:** cada PC tiene su propia clave (se guarda sólo el hash SHA-256), se puede deshabilitar o rotar,

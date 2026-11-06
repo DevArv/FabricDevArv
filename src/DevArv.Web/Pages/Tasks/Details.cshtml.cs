@@ -51,16 +51,15 @@ public sealed class DetailsModel(
     /// <summary>Muestra un adjunto. El HTML siempre se descarga y con CSP sandbox para que nunca se ejecute en este dominio.</summary>
     public async Task<IActionResult> OnGetAttachmentAsync(long attachmentId, CancellationToken ct)
     {
-        var file = await attachments.GetFileAsync(Id, attachmentId, ct);
-        if (file is null) return NotFound();
-        var (a, path) = file.Value;
+        var a = await attachments.GetFileAsync(Id, attachmentId, ct);
+        if (a?.Content is null) return NotFound();
 
         Response.Headers.XContentTypeOptions = "nosniff";
         if (a.Kind != AttachmentKind.Pdf)
             Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
         if (a.Kind == AttachmentKind.Html)
-            return new PhysicalFileResult(path, "application/octet-stream") { FileDownloadName = a.FileName };
-        return new PhysicalFileResult(path, a.ContentType) { EnableRangeProcessing = true };
+            return new FileContentResult(a.Content.Data, "application/octet-stream") { FileDownloadName = a.FileName };
+        return new FileContentResult(a.Content.Data, a.ContentType) { EnableRangeProcessing = true };
     }
 
     public Task<IActionResult> OnPostApproveAsync(CancellationToken ct) =>

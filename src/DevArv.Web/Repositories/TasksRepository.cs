@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Repositories;
 
-public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger<TasksRepository> logger)
+public class TasksRepository(AppDbContext db, ILogger<TasksRepository> logger)
 {
     private const int MAX_BOARD_TASKS = 1000;
 
@@ -217,7 +217,7 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
     }
 
     /// <summary>
-    /// Elimina definitivamente una tarea con sus ejecuciones, comentarios, eventos y adjuntos (también los archivos en disco).
+    /// Elimina definitivamente una tarea con sus ejecuciones, comentarios, eventos y adjuntos.
     /// Lanza WorkflowException si un agente o el sistema la está ejecutando: hay que cancelarla primero.
     /// </summary>
     /// <remarks>
@@ -235,23 +235,10 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
         if (await db.TaskRuns.AnyAsync(r => r.TaskId == task.Id && r.Status == RunStatus.Running, ct))
             throw new WorkflowException("La tarea se está ejecutando. Cancela la ejecución y espera a que termine antes de eliminarla.");
 
-        var attachments = await db.TaskAttachments.Where(a => a.TaskId == task.Id).ToListAsync(ct);
+        // Los adjuntos (con su contenido) se borran en cascada en la base de datos.
         db.Tasks.Remove(task);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-
-        // La tarea ya no existe: un archivo que no se pueda borrar no debe romper la operación ni impedir borrar los demás.
-        foreach (var attachment in attachments)
-        {
-            try
-            {
-                storage.Delete(attachment);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId} de la tarea #{TaskId}.", attachment.Id, task.Id);
-            }
-        }
 
         logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", actor, task.Id, task.Title);
     }
