@@ -33,11 +33,13 @@
     <div class="branches">
         <code>⌥ @t.BaseBranch</code>
         @if (t.WorkBranch is not null) { <code>↳ @t.WorkBranch</code> }
-        @if (t.PullRequestUrl is not null)
-        {
-            <a href="@t.PullRequestUrl" target="_blank" rel="noopener" class="pr-link">🔗 PR #@t.PullRequestNumber</a>
-        }
     </div>
+    @* Fuera de .branches para que también se vea en la vista compacta. site.js no abre el detalle al hacer clic en un enlace. *@
+    @if (!string.IsNullOrWhiteSpace(t.PullRequestUrl))
+    {
+        <a href="@t.PullRequestUrl" target="_blank" rel="noopener noreferrer" class="pr-link" draggable="false"
+           title="Abrir el pull request en GitHub (pestaña nueva)">🔗 Ver pull request #@t.PullRequestNumber</a>
+    }
     @if (t.Status == WorkStatus.Failed && t.LastError is not null)
     {
         <p class="error-line">@Labels.Excerpt(t.LastError, 120)</p>

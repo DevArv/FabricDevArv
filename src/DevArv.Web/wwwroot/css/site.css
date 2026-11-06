@@ -184,7 +184,8 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; }
 .pr-critical { color: #fca5a5; border-color: #dc2626; background: rgba(220, 38, 38, .12); }
 .branches { display: flex; flex-direction: column; gap: 1px; font-size: 11.5px; }
 .branches code { background: none; padding: 0; color: #a5b4fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pr-link { font-size: 12px; }
+.pr-link { display: inline-block; margin-top: 4px; font-size: 12px; }
+.pr-link:hover { text-decoration: underline; }
 .error-line { margin: 6px 0 0; color: #fca5a5; font-size: 12px; }
 .card footer { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: 11px; color: var(--muted); }
 
