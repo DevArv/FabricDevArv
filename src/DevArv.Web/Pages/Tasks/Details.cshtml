@@ -162,6 +162,11 @@
             <input type="hidden" name="archived" value="@(t.ArchivedAt is null ? "true" : "false")" />
             <button class="btn btn-ghost">@(t.ArchivedAt is null ? "📦 Archivar" : "↺ Restaurar")</button>
         </form>
+        <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Delete")" class="inline"
+              data-confirm="¿Eliminar definitivamente la tarea #@t.Id «@t.Title»? Se borrarán sus ejecuciones, comentarios y adjuntos; no se puede deshacer.">
+            <input type="hidden" name="returnQuery" />
+            <button class="btn btn-ghost">🗑 Eliminar</button>
+        </form>
     </div>
 
     @* ---------- Descripción y adjuntos ---------- *@
