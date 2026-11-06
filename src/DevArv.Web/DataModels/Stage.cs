@@ -5,7 +5,7 @@ namespace DevArv.Web.DataModels;
 /// <summary>Columna del tablero Kanban y su configuración de agente o acción.</summary>
 public class Stage
 {
-    public int Id { get; set; }
+    public int ID { get; set; }
     public string Name { get; set; } = "";
     public int Order { get; set; }
     public StageKind Kind { get; set; }
@@ -20,9 +20,9 @@ public class Stage
     public bool IsMergeDestination { get; set; }
 
     /// <summary>Destino cuando la etapa termina bien / se aprueba (✓).</summary>
-    public int? SuccessStageId { get; set; }
+    public int? SuccessStageID { get; set; }
     /// <summary>Destino cuando se rechaza / se piden cambios (⊘).</summary>
-    public int? RejectStageId { get; set; }
+    public int? RejectStageID { get; set; }
 
     // ---- Configuración para etapas de agente ----
     public string? Model { get; set; }
@@ -51,5 +51,5 @@ public class Stage
     // ---- Configuración para etapas de sistema ----
     public SystemAction SystemAction { get; set; }
 
-    public bool RunsAutomatically => Kind is StageKind.Agent or StageKind.System;
+    public bool RunsAutomatically => Kind is StageKind.AGENT or StageKind.SYSTEM;
 }

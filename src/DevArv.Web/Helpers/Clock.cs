@@ -1,21 +1,23 @@
 using System.Globalization;
+using DevArv.Web.Models;
+using Microsoft.Extensions.Options;
 
 namespace DevArv.Web.Helpers;
 
 /// <summary>Convierte fechas UTC a la zona horaria configurada (App:TimeZone).</summary>
-public sealed class Clock(IConfiguration config)
+public sealed class Clock(IOptions<AppOptions> Options)
 {
-    private readonly TimeZoneInfo _zone = ResolveZone(config["App:TimeZone"]);
+    private readonly TimeZoneInfo _Zone = ResolveZone(Options.Value.TimeZone);
 
-    public DateTimeOffset Local(DateTimeOffset utc) => TimeZoneInfo.ConvertTime(utc, _zone);
+    public DateTimeOffset Local(DateTimeOffset Utc) => TimeZoneInfo.ConvertTime(Utc, _Zone);
 
-    public string Format(DateTimeOffset? utc, string format = "dd/MM/yyyy HH:mm") =>
-        utc is null ? "" : Local(utc.Value).ToString(format, CultureInfo.InvariantCulture);
+    public string Format(DateTimeOffset? Utc, string Format = "dd/MM/yyyy HH:mm") =>
+        Utc is null ? "" : Local(Utc.Value).ToString(Format, CultureInfo.InvariantCulture);
 
-    private static TimeZoneInfo ResolveZone(string? id)
+    private static TimeZoneInfo ResolveZone(string? ID)
     {
-        if (string.IsNullOrWhiteSpace(id)) return TimeZoneInfo.Local;
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
+        if (string.IsNullOrWhiteSpace(ID)) return TimeZoneInfo.Local;
+        try { return TimeZoneInfo.FindSystemTimeZoneById(ID); }
         catch (TimeZoneNotFoundException) { return TimeZoneInfo.Local; }
     }
 }

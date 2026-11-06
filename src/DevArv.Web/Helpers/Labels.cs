@@ -9,107 +9,135 @@ namespace DevArv.Web.Helpers;
 /// <summary>Etiquetas en español para la UI.</summary>
 public static class Labels
 {
-    public static string Of(WorkStatus s) => s switch
+    public static string Of(WorkStatus Status) => Status switch
     {
-        WorkStatus.Idle => "No iniciado",
-        WorkStatus.Queued => "En cola",
-        WorkStatus.Running => "En ejecución",
-        WorkStatus.WaitingApproval => "Esperando aprobación",
-        WorkStatus.Failed => "Error",
-        WorkStatus.Done => "Finalizado",
-        _ => s.ToString(),
+        WorkStatus.IDLE => "No iniciado",
+        WorkStatus.QUEUED => "En cola",
+        WorkStatus.RUNNING => "En ejecución",
+        WorkStatus.WAITING_APPROVAL => "Esperando aprobación",
+        WorkStatus.FAILED => "Error",
+        WorkStatus.DONE => "Finalizado",
+        _ => Status.ToString(),
     };
 
-    public static string Of(Priority p) => p switch
+    public static string Of(Priority Priority) => Priority switch
     {
-        Priority.Low => "Baja",
-        Priority.Medium => "Media",
-        Priority.High => "Alta",
-        Priority.Critical => "Crítica",
-        _ => p.ToString(),
+        Priority.LOW => "Baja",
+        Priority.MEDIUM => "Media",
+        Priority.HIGH => "Alta",
+        Priority.CRITICAL => "Crítica",
+        _ => Priority.ToString(),
     };
 
-    public static string Of(Complexity c) => c switch
+    public static string Of(Complexity Complexity) => Complexity switch
     {
-        Complexity.Unclassified => "Sin clasificar",
-        Complexity.Low => "Baja",
-        Complexity.Medium => "Media",
-        Complexity.High => "Alta",
-        _ => c.ToString(),
+        Complexity.UNCLASSIFIED => "Sin clasificar",
+        Complexity.LOW => "Baja",
+        Complexity.MEDIUM => "Media",
+        Complexity.HIGH => "Alta",
+        _ => Complexity.ToString(),
     };
 
-    public static string Of(RunStatus s) => s switch
+    public static string Of(RunStatus Status) => Status switch
     {
-        RunStatus.Queued => "En cola",
-        RunStatus.Running => "En ejecución",
-        RunStatus.Succeeded => "Completado",
-        RunStatus.Failed => "Falló",
-        RunStatus.Cancelled => "Cancelado",
-        _ => s.ToString(),
+        RunStatus.QUEUED => "En cola",
+        RunStatus.RUNNING => "En ejecución",
+        RunStatus.SUCCEEDED => "Completado",
+        RunStatus.FAILED => "Falló",
+        RunStatus.CANCELLED => "Cancelado",
+        _ => Status.ToString(),
     };
 
-    public static string Of(StageKind k) => k switch
+    public static string Of(StageKind Kind) => Kind switch
     {
-        StageKind.Manual => "Manual",
-        StageKind.HumanApproval => "Aprobación humana",
-        StageKind.Agent => "Agente Claude",
-        StageKind.System => "Automática (sistema)",
-        StageKind.Terminal => "Final",
-        _ => k.ToString(),
+        StageKind.MANUAL => "Manual",
+        StageKind.HUMAN_APPROVAL => "Aprobación humana",
+        StageKind.AGENT => "Agente Claude",
+        StageKind.SYSTEM => "Automática (sistema)",
+        StageKind.TERMINAL => "Final",
+        _ => Kind.ToString(),
     };
 
     public static string Of(SystemAction a) => a switch
     {
-        SystemAction.None => "Ninguna",
-        SystemAction.CreatePullRequest => "Crear pull request",
-        SystemAction.MergePullRequest => "Hacer merge del pull request",
+        SystemAction.NONE => "Ninguna",
+        SystemAction.CREATE_PULL_REQUEST => "Crear pull request",
+        SystemAction.MERGE_PULL_REQUEST => "Hacer merge del pull request",
         _ => a.ToString(),
     };
 
-    public static string Of(CommentKind k) => k switch
+    public static string Of(CommentKind Kind) => Kind switch
     {
-        CommentKind.Comment => "Comentario",
-        CommentKind.Feedback => "Cambios solicitados",
-        CommentKind.ReviewerNote => "Hallazgos del revisor",
-        _ => k.ToString(),
+        CommentKind.COMMENT => "Comentario",
+        CommentKind.FEEDBACK => "Cambios solicitados",
+        CommentKind.REVIEWER_NOTE => "Hallazgos del revisor",
+        _ => Kind.ToString(),
     };
 
-    public static string StatusIcon(WorkStatus s) => s switch
+    public static string StatusIcon(WorkStatus Status) => Status switch
     {
-        WorkStatus.Queued => "⏳",
-        WorkStatus.Running => "●",
-        WorkStatus.WaitingApproval => "⏸",
-        WorkStatus.Failed => "✖",
-        WorkStatus.Done => "✔",
+        WorkStatus.QUEUED => "⏳",
+        WorkStatus.RUNNING => "●",
+        WorkStatus.WAITING_APPROVAL => "⏸",
+        WorkStatus.FAILED => "✖",
+        WorkStatus.DONE => "✔",
         _ => "○",
     };
 
-    public static string StatusCss(WorkStatus s) => s switch
+    public static string StatusCss(WorkStatus Status) => Status switch
     {
-        WorkStatus.Queued => "st-queued",
-        WorkStatus.Running => "st-running",
-        WorkStatus.WaitingApproval => "st-waiting",
-        WorkStatus.Failed => "st-failed",
-        WorkStatus.Done => "st-done",
+        WorkStatus.QUEUED => "st-queued",
+        WorkStatus.RUNNING => "st-running",
+        WorkStatus.WAITING_APPROVAL => "st-waiting",
+        WorkStatus.FAILED => "st-failed",
+        WorkStatus.DONE => "st-done",
         _ => "st-idle",
     };
 
-    public static string PriorityCss(Priority p) => p switch
+    public static string PriorityCss(Priority Priority) => Priority switch
     {
-        Priority.Low => "pr-low",
-        Priority.High => "pr-high",
-        Priority.Critical => "pr-critical",
+        Priority.LOW => "pr-low",
+        Priority.HIGH => "pr-high",
+        Priority.CRITICAL => "pr-critical",
         _ => "pr-medium",
     };
 
-    public static string Tokens(long tokens) => tokens switch
+    /// <summary>Clase CSS de una columna según su tipo. Explícita: no depende del nombre del miembro del enum.</summary>
+    public static string KindCss(StageKind Kind) => Kind switch
     {
-        >= 1_000_000 => (tokens / 1_000_000d).ToString("0.##", CultureInfo.GetCultureInfo("es-DO")) + " M",
-        >= 1_000 => (tokens / 1_000d).ToString("0.#", CultureInfo.GetCultureInfo("es-DO")) + " k",
-        _ => tokens.ToString(CultureInfo.InvariantCulture),
+        StageKind.AGENT => "kind-agent",
+        StageKind.SYSTEM => "kind-system",
+        StageKind.HUMAN_APPROVAL => "kind-humanapproval",
+        StageKind.TERMINAL => "kind-terminal",
+        _ => "kind-manual",
     };
 
-    public static string Usd(decimal amount) => "US$ " + amount.ToString("0.00", CultureInfo.InvariantCulture);
+    /// <summary>Clase CSS de un comentario según su tipo.</summary>
+    public static string KindCss(CommentKind Kind) => Kind switch
+    {
+        CommentKind.FEEDBACK => "kind-feedback",
+        CommentKind.REVIEWER_NOTE => "kind-reviewernote",
+        _ => "kind-comment",
+    };
+
+    /// <summary>Clase CSS del estado de una ejecución.</summary>
+    public static string StatusCss(RunStatus Status) => Status switch
+    {
+        RunStatus.RUNNING => "rs-running",
+        RunStatus.SUCCEEDED => "rs-succeeded",
+        RunStatus.FAILED => "rs-failed",
+        RunStatus.CANCELLED => "rs-cancelled",
+        _ => "rs-queued",
+    };
+
+    public static string Tokens(long Tokens) => Tokens switch
+    {
+        >= 1_000_000 => (Tokens / 1_000_000d).ToString("0.##", CultureInfo.GetCultureInfo("es-DO")) + " M",
+        >= 1_000 => (Tokens / 1_000d).ToString("0.#", CultureInfo.GetCultureInfo("es-DO")) + " k",
+        _ => Tokens.ToString(CultureInfo.InvariantCulture),
+    };
+
+    public static string Usd(decimal Amount) => "US$ " + Amount.ToString("0.00", CultureInfo.InvariantCulture);
 
     public static string Duration(TimeSpan? d)
     {
@@ -120,9 +148,9 @@ public static class Labels
     }
 
     /// <summary>Cronómetro para las tarjetas: "05:07" o, desde una hora, "1:05:07". Debe coincidir con site.js.</summary>
-    public static string Stopwatch(TimeSpan elapsed)
+    public static string Stopwatch(TimeSpan Elapsed)
     {
-        var total = Math.Max(0L, (long)elapsed.TotalSeconds);
+        var total = Math.Max(0L, (long)Elapsed.TotalSeconds);
         var hours = total / 3600;
         var minutes = total / 60 % 60;
         var seconds = total % 60;
@@ -131,10 +159,10 @@ public static class Labels
             : string.Create(CultureInfo.InvariantCulture, $"{minutes:00}:{seconds:00}");
     }
 
-    public static string Initials(string? nameOrEmail)
+    public static string Initials(string? NameOrEmail)
     {
-        if (string.IsNullOrWhiteSpace(nameOrEmail)) return "?";
-        var name = nameOrEmail.Split('@')[0];
+        if (string.IsNullOrWhiteSpace(NameOrEmail)) return "?";
+        var name = NameOrEmail.Split('@')[0];
         var parts = name.Split(['.', '_', '-', ' '], StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 2
             ? $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}"
@@ -142,11 +170,11 @@ public static class Labels
     }
 
     /// <summary>Texto plano corto a partir de Markdown, para las tarjetas.</summary>
-    public static string Excerpt(string? markdown, int max = 140)
+    public static string Excerpt(string? Markdown, int Max = 140)
     {
-        if (string.IsNullOrWhiteSpace(markdown)) return "";
-        var text = Regex.Replace(markdown, @"[#*_`>\[\]\(\)!-]+", " ");
+        if (string.IsNullOrWhiteSpace(Markdown)) return "";
+        var text = Regex.Replace(Markdown, @"[#*_`>\[\]\(\)!-]+", " ");
         text = Regex.Replace(text, @"\s+", " ").Trim();
-        return text.Length <= max ? text : text[..max].TrimEnd() + "…";
+        return text.Length <= Max ? text : text[..Max].TrimEnd() + "…";
     }
 }

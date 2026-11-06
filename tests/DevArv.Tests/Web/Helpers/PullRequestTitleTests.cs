@@ -10,8 +10,8 @@ public class PullRequestTitleTests
     [InlineData("devarv/12-mejora", "devarv-12-mejora")]
     [InlineData("  feature//_x  ", "feature-x")]
     [InlineData("_/3-tarea/", "3-tarea")]
-    public void FromBranch_ReplacesSeparatorsWithSingleHyphen(string branch, string expected) =>
-        Assert.Equal(expected, PullRequestTitle.FromBranch(branch));
+    public void FromBranch_ReplacesSeparatorsWithSingleHyphen(string Branch, string Expected) =>
+        Assert.Equal(Expected, PullRequestTitle.FromBranch(Branch));
 
     [Fact]
     public void FromBranch_WithoutAlphanumerics_ReturnsBranch() =>
@@ -20,6 +20,6 @@ public class PullRequestTitleTests
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
-    public void FromBranch_EmptyBranch_Throws(string branch) =>
-        Assert.Throws<ArgumentException>(() => PullRequestTitle.FromBranch(branch));
+    public void FromBranch_EmptyBranch_Throws(string Branch) =>
+        Assert.Throws<ArgumentException>(() => PullRequestTitle.FromBranch(Branch));
 }

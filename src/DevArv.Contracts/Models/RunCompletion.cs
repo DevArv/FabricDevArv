@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace DevArv.Contracts.Models;
 
 /// <summary>Resultado que el worker reporta al terminar (o fallar) una ejecución.</summary>
@@ -12,7 +14,7 @@ public sealed record RunCompletion(
     long CacheReadTokens,
     long CacheWriteTokens,
     int? NumTurns,
-    string? SessionId,
+    [property: JsonPropertyName("sessionId")] string? SessionID,
     string? Model,
     string? HeadCommit,
     bool Pushed,

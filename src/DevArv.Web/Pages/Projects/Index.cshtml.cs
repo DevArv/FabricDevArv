@@ -5,13 +5,13 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace DevArv.Web.Pages.Projects;
 
-public sealed class IndexModel(ProjectsRepository projects, GitHubService github) : PageModel
+public sealed class IndexModel(ProjectsRepository ProjectsRepository, GitHubService GitHubService) : PageModel
 {
     public List<ProjectsRowViewModel> Rows { get; private set; } = [];
-    public bool GitHubConfigured => github.IsConfigured;
+    public bool GitHubConfigured => GitHubService.IsConfigured;
 
-    public async Task OnGetAsync(CancellationToken ct)
+    public async Task OnGetAsync(CancellationToken CT)
     {
-        Rows = await projects.GetSummaryAsync(ct);
+        Rows = await ProjectsRepository.GetSummaryAsync(CT);
     }
 }

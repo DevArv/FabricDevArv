@@ -1,8 +1,4 @@
 using DevArv.Contracts.Models;
-using DevArv.Web.DatabaseConnection;
-using DevArv.Web.Enums.Runs;
-using DevArv.Web.Enums.Workflow;
-using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Services;
 
@@ -13,77 +9,84 @@ namespace DevArv.Web.Services;
 /// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub y marca las que
 ///    tienen conflictos con la rama base.
 /// </summary>
-public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrator> logger) : BackgroundService
+public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrator> Logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan WorkerSilence = TimeSpan.FromMinutes(3);
-    private static readonly TimeSpan MergeCheckInterval = TimeSpan.FromMinutes(1);
-    private DateTimeOffset _lastWatchdog = DateTimeOffset.MinValue;
-    private DateTimeOffset _lastMergeCheck = DateTimeOffset.MinValue;
+    private static readonly TimeSpan _Interval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _WatchdogInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _WorkerSilence = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan _MergeCheckInterval = TimeSpan.FromMinutes(1);
+    private const int MAX_SYSTEM_RUNS_PER_CYCLE = 10;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    private DateTimeOffset _LastWatchdog = DateTimeOffset.MinValue;
+    private DateTimeOffset _LastMergeCheck = DateTimeOffset.MinValue;
+
+    protected override async Task ExecuteAsync(CancellationToken StoppingToken)
     {
         // Pequeña espera para que la base de datos termine de inicializarse.
-        await Task.Delay(TimeSpan.FromSeconds(3), stoppingToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), StoppingToken);
 
-        using (var scope = scopes.CreateScope())
+        using (var scope = Scopes.CreateScope())
         {
             if (!scope.ServiceProvider.GetRequiredService<GitHubService>().IsConfigured)
-                logger.LogWarning("GitHub:Token no está configurado: no se podrán conectar repositorios ni abrir pull requests. " +
+                Logger.LogWarning("GitHub:Token no está configurado: no se podrán conectar repositorios ni abrir pull requests. " +
                     "Defínelo en el appsettings del servidor (appsettings.Local.json).");
         }
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!StoppingToken.IsCancellationRequested)
         {
             try
             {
-                await ProcessSystemRunsAsync(stoppingToken);
-                if (DateTimeOffset.UtcNow - _lastWatchdog > TimeSpan.FromSeconds(30))
+                await ProcessSystemRunsAsync(StoppingToken);
+                if (DateTimeOffset.UtcNow - _LastWatchdog > _WatchdogInterval)
                 {
-                    await WatchdogAsync(stoppingToken);
-                    _lastWatchdog = DateTimeOffset.UtcNow;
+                    await WatchdogAsync(StoppingToken);
+                    _LastWatchdog = DateTimeOffset.UtcNow;
                 }
-                if (DateTimeOffset.UtcNow - _lastMergeCheck > MergeCheckInterval)
+                if (DateTimeOffset.UtcNow - _LastMergeCheck > _MergeCheckInterval)
                 {
-                    _lastMergeCheck = DateTimeOffset.UtcNow;
-                    await CheckPullRequestsAsync(stoppingToken);
+                    _LastMergeCheck = DateTimeOffset.UtcNow;
+                    await CheckPullRequestsAsync(StoppingToken);
                 }
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (StoppingToken.IsCancellationRequested)
             {
                 break;
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error en el ciclo del orquestador");
+                Logger.LogError(ex, "Error en el ciclo del orquestador");
             }
 
-            await Task.Delay(Interval, stoppingToken);
+            await Task.Delay(_Interval, StoppingToken);
         }
     }
 
-    private async Task ProcessSystemRunsAsync(CancellationToken ct)
+    private async Task ProcessSystemRunsAsync(CancellationToken CT)
     {
-        for (var i = 0; i < 10; i++)
+        for (var i = 0; i < MAX_SYSTEM_RUNS_PER_CYCLE; i++)
         {
-            using var scope = scopes.CreateScope();
+            using var scope = Scopes.CreateScope();
             var workflow = scope.ServiceProvider.GetRequiredService<WorkflowService>();
             var executor = scope.ServiceProvider.GetRequiredService<SystemActionExecutor>();
 
-            var run = await workflow.ClaimNextSystemRunAsync(ct);
+            var run = await workflow.ClaimNextSystemRunAsync(CT);
             if (run is null) return;
 
             RunCompletion completion;
             try
             {
-                completion = await executor.ExecuteAsync(run, ct);
+                completion = await executor.ExecuteAsync(run, CT);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "Falló la acción de sistema de la ejecución {RunId}", run.Id);
+                Logger.LogWarning(ex, "Falló la acción de sistema de la ejecución {RunId}", run.ID);
                 completion = SystemActionExecutor.Failure(ex.Message);
             }
-            await workflow.CompleteRunAsync(run.Id, completion, "Sistema", ct);
+            await workflow.CompleteRunAsync(
+                RunID: run.ID,
+                Completion: completion,
+                Actor: "Sistema",
+                CT: CT);
         }
     }
 
@@ -92,23 +95,31 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
     /// la columna marcada como destino del merge (por defecto «Pendiente Deploy»); si no, registra si tiene conflictos
     /// con la rama base (un pull request cerrado sin merge deja de marcarse con conflictos).
     /// </summary>
-    private async Task CheckPullRequestsAsync(CancellationToken ct)
+    private async Task CheckPullRequestsAsync(CancellationToken CT)
     {
-        using var scope = scopes.CreateScope();
+        using var scope = Scopes.CreateScope();
         var github = scope.ServiceProvider.GetRequiredService<GitHubService>();
         if (!github.IsConfigured) return;
         var workflow = scope.ServiceProvider.GetRequiredService<WorkflowService>();
 
-        foreach (var watched in await workflow.GetPullRequestsToWatchAsync(ct))
+        foreach (var watched in await workflow.GetPullRequestsToWatchAsync(CT))
         {
             try
             {
-                var pr = await github.GetPullRequestAsync(watched.RepoOwner, watched.RepoName, watched.Number, ct);
+                var pr = await github.GetPullRequestAsync(
+                    Owner: watched.RepoOwner,
+                    Repo: watched.RepoName,
+                    Number: watched.Number,
+                    CT: CT);
                 if (pr.Merged)
                 {
-                    logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
-                        watched.Number, watched.TaskId);
-                    await workflow.OnPullRequestMergedAsync(watched.TaskId, watched.Number, "Sistema", ct);
+                    Logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
+                        watched.Number, watched.TaskID);
+                    await workflow.OnPullRequestMergedAsync(
+                        TaskID: watched.TaskID,
+                        Number: watched.Number,
+                        Actor: "Sistema",
+                        CT: CT);
                     continue;
                 }
 
@@ -116,50 +127,30 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
                 var hasConflicts = pr.State == "open" ? pr.HasConflicts : false;
                 if (hasConflicts is { } value && value != watched.HasConflicts)
                 {
-                    logger.LogInformation("Pull request #{Number} de la tarea {TaskId}: conflictos = {HasConflicts}.",
-                        watched.Number, watched.TaskId, value);
-                    await workflow.OnPullRequestConflictsCheckedAsync(watched.TaskId, watched.Number, value, "Sistema", ct);
+                    Logger.LogInformation("Pull request #{Number} de la tarea {TaskId}: conflictos = {HasConflicts}.",
+                        watched.Number, watched.TaskID, value);
+                    await workflow.OnPullRequestConflictsCheckedAsync(
+                        TaskID: watched.TaskID,
+                        Number: watched.Number,
+                        HasConflicts: value,
+                        Actor: "Sistema",
+                        CT: CT);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "No se pudo revisar el pull request #{Number} de la tarea {TaskId}",
-                    watched.Number, watched.TaskId);
+                Logger.LogWarning(ex, "No se pudo revisar el pull request #{Number} de la tarea {TaskId}",
+                    watched.Number, watched.TaskID);
             }
         }
     }
 
-    private async Task WatchdogAsync(CancellationToken ct)
+    private async Task WatchdogAsync(CancellationToken CT)
     {
-        using var scope = scopes.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        using var scope = Scopes.CreateScope();
         var workflow = scope.ServiceProvider.GetRequiredService<WorkflowService>();
-        var now = DateTimeOffset.UtcNow;
-
-        var running = await db.TaskRuns
-            .Where(r => r.Status == RunStatus.Running && r.RunnerKind == StageKind.Agent)
-            .Select(r => new
-            {
-                r.Id,
-                r.StartedAt,
-                r.LastActivityAt,
-                WorkerSeen = r.Worker != null ? r.Worker.LastSeenAt : null,
-                Timeout = db.Stages.Where(s => s.Id == r.StageId).Select(s => (int?)s.TimeoutMinutes).FirstOrDefault(),
-            })
-            .ToListAsync(ct);
-
-        foreach (var r in running)
-        {
-            string? reason = null;
-            var silentSince = r.LastActivityAt ?? r.StartedAt ?? now;
-            if (now - silentSince > WorkerSilence && (r.WorkerSeen is null || now - r.WorkerSeen > WorkerSilence))
-                reason = "El worker dejó de responder durante la ejecución.";
-            else if (r.StartedAt is { } started && now - started > TimeSpan.FromMinutes((r.Timeout ?? 60) + 15))
-                reason = "La ejecución excedió el tiempo máximo de la columna.";
-
-            if (reason is null) continue;
-            logger.LogWarning("Ejecución {RunId}: {Reason}", r.Id, reason);
-            await workflow.CompleteRunAsync(r.Id, SystemActionExecutor.Failure(reason), "Vigilante", ct);
-        }
+        await workflow.FailStalledRunsAsync(
+            WorkerSilence: _WorkerSilence,
+            CT: CT);
     }
 }

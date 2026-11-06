@@ -8,14 +8,14 @@ public sealed class ValidationFailedException : Exception
 {
     public IReadOnlyList<(string Field, string Message)> Errors { get; }
 
-    public ValidationFailedException(string field, string message) : base(message)
+    public ValidationFailedException(string Field, string Message) : base(Message)
     {
-        Errors = [(field, message)];
+        Errors = [(Field, Message)];
     }
 
-    public ValidationFailedException(IReadOnlyList<(string Field, string Message)> errors)
-        : base(string.Join(" ", errors.Select(e => e.Message)))
+    public ValidationFailedException(IReadOnlyList<(string Field, string Message)> ErrorList)
+        : base(string.Join(" ", ErrorList.Select(e => e.Message)))
     {
-        Errors = errors;
+        Errors = ErrorList;
     }
 }

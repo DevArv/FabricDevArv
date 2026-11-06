@@ -2,7 +2,7 @@ namespace DevArv.Web.Enums.Runs;
 
 public enum RunDecision
 {
-    None = 0,
-    Approved = 1,
-    Rejected = 2,
+    NONE = 0,
+    APPROVED = 1,
+    REJECTED = 2,
 }

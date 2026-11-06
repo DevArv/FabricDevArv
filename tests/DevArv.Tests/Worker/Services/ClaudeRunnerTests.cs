@@ -10,7 +10,7 @@ public class ClaudeRunnerTests
     public void BuildsHeadlessArgumentsWithVariadicListsLast()
     {
         var job = new AgentJob(
-            RunId: 1, TaskId: 2, TaskTitle: "t", StageName: "Revisor", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
+            RunID: 1, TaskID: 2, TaskTitle: "t", StageName: "Revisor", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
             BaseBranch: "main", WorkBranch: "devarv/2-t", Prompt: "p", AppendSystemPrompt: "extra", Model: "sonnet",
             PermissionMode: "default", AllowedTools: ["Read", "Bash(git diff:*)"], DisallowedTools: ["Edit"], MaxTurns: 30,
             ExtraArgs: [], PushChanges: false, TimeoutMinutes: 30, CommitMessage: "c",
@@ -32,7 +32,7 @@ public class ClaudeRunnerTests
     public void EnvironmentUsesOnlyTheApiKeyFromSettings()
     {
         var job = new AgentJob(
-            RunId: 7, TaskId: 3, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
+            RunID: 7, TaskID: 3, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
             BaseBranch: "master", WorkBranch: "sc-devarv-3-t", Prompt: "p", AppendSystemPrompt: null, Model: "opus",
             PermissionMode: "acceptEdits", AllowedTools: [], DisallowedTools: [], MaxTurns: null,
             ExtraArgs: [], PushChanges: true, TimeoutMinutes: 30, CommitMessage: "c", Attachments: []);
@@ -60,7 +60,7 @@ public class ClaudeRunnerTests
     public void EnvironmentPassesTheSubscriptionTokenAndDropsInheritedOnes()
     {
         var job = new AgentJob(
-            RunId: 8, TaskId: 4, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
+            RunID: 8, TaskID: 4, TaskTitle: "t", StageName: "Desarrollador", Repo: new RepoInfo("o", "r", "https://github.com/o/r.git"),
             BaseBranch: "master", WorkBranch: "sc-devarv-4-t", Prompt: "p", AppendSystemPrompt: null, Model: "opus",
             PermissionMode: "acceptEdits", AllowedTools: [], DisallowedTools: [], MaxTurns: null,
             ExtraArgs: [], PushChanges: true, TimeoutMinutes: 30, CommitMessage: "c", Attachments: []);

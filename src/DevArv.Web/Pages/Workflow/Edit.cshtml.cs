@@ -6,35 +6,55 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages.Workflow;
 
-public sealed class EditModel(StagesRepository stages) : PageModel
+public sealed class EditModel(StagesRepository StagesRepository) : PageModel
 {
-    [BindProperty(SupportsGet = true)] public int? Id { get; set; }
-    [BindProperty] public StageEditViewModel Input { get; set; } = new();
+    // Estado para la vista; los handlers lo asignan con lo que reciben de la URL y del formulario.
+    public int? ID { get; private set; }
+    public StageEditViewModel Input { get; private set; } = new();
     public List<Stage> OtherStages { get; private set; } = [];
 
-    public async Task<IActionResult> OnGetAsync(CancellationToken ct)
+    public async Task<IActionResult> OnGetAsync(int? ID, CancellationToken CT)
     {
-        OtherStages = await stages.GetOthersAsync(Id, ct);
-        if (Id is null)
+        this.ID = ID;
+        OtherStages = await StagesRepository.GetOthersAsync(
+            ExcludedID: ID,
+            CT: CT);
+        if (ID is null)
         {
-            Input = stages.NewEdit();
+            Input = StagesRepository.NewEdit();
             return Page();
         }
 
-        var record = await stages.GetEditAsync(Id.Value, ct);
+        var record = await StagesRepository.GetEditAsync(
+            ID: ID.Value,
+            CT: CT);
         if (record is null) return NotFound();
         Input = record;
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(CancellationToken ct)
+    public async Task<IActionResult> OnPostAsync(int? ID, StageEditViewModel Input, CancellationToken CT)
     {
-        OtherStages = await stages.GetOthersAsync(Id, ct);
-        foreach (var (field, message) in await stages.GetValidationErrorsAsync(Id, Input, ct))
-            ModelState.AddModelError(field, message);
+        this.ID = ID;
+        this.Input = Input;
+        OtherStages = await StagesRepository.GetOthersAsync(
+            ExcludedID: ID,
+            CT: CT);
         if (!ModelState.IsValid) return Page();
 
-        if (!await stages.SaveAsync(Id, Input, ct)) return NotFound();
+        try
+        {
+            var found = await StagesRepository.SaveAsync(
+                ID: ID,
+                Record: Input,
+                CT: CT);
+            if (!found) return NotFound();
+        }
+        catch (ValidationFailedException ex)
+        {
+            foreach (var (field, message) in ex.Errors) ModelState.AddModelError(field, message);
+            return Page();
+        }
         return RedirectToPage("/Workflow/Index");
     }
 }

@@ -7,53 +7,62 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Repositories;
 
-public class ProjectsRepository(AppDbContext db, GitHubService github)
+public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
 {
-    public Task<List<Project>> GetActiveAsync(CancellationToken ct) =>
-        db.Projects.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync(ct);
+    public Task<List<Project>> GetActiveAsync(CancellationToken CT) =>
+        Db.Projects.AsNoTracking().Where(p => p.IsActive).OrderBy(p => p.Name).ToListAsync(CT);
 
-    public async Task<List<ProjectsRowViewModel>> GetSummaryAsync(CancellationToken ct)
+    public async Task<List<ProjectsRowViewModel>> GetSummaryAsync(CancellationToken CT)
     {
-        var projects = await db.Projects.AsNoTracking().OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ToListAsync(ct);
-        var stats = await db.Tasks.AsNoTracking()
-            .GroupBy(t => t.ProjectId)
+        var projects = await Db.Projects.AsNoTracking().OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ToListAsync(CT);
+        var stats = await Db.Tasks.AsNoTracking()
+            .GroupBy(t => t.ProjectID)
             .Select(g => new { g.Key, Open = g.Count(t => t.ArchivedAt == null), Cost = g.Sum(t => t.TotalCostUsd) })
-            .ToDictionaryAsync(x => x.Key, ct);
+            .ToDictionaryAsync(x => x.Key, CT);
         return projects
-            .Select(p => stats.TryGetValue(p.Id, out var st)
-                ? new ProjectsRowViewModel(p, st.Open, st.Cost)
+            .Select(p => stats.TryGetValue(p.ID, out var stat)
+                ? new ProjectsRowViewModel(p, stat.Open, stat.Cost)
                 : new ProjectsRowViewModel(p, 0, 0))
             .ToList();
     }
 
-    public async Task<ProjectEditViewModel?> GetEditAsync(int id, CancellationToken ct)
+    public async Task<ProjectEditViewModel?> GetEditAsync(int ID, CancellationToken CT)
     {
-        var p = await db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-        return p is null
+        var project = await Db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.ID == ID, CT);
+        return project is null
             ? null
             : new ProjectEditViewModel
             {
-                Name = p.Name, Color = p.Color, Repository = p.RepoFullName, DefaultBranch = p.DefaultBranch,
-                BranchPrefix = p.BranchPrefix, AgentInstructions = p.AgentInstructions, IsActive = p.IsActive,
+                Name = project.Name, Color = project.Color, Repository = project.RepoFullName, DefaultBranch = project.DefaultBranch,
+                BranchPrefix = project.BranchPrefix, AgentInstructions = project.AgentInstructions, IsActive = project.IsActive,
             };
     }
 
     /// <summary>
-    /// Prueba el acceso al repositorio de GitHub. Si la conexión es correcta normaliza <paramref name="record"/>:
+    /// Prueba el acceso al repositorio de GitHub. Si la conexión es correcta normaliza <paramref name="Record"/>:
     /// el repositorio queda como «owner/repo» y, si la rama por defecto no existe, se usa la del repositorio.
     /// </summary>
-    public async Task<ProjectConnectionTestViewModel> TestConnectionAsync(ProjectEditViewModel record, CancellationToken ct)
+    public async Task<ProjectConnectionTestViewModel> TestConnectionAsync(ProjectEditViewModel Record, CancellationToken CT)
     {
-        if (!GitHubRepositoryParser.TryParse(record.Repository, out var owner, out var repo))
+        if (!GitHubRepositoryParser.TryParse(
+                Input: Record.Repository,
+                Owner: out var owner,
+                Repo: out var repo))
             return new ProjectConnectionTestViewModel(
                 "Formato de repositorio inválido. Usa owner/repo o https://github.com/owner/repo.", true);
         try
         {
-            var details = await github.GetRepositoryAsync(owner, repo, ct);
-            var branches = await github.ListBranchesAsync(owner, repo, ct);
-            record.Repository = details.FullName;
-            if (string.IsNullOrWhiteSpace(record.DefaultBranch) || !branches.Contains(record.DefaultBranch))
-                record.DefaultBranch = details.DefaultBranch;
+            var details = await GitHub.GetRepositoryAsync(
+                Owner: owner,
+                Repo: repo,
+                CT: CT);
+            var branches = await GitHub.ListBranchesAsync(
+                Owner: owner,
+                Repo: repo,
+                CT: CT);
+            Record.Repository = details.FullName;
+            if (string.IsNullOrWhiteSpace(Record.DefaultBranch) || !branches.Contains(Record.DefaultBranch))
+                Record.DefaultBranch = details.DefaultBranch;
             return new ProjectConnectionTestViewModel(
                 $"✓ Conexión correcta con {details.FullName} ({(details.IsPrivate ? "privado" : "público")}). " +
                 $"Ramas: {string.Join(", ", branches.Take(15))}{(branches.Count > 15 ? "…" : "")}", false);
@@ -64,33 +73,39 @@ public class ProjectsRepository(AppDbContext db, GitHubService github)
         }
     }
 
-    public void Validate(ProjectEditViewModel record)
+    public void Validate(ProjectEditViewModel Record)
     {
-        if (!GitHubRepositoryParser.TryParse(record.Repository, out _, out _))
+        if (!GitHubRepositoryParser.TryParse(
+                Input: Record.Repository,
+                Owner: out _,
+                Repo: out _))
             throw new ValidationFailedException("Input.Repository",
                 "Formato de repositorio inválido. Usa owner/repo o la URL de GitHub.");
     }
 
-    /// <summary>Crea (id nulo) o actualiza un proyecto. Devuelve false si el proyecto a editar no existe.</summary>
-    public async Task<bool> SaveAsync(int? id, ProjectEditViewModel record, CancellationToken ct)
+    /// <summary>Crea (ID nulo) o actualiza un proyecto. Devuelve false si el proyecto a editar no existe.</summary>
+    public async Task<bool> SaveAsync(int? ID, ProjectEditViewModel Record, CancellationToken CT)
     {
-        Validate(record);
-        GitHubRepositoryParser.TryParse(record.Repository, out var owner, out var repo);
+        Validate(Record);
+        GitHubRepositoryParser.TryParse(
+            Input: Record.Repository,
+            Owner: out var owner,
+            Repo: out var repo);
 
-        var project = id is null ? new Project() : await db.Projects.FindAsync([id.Value], ct);
+        var project = ID is null ? new Project() : await Db.Projects.FindAsync([ID.Value], CT);
         if (project is null) return false;
 
-        project.Name = record.Name.Trim();
-        project.Color = record.Color;
+        project.Name = Record.Name.Trim();
+        project.Color = Record.Color;
         project.RepoOwner = owner;
         project.RepoName = repo;
-        project.DefaultBranch = record.DefaultBranch.Trim();
-        project.BranchPrefix = record.BranchPrefix.Trim();
-        project.AgentInstructions = string.IsNullOrWhiteSpace(record.AgentInstructions) ? null : record.AgentInstructions.Trim();
-        project.IsActive = record.IsActive;
+        project.DefaultBranch = Record.DefaultBranch.Trim();
+        project.BranchPrefix = Record.BranchPrefix.Trim();
+        project.AgentInstructions = string.IsNullOrWhiteSpace(Record.AgentInstructions) ? null : Record.AgentInstructions.Trim();
+        project.IsActive = Record.IsActive;
 
-        if (id is null) db.Projects.Add(project);
-        await db.SaveChangesAsync(ct);
+        if (ID is null) Db.Projects.Add(project);
+        await Db.SaveChangesAsync(CT);
         return true;
     }
 }

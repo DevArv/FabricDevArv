@@ -14,65 +14,104 @@ namespace DevArv.Worker.Services;
 ///   {root}/work/task-{id}        ← worktree en la rama de trabajo
 ///   {root}/attachments/task-{id} ← adjuntos descargados
 /// </summary>
-public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
+public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> RepoLocks = new();
-    private readonly WorkerOptions _options = options.Value;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _RepoLocks = new();
+    private readonly WorkerOptions _Options = Options.Value;
 
-    public async Task<PreparedWorkspace> PrepareAsync(AgentJob job, Action<string> log, CancellationToken ct)
+    public async Task<PreparedWorkspace> PrepareAsync(AgentJob Job, Action<string> Log, CancellationToken CT)
     {
-        ValidateBranch(job.BaseBranch);
-        ValidateBranch(job.WorkBranch);
+        ValidateBranch(Job.BaseBranch);
+        ValidateBranch(Job.WorkBranch);
 
-        var root = _options.Workspace.ResolveRoot();
-        var repoDir = Path.Combine(root, "repos", SafeSegment(job.Repo.Owner), SafeSegment(job.Repo.Name));
-        var workDir = Path.Combine(root, "work", $"task-{job.TaskId}");
-        var attachDir = Path.Combine(root, "attachments", $"task-{job.TaskId}");
+        var root = _Options.Workspace.ResolveRoot();
+        var repoDir = Path.Combine(root, "repos", SafeSegment(Job.Repo.Owner), SafeSegment(Job.Repo.Name));
+        var workDir = Path.Combine(root, "work", $"task-{Job.TaskID}");
+        var attachDir = Path.Combine(root, "attachments", $"task-{Job.TaskID}");
 
-        var gate = RepoLocks.GetOrAdd(repoDir, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
+        var gate = _RepoLocks.GetOrAdd(repoDir, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(CT);
         try
         {
             if (!Directory.Exists(Path.Combine(repoDir, ".git")))
             {
                 if (Directory.Exists(repoDir)) DeleteDirectory(repoDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(repoDir)!);
-                log($"$ git clone {job.Repo.CloneUrl}");
-                await GitAsync(root, ct, withAuth: job.Repo.CloneUrl, "clone", "--no-checkout", job.Repo.CloneUrl, repoDir);
+                Log($"$ git clone {Job.Repo.CloneUrl}");
+                await GitAsync(
+                    Cwd: root,
+                    Args: ["clone", "--no-checkout", Job.Repo.CloneUrl, repoDir],
+                    CT: CT,
+                    WithAuth: Job.Repo.CloneUrl);
             }
 
-            await GitAsync(repoDir, ct, null, "config", "user.name", _options.Git.AuthorName);
-            await GitAsync(repoDir, ct, null, "config", "user.email", _options.Git.AuthorEmail);
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["config", "user.name", _Options.Git.AuthorName],
+                CT: CT);
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["config", "user.email", _Options.Git.AuthorEmail],
+                CT: CT);
 
-            log("$ git fetch origin --prune");
-            await GitAsync(repoDir, ct, withAuth: job.Repo.CloneUrl, "fetch", "origin", "--prune");
+            Log("$ git fetch origin --prune");
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["fetch", "origin", "--prune"],
+                CT: CT,
+                WithAuth: Job.Repo.CloneUrl);
 
-            if (!await RefExistsAsync(repoDir, $"refs/remotes/origin/{job.BaseBranch}", ct))
-                throw new GitException($"La rama base «{job.BaseBranch}» no existe en el repositorio remoto.");
+            var baseExists = await RefExistsAsync(
+                RepoDir: repoDir,
+                Reference: $"refs/remotes/origin/{Job.BaseBranch}",
+                CT: CT);
+            if (!baseExists)
+                throw new GitException($"La rama base «{Job.BaseBranch}» no existe en el repositorio remoto.");
 
-            var remoteExists = await RefExistsAsync(repoDir, $"refs/remotes/origin/{job.WorkBranch}", ct);
-            var startPoint = remoteExists ? $"origin/{job.WorkBranch}" : $"origin/{job.BaseBranch}";
+            var remoteExists = await RefExistsAsync(
+                RepoDir: repoDir,
+                Reference: $"refs/remotes/origin/{Job.WorkBranch}",
+                CT: CT);
+            var startPoint = remoteExists ? $"origin/{Job.WorkBranch}" : $"origin/{Job.BaseBranch}";
 
-            if (await IsWorktreeAsync(workDir, ct))
+            if (await IsWorktreeAsync(workDir, CT))
             {
-                log($"$ git checkout -B {job.WorkBranch} {startPoint}  (worktree existente)");
-                await GitAsync(workDir, ct, null, "reset", "--hard");
-                await GitAsync(workDir, ct, null, "clean", "-fd");
-                await GitAsync(workDir, ct, null, "checkout", "-B", job.WorkBranch, startPoint);
+                Log($"$ git checkout -B {Job.WorkBranch} {startPoint}  (worktree existente)");
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["reset", "--hard"],
+                    CT: CT);
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["clean", "-fd"],
+                    CT: CT);
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["checkout", "-B", Job.WorkBranch, startPoint],
+                    CT: CT);
             }
             else
             {
                 if (Directory.Exists(workDir)) DeleteDirectory(workDir);
-                await GitAsync(repoDir, ct, null, "worktree", "prune");
+                await GitAsync(
+                    Cwd: repoDir,
+                    Args: ["worktree", "prune"],
+                    CT: CT);
                 Directory.CreateDirectory(Path.GetDirectoryName(workDir)!);
-                log($"$ git worktree add -B {job.WorkBranch} {workDir} {startPoint}");
-                await GitAsync(repoDir, ct, null, "worktree", "add", "-f", "-B", job.WorkBranch, workDir, startPoint);
+                Log($"$ git worktree add -B {Job.WorkBranch} {workDir} {startPoint}");
+                await GitAsync(
+                    Cwd: repoDir,
+                    Args: ["worktree", "add", "-f", "-B", Job.WorkBranch, workDir, startPoint],
+                    CT: CT);
             }
 
-            var head = (await GitAsync(workDir, ct, null, "rev-parse", "HEAD")).StdOut.Trim();
-            log(remoteExists
-                ? $"Rama {job.WorkBranch} retomada desde origin ({Short(head)})."
-                : $"Rama {job.WorkBranch} creada desde {job.BaseBranch} ({Short(head)}).");
+            var head = (await GitAsync(
+                Cwd: workDir,
+                Args: ["rev-parse", "HEAD"],
+                CT: CT)).StdOut.Trim();
+            Log(remoteExists
+                ? $"Rama {Job.WorkBranch} retomada desde origin ({Short(head)})."
+                : $"Rama {Job.WorkBranch} creada desde {Job.BaseBranch} ({Short(head)}).");
 
             if (Directory.Exists(attachDir)) DeleteDirectory(attachDir);
             Directory.CreateDirectory(attachDir);
@@ -90,117 +129,178 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
     /// el merge a medias (archivos con marcadores) para que el agente los resuelva y devuelve los archivos en conflicto;
     /// si la integración es limpia, git crea el commit del merge y devuelve una lista vacía.
     /// </summary>
-    public async Task<IReadOnlyList<string>> MergeBaseAsync(
-        AgentJob job, PreparedWorkspace ws, Action<string> log, CancellationToken ct)
+    public async Task<IReadOnlyList<string>> MergeBaseAsync(AgentJob Job, PreparedWorkspace Workspace, Action<string> Log, CancellationToken CT)
     {
-        var wt = ws.WorktreePath;
-        var source = $"origin/{job.BaseBranch}";
-        log($"$ git merge --no-edit {source}");
-        var merge = await RunGitAsync(wt, ct, null, "merge", "--no-edit", "-m",
-            $"Merge {source} en {job.WorkBranch} (DevArv #{job.TaskId}: conflictos del pull request)", source);
+        var worktree = Workspace.WorktreePath;
+        var source = $"origin/{Job.BaseBranch}";
+        Log($"$ git merge --no-edit {source}");
+        var merge = await RunGitAsync(
+            Cwd: worktree,
+            Args: ["merge", "--no-edit", "-m", $"Merge {source} en {Job.WorkBranch} (DevArv #{Job.TaskID}: conflictos del pull request)", source],
+            CT: CT);
 
         if (merge.Ok)
         {
-            log($"{source} se integró sin conflictos.");
+            Log($"{source} se integró sin conflictos.");
             return [];
         }
 
-        var conflicted = await ConflictedFilesAsync(wt, ct);
+        var conflicted = await ConflictedFilesAsync(
+            Worktree: worktree,
+            CT: CT);
         if (conflicted.Count == 0)
         {
             var err = string.IsNullOrWhiteSpace(merge.StdErr) ? merge.StdOut : merge.StdErr;
             throw new GitException($"git merge falló ({merge.ExitCode}): {Redact(err.Trim())}");
         }
 
-        log($"Conflictos en {conflicted.Count} archivo(s): {string.Join(", ", conflicted)}");
+        Log($"Conflictos en {conflicted.Count} archivo(s): {string.Join(", ", conflicted)}");
         return conflicted;
     }
 
-    private async Task<List<string>> ConflictedFilesAsync(string wt, CancellationToken ct)
+    private async Task<List<string>> ConflictedFilesAsync(string Worktree, CancellationToken CT)
     {
         // -z separa con NUL y no entrecomilla ni escapa nombres con caracteres no ASCII (español.txt), igual que
         // las rutas que imprime «git diff --check», con las que luego se comparan.
-        var r = await GitAsync(wt, ct, null, "diff", "--name-only", "-z", "--diff-filter=U");
+        var r = await GitAsync(
+            Cwd: Worktree,
+            Args: ["diff", "--name-only", "-z", "--diff-filter=U"],
+            CT: CT);
         return ParseNulSeparated(r.StdOut);
     }
 
     /// <summary>Nombres separados por NUL. Git añade un «\n» suelto tras las rutas sin fusionar: se descarta.</summary>
-    internal static List<string> ParseNulSeparated(string output) =>
-        output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
+    internal static List<string> ParseNulSeparated(string Output) =>
+        Output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
 
     /// <summary>Commit de lo pendiente y push de la rama de trabajo.</summary>
-    /// <param name="conflictedFiles">
+    /// <param name="ConflictedFiles">
     /// Archivos que quedaron en conflicto al integrar la rama base (<see cref="MergeBaseAsync"/>): si alguno conserva
     /// marcadores de conflicto no se hace commit ni push.
     /// </param>
-    public async Task<PushResult> CommitAndPushAsync(AgentJob job, PreparedWorkspace ws, Action<string> log, CancellationToken ct,
-        IReadOnlyCollection<string>? conflictedFiles = null)
+    public async Task<PushResult> CommitAndPushAsync(
+        AgentJob Job, PreparedWorkspace Workspace, Action<string> Log, CancellationToken CT,
+        IReadOnlyCollection<string>? ConflictedFiles = null)
     {
-        var wt = ws.WorktreePath;
+        var worktree = Workspace.WorktreePath;
 
-        var branch = (await GitAsync(wt, ct, null, "rev-parse", "--abbrev-ref", "HEAD")).StdOut.Trim();
-        if (!string.Equals(branch, job.WorkBranch, StringComparison.Ordinal))
-            throw new GitException($"El agente cambió de rama ({branch}); se esperaba {job.WorkBranch}. No se hizo push.");
+        var branch = (await GitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "--abbrev-ref", "HEAD"],
+            CT: CT)).StdOut.Trim();
+        if (!string.Equals(branch, Job.WorkBranch, StringComparison.Ordinal))
+            throw new GitException($"El agente cambió de rama ({branch}); se esperaba {Job.WorkBranch}. No se hizo push.");
 
-        await GitAsync(wt, ct, null, "add", "-A");
+        await GitAsync(
+            Cwd: worktree,
+            Args: ["add", "-A"],
+            CT: CT);
 
-        if (conflictedFiles is { Count: > 0 })
+        if (ConflictedFiles is { Count: > 0 })
         {
             // --check marca las líneas agregadas que parecen marcadores de conflicto (también avisa de espacios al final,
             // que se ignoran); sólo cuentan los archivos que estaban en conflicto. Se compara contra el commit inicial
             // para incluir lo que el agente haya confirmado por su cuenta.
-            var check = await RunGitAsync(wt, ct, null, "diff", "--cached", "--check", ws.StartCommit);
-            var leftovers = LeftoverConflictMarkers(check.StdOut, conflictedFiles);
+            var check = await RunGitAsync(
+                Cwd: worktree,
+                Args: ["diff", "--cached", "--check", Workspace.StartCommit],
+                CT: CT);
+            var leftovers = LeftoverConflictMarkers(
+                CheckOutput: check.StdOut,
+                Files: ConflictedFiles);
             if (leftovers.Count > 0)
                 throw new GitException("Quedan marcadores de conflicto sin resolver; no se hizo commit ni push: "
                                        + string.Join(", ", leftovers.Take(10)) + (leftovers.Count > 10 ? "…" : ""));
         }
 
-        var staged = await RunGitAsync(wt, ct, null, "diff", "--cached", "--quiet");
+        var staged = await RunGitAsync(
+            Cwd: worktree,
+            Args: ["diff", "--cached", "--quiet"],
+            CT: CT);
         // Un merge a medias se cierra con su commit aunque la resolución no cambie archivos respecto a HEAD.
-        var mergeInProgress = (await RunGitAsync(wt, ct, null, "rev-parse", "-q", "--verify", "MERGE_HEAD")).Ok;
+        var mergeInProgress = (await RunGitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "-q", "--verify", "MERGE_HEAD"],
+            CT: CT)).Ok;
         if (staged.ExitCode == 1 || mergeInProgress)
         {
-            log("$ git commit");
-            await GitAsync(wt, ct, null, "commit", "-m", job.CommitMessage,
-                "-m", $"Etapa: {job.StageName}\nGenerado por DevArv con Claude Code.");
+            Log("$ git commit");
+            await GitAsync(
+                Cwd: worktree,
+                Args: ["commit", "-m", Job.CommitMessage, "-m", $"Etapa: {Job.StageName}\nGenerado por DevArv con Claude Code."],
+                CT: CT);
         }
 
-        var head = (await GitAsync(wt, ct, null, "rev-parse", "HEAD")).StdOut.Trim();
-        var changed = await ChangedFilesAsync(wt, job.BaseBranch, ct);
+        var head = (await GitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "HEAD"],
+            CT: CT)).StdOut.Trim();
+        var changed = await ChangedFilesAsync(
+            Worktree: worktree,
+            BaseBranch: Job.BaseBranch,
+            CT: CT);
 
         var pushed = false;
-        if (head != ws.StartCommit || (!ws.RemoteBranchExisted && changed.Count > 0))
+        if (head != Workspace.StartCommit || (!Workspace.RemoteBranchExisted && changed.Count > 0))
         {
-            log($"$ git push origin HEAD:refs/heads/{job.WorkBranch}");
-            await GitAsync(wt, ct, withAuth: job.Repo.CloneUrl, "push", "origin", $"HEAD:refs/heads/{job.WorkBranch}");
+            Log($"$ git push origin HEAD:refs/heads/{Job.WorkBranch}");
+            await GitAsync(
+                Cwd: worktree,
+                Args: ["push", "origin", $"HEAD:refs/heads/{Job.WorkBranch}"],
+                CT: CT,
+                WithAuth: Job.Repo.CloneUrl);
             pushed = true;
         }
         else
         {
-            log("Sin commits nuevos; no se hace push.");
+            Log("Sin commits nuevos; no se hace push.");
         }
 
-        log($"{changed.Count} archivo(s) distintos respecto a origin/{job.BaseBranch}.");
+        Log($"{changed.Count} archivo(s) distintos respecto a origin/{Job.BaseBranch}.");
         return new PushResult(head, pushed, changed);
     }
 
-    public async Task<string?> HeadAsync(PreparedWorkspace ws, CancellationToken ct)
+    public async Task<string?> HeadAsync(PreparedWorkspace Workspace, CancellationToken CT)
     {
-        var r = await RunGitAsync(ws.WorktreePath, ct, null, "rev-parse", "HEAD");
+        var r = await RunGitAsync(
+            Cwd: Workspace.WorktreePath,
+            Args: ["rev-parse", "HEAD"],
+            CT: CT);
         return r.Ok ? r.StdOut.Trim() : null;
     }
 
-    private async Task<List<ChangedFile>> ChangedFilesAsync(string wt, string baseBranch, CancellationToken ct)
+    private async Task<List<ChangedFile>> ChangedFilesAsync(string Worktree, string BaseBranch, CancellationToken CT)
     {
-        var r = await GitAsync(wt, ct, null, "diff", "--name-status", "-M", $"origin/{baseBranch}...HEAD");
+        var r = await GitAsync(
+            Cwd: Worktree,
+            Args: ["diff", "--name-status", "-M", $"origin/{BaseBranch}...HEAD"],
+            CT: CT);
         return ParseNameStatus(r.StdOut);
     }
 
-    internal static List<ChangedFile> ParseNameStatus(string output)
+    /// <summary>
+    /// Ubicaciones (<c>archivo:línea</c>) de la salida de <c>git diff --check</c> que son marcadores de conflicto, sólo de
+    /// los archivos indicados.
+    /// </summary>
+    internal static List<string> LeftoverConflictMarkers(string CheckOutput, IReadOnlyCollection<string> Files)
+    {
+        var result = new List<string>();
+        foreach (var line in CheckOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            const string marker = ": leftover conflict marker";
+            if (!line.EndsWith(marker, StringComparison.Ordinal)) continue;
+            var location = line[..^marker.Length];
+            var colon = location.LastIndexOf(':');
+            if (colon <= 0) continue;
+            if (Files.Contains(location[..colon])) result.Add(location);
+        }
+        return result;
+    }
+
+    internal static List<ChangedFile> ParseNameStatus(string Output)
     {
         var files = new List<ChangedFile>();
-        foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var line in Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var parts = line.Split('\t');
             if (parts.Length < 2) continue;
@@ -210,65 +310,56 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
         return files;
     }
 
-    /// <summary>
-    /// Ubicaciones (<c>archivo:línea</c>) de la salida de <c>git diff --check</c> que son marcadores de conflicto, sólo de
-    /// los archivos indicados.
-    /// </summary>
-    internal static List<string> LeftoverConflictMarkers(string checkOutput, IReadOnlyCollection<string> files)
-    {
-        var result = new List<string>();
-        foreach (var line in checkOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            const string marker = ": leftover conflict marker";
-            if (!line.EndsWith(marker, StringComparison.Ordinal)) continue;
-            var location = line[..^marker.Length];
-            var colon = location.LastIndexOf(':');
-            if (colon <= 0) continue;
-            if (files.Contains(location[..colon])) result.Add(location);
-        }
-        return result;
-    }
-
     // ------------------------------------------------------------------ helpers de git
 
-    private async Task<bool> RefExistsAsync(string repoDir, string reference, CancellationToken ct) =>
-        (await RunGitAsync(repoDir, ct, null, "rev-parse", "--verify", "--quiet", reference)).Ok;
+    private async Task<bool> RefExistsAsync(string RepoDir, string Reference, CancellationToken CT) =>
+        (await RunGitAsync(
+            Cwd: RepoDir,
+            Args: ["rev-parse", "--verify", "--quiet", Reference],
+            CT: CT)).Ok;
 
-    private async Task<bool> IsWorktreeAsync(string dir, CancellationToken ct)
+    private async Task<bool> IsWorktreeAsync(string Dir, CancellationToken CT)
     {
-        if (!Directory.Exists(dir) || !File.Exists(Path.Combine(dir, ".git"))) return false;
-        var r = await RunGitAsync(dir, ct, null, "rev-parse", "--is-inside-work-tree");
+        if (!Directory.Exists(Dir) || !File.Exists(Path.Combine(Dir, ".git"))) return false;
+        var r = await RunGitAsync(
+            Cwd: Dir,
+            Args: ["rev-parse", "--is-inside-work-tree"],
+            CT: CT);
         return r.Ok && r.StdOut.Trim() == "true";
     }
 
-    private async Task<ProcessResult> GitAsync(string cwd, CancellationToken ct, string? withAuth, params string[] args)
+    private async Task<ProcessResult> GitAsync(string Cwd, IReadOnlyList<string> Args, CancellationToken CT, string? WithAuth = null)
     {
-        var r = await RunGitAsync(cwd, ct, withAuth, args);
+        var r = await RunGitAsync(
+            Cwd: Cwd,
+            Args: Args,
+            CT: CT,
+            WithAuth: WithAuth);
         if (!r.Ok)
         {
             var err = string.IsNullOrWhiteSpace(r.StdErr) ? r.StdOut : r.StdErr;
-            throw new GitException($"git {args[0]} falló ({r.ExitCode}): {Redact(err.Trim())}");
+            throw new GitException($"git {Args[0]} falló ({r.ExitCode}): {Redact(err.Trim())}");
         }
         return r;
     }
 
-    private Task<ProcessResult> RunGitAsync(string cwd, CancellationToken ct, string? withAuth, params string[] args)
+    private Task<ProcessResult> RunGitAsync(string Cwd, IReadOnlyList<string> Args, CancellationToken CT, string? WithAuth = null)
     {
         var all = new List<string>();
-        if (withAuth is not null)
+        if (WithAuth is not null)
         {
-            var token = _options.Git.GitHubToken;
+            var token = _Options.Git.GitHubToken;
             if (string.IsNullOrWhiteSpace(token))
                 throw new GitException("Falta Worker:Git:GitHubToken en el appsettings del worker.");
-            if (!Uri.TryCreate(withAuth, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-                throw new GitException($"Sólo se admiten repositorios por HTTPS: «{withAuth}».");
+            if (!Uri.TryCreate(WithAuth, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                throw new GitException($"Sólo se admiten repositorios por HTTPS: «{WithAuth}».");
 
             // Igual que actions/checkout: la credencial va en una cabecera y nunca se guarda en .git/config.
             // credential.helper vacío evita que git use credenciales guardadas en la PC.
             var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"x-access-token:{token.Trim()}"));
             all.AddRange(["-c", "credential.helper=", "-c", $"http.https://{uri.Host}/.extraheader=AUTHORIZATION: basic {basic}"]);
         }
-        all.AddRange(args);
+        all.AddRange(Args);
 
         var env = new Dictionary<string, string>
         {
@@ -276,35 +367,35 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
             ["GCM_INTERACTIVE"] = "never",
             ["LC_ALL"] = "C",
         };
-        return ProcessRunner.RunAsync(new ProcessSpec(_options.Git.Executable, all, cwd) { Environment = env }, ct);
+        return ProcessRunner.RunAsync(new ProcessSpec(_Options.Git.Executable, all, Cwd) { Environment = env }, CT);
     }
 
-    private string Redact(string text)
+    private string Redact(string Text)
     {
-        var token = _options.Git.GitHubToken;
-        if (!string.IsNullOrWhiteSpace(token)) text = text.Replace(token.Trim(), "***");
-        return BasicAuth().Replace(text, "basic ***");
+        var token = _Options.Git.GitHubToken;
+        if (!string.IsNullOrWhiteSpace(token)) Text = Text.Replace(token.Trim(), "***");
+        return BasicAuth().Replace(Text, "basic ***");
     }
 
-    private static void ValidateBranch(string branch)
+    private static void ValidateBranch(string Branch)
     {
-        if (string.IsNullOrWhiteSpace(branch) || branch.StartsWith('-') || branch.Contains("..")
-            || !BranchName().IsMatch(branch))
-            throw new GitException($"Nombre de rama inválido: «{branch}».");
+        if (string.IsNullOrWhiteSpace(Branch) || Branch.StartsWith('-') || Branch.Contains("..")
+            || !BranchName().IsMatch(Branch))
+            throw new GitException($"Nombre de rama inválido: «{Branch}».");
     }
 
-    private static string SafeSegment(string value) => InvalidSegment().Replace(value, "_");
+    private static string SafeSegment(string Value) => InvalidSegment().Replace(Value, "_");
 
-    private static string Short(string sha) => sha.Length > 10 ? sha[..10] : sha;
+    private static string Short(string Sha) => Sha.Length > 10 ? Sha[..10] : Sha;
 
-    internal static void DeleteDirectory(string path)
+    internal static void DeleteDirectory(string Path)
     {
         // En Windows git marca objetos como sólo lectura; hay que quitar el atributo antes de borrar.
-        foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+        foreach (var file in Directory.EnumerateFiles(Path, "*", SearchOption.AllDirectories))
         {
             try { File.SetAttributes(file, FileAttributes.Normal); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
-        Directory.Delete(path, recursive: true);
+        Directory.Delete(Path, recursive: true);
     }
 
     [GeneratedRegex(@"^[A-Za-z0-9._/\-]+$")]

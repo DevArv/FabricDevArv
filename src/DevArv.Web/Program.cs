@@ -8,6 +8,7 @@ using DevArv.Web.Services;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 // Toda la configuración sale de los appsettings a través de EnvironmentTools.
@@ -46,6 +47,9 @@ var maxRequest = attachmentOptions.MaxFileBytes * attachmentOptions.MaxFilesPerT
 builder.Services.Configure<FormOptions>(o => o.MultipartBodyLengthLimit = maxRequest);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = maxRequest);
 
+builder.Services.Configure<AppOptions>(builder.Configuration.GetSection("App"));
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin"));
 builder.Services.Configure<GitHubOptions>(builder.Configuration.GetSection("GitHub"));
 builder.Services.AddHttpClient<GitHubService>();
 
@@ -57,6 +61,7 @@ builder.Services.AddScoped<ProjectsRepository>();
 builder.Services.AddScoped<StagesRepository>();
 builder.Services.AddScoped<TasksRepository>();
 builder.Services.AddScoped<TaskAttachmentsRepository>();
+builder.Services.AddScoped<RunsRepository>();
 builder.Services.AddScoped<WorkersRepository>();
 
 builder.Services.AddScoped<PromptBuilder>();
@@ -81,7 +86,7 @@ app.UseHttpsRedirection();
 
 // El registro público está desactivado salvo que Auth:AllowRegistration=true
 // o que todavía no exista ningún usuario (para crear el primero).
-var allowRegistration = app.Configuration.GetValue<bool>("Auth:AllowRegistration");
+var allowRegistration = app.Services.GetRequiredService<IOptions<AuthOptions>>().Value.AllowRegistration;
 app.Use(async (context, next) =>
 {
     if (!allowRegistration && context.Request.Path.StartsWithSegments("/Identity/Account/Register"))

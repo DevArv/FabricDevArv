@@ -2,7 +2,7 @@ namespace DevArv.Web.DataModels;
 
 public class Project
 {
-    public int Id { get; set; }
+    public int ID { get; set; }
     public string Name { get; set; } = "";
     /// <summary>Color en hexadecimal para el chip del proyecto (#22c55e).</summary>
     public string Color { get; set; } = "#3b82f6";

@@ -7,10 +7,10 @@ namespace DevArv.Web.Helpers;
 public static partial class Slug
 {
     /// <summary>"Requerimientos de mejora para Fabric" → "requerimientos-de-mejora-para-fabric".</summary>
-    public static string Create(string text, int maxLength = 50)
+    public static string Create(string Text, int MaxLength = 50)
     {
-        if (string.IsNullOrWhiteSpace(text)) return "tarea";
-        var normalized = text.Normalize(NormalizationForm.FormD);
+        if (string.IsNullOrWhiteSpace(Text)) return "tarea";
+        var normalized = Text.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(normalized.Length);
         foreach (var c in normalized)
         {
@@ -18,7 +18,7 @@ public static partial class Slug
             sb.Append(char.ToLowerInvariant(c));
         }
         var slug = NonAlnum().Replace(sb.ToString(), "-").Trim('-');
-        if (slug.Length > maxLength) slug = slug[..maxLength].TrimEnd('-');
+        if (slug.Length > MaxLength) slug = slug[..MaxLength].TrimEnd('-');
         return slug.Length == 0 ? "tarea" : slug;
     }
 

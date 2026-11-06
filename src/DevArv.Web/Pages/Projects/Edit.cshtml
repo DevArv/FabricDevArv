@@ -1,7 +1,7 @@
 @page "{id:int?}"
 @model DevArv.Web.Pages.Projects.EditModel
 @{
-    ViewData["Title"] = Model.Id is null ? "Conectar repositorio" : "Editar proyecto";
+    ViewData["Title"] = Model.ID is null ? "Conectar repositorio" : "Editar proyecto";
 }
 
 <div class="panel form-panel narrow">
@@ -21,7 +21,7 @@
 
     @* Destino explícito: sin él, el formulario envía a la URL actual y, tras «Probar conexión»,
        conserva ?handler=Test, con lo que «Guardar» volvía a ejecutar la prueba en lugar de guardar. *@
-    <form method="post" asp-page="/Projects/Edit" asp-route-id="@Model.Id" class="stack">
+    <form method="post" asp-page="/Projects/Edit" asp-route-id="@Model.ID" class="stack">
         <div asp-validation-summary="All" class="validation"></div>
         <div class="grid-2">
             <label>Nombre <input asp-for="Input.Name" required /></label>

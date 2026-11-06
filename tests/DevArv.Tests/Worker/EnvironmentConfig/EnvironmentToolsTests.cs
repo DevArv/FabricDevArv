@@ -8,18 +8,18 @@ namespace DevArv.Tests.Worker.EnvironmentConfig;
 
 public sealed class EnvironmentToolsTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("devarv-env-").FullName;
+    private readonly string _Dir = Directory.CreateTempSubdirectory("devarv-env-").FullName;
 
     public EnvironmentToolsTests()
     {
-        File.WriteAllText(Path.Combine(_dir, "appsettings.json"), """{"EnvironmentData":{"Url":"https://localhost:5001","ApiKey":""},"GitHub":{"Token":""},"App":{"Name":"base"}}""");
-        File.WriteAllText(Path.Combine(_dir, "appsettings.Development.json"), """{"App":{"Name":"dev"}}""");
-        File.WriteAllText(Path.Combine(_dir, EnvironmentTools.LocalFile), """{"EnvironmentData":{"Url":"https://devarv.local/","ApiKey":" dvw_x "},"GitHub":{"Token":"desde-local"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "appsettings.json"), """{"EnvironmentData":{"Url":"https://localhost:5001","ApiKey":""},"GitHub":{"Token":""},"App":{"Name":"base"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "appsettings.Development.json"), """{"App":{"Name":"dev"}}""");
+        File.WriteAllText(Path.Combine(_Dir, EnvironmentTools.LOCAL_FILE), """{"EnvironmentData":{"Url":"https://devarv.local/","ApiKey":" dvw_x "},"GitHub":{"Token":"desde-local"}}""");
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => Directory.Delete(_Dir, recursive: true);
 
-    private IConfigurationRoot BuildFromFiles(string environmentName) => EnvironmentTools.Build(_dir, environmentName);
+    private IConfigurationRoot BuildFromFiles(string EnvironmentName) => EnvironmentTools.Build(_Dir, EnvironmentName);
 
     [Fact]
     public void LayersAppSettingsByEnvironmentAndLocalFile()
@@ -36,7 +36,7 @@ public sealed class EnvironmentToolsTests : IDisposable
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
 
-        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SectionName));
+        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SECTION_NAME));
 
         Assert.Contains("EnvironmentData", ex.Message);
     }
@@ -65,9 +65,9 @@ public sealed class EnvironmentToolsTests : IDisposable
     public void HostSourcesAreReplacedByTheAppSettings()
     {
         // Mismo orden de fuentes que arma el host por defecto.
-        File.WriteAllText(Path.Combine(_dir, "secrets.json"), """{"GitHub":{"Token":"desde-user-secrets"},"Solo":{"Secreto":"x"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "secrets.json"), """{"GitHub":{"Token":"desde-user-secrets"},"Solo":{"Secreto":"x"}}""");
         var host = new ConfigurationManager();
-        host.SetBasePath(_dir);
+        host.SetBasePath(_Dir);
         host.AddEnvironmentVariables(prefix: "DOTNET_");
         host.AddJsonFile("appsettings.json", optional: true);
         host.AddJsonFile("secrets.json", optional: true);
@@ -89,7 +89,7 @@ public sealed class EnvironmentToolsTests : IDisposable
     [Fact]
     public void ReadsServerDataFromTheLocalFile()
     {
-        var data = EnvironmentTools.GetSectionData(BuildFromFiles("Development"), EnvironmentTools.SectionName);
+        var data = EnvironmentTools.GetSectionData(BuildFromFiles("Development"), EnvironmentTools.SECTION_NAME);
 
         Assert.Equal("https://devarv.local/", data.Url);
         Assert.Equal("dvw_x", data.ApiKey);
@@ -101,15 +101,53 @@ public sealed class EnvironmentToolsTests : IDisposable
     [InlineData("devarv.local", "dvw_x", "EnvironmentData:Url")]
     [InlineData("ftp://devarv.local", "dvw_x", "EnvironmentData:Url")]
     [InlineData("https://devarv.local", " ", "EnvironmentData:ApiKey")]
-    public void InvalidServerDataThrowsWithTheKeyName(string url, string apiKey, string expected)
+    public void InvalidServerDataThrowsWithTheKeyName(string Url, string ApiKey, string Expected)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["EnvironmentData:Url"] = url, ["EnvironmentData:ApiKey"] = apiKey,
+            ["EnvironmentData:Url"] = Url, ["EnvironmentData:ApiKey"] = ApiKey,
         }).Build();
 
-        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SectionName));
+        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SECTION_NAME));
 
-        Assert.StartsWith(expected, ex.Message);
+        Assert.StartsWith(Expected, ex.Message);
+    }
+
+    // ------------------------------------------------------------------ PATH / PATHEXT
+
+    [Fact]
+    public void ParseSearchDirectories_SplitsTrimsAndDropsQuotesAndEmptyEntries()
+    {
+        var separator = Path.PathSeparator;
+
+        var directories = EnvironmentTools.ParseSearchDirectories($" /usr/bin {separator}\"/opt/mi herramienta\"{separator}{separator}   {separator}/bin");
+
+        Assert.Equal(["/usr/bin", "/opt/mi herramienta", "/bin"], directories);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void ParseSearchDirectories_WithoutValue_ReturnsNoDirectories(string? Value) =>
+        Assert.Empty(EnvironmentTools.ParseSearchDirectories(Value));
+
+    [Fact]
+    public void ParseExtensions_TrimsAndKeepsTheOrder() =>
+        Assert.Equal([".COM", ".EXE"], EnvironmentTools.ParseExtensions(" .COM; .EXE;;"));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ParseExtensions_WithoutValue_UsesTheWindowsDefault(string? Value) =>
+        Assert.Equal([".EXE", ".CMD", ".BAT"], EnvironmentTools.ParseExtensions(Value));
+
+    [Fact]
+    public void ExecutableSearchDirectories_ComeFromThePathOfTheSystem()
+    {
+        var expected = EnvironmentTools.ParseSearchDirectories(Environment.GetEnvironmentVariable("PATH"));
+
+        Assert.Equal(expected, EnvironmentTools.GetExecutableSearchDirectories());
+        Assert.NotEmpty(EnvironmentTools.GetExecutableExtensions());
     }
 }
