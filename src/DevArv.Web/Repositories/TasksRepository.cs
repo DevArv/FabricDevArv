@@ -199,8 +199,7 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
-        await db.Database.SqlQuery<int>($"""SELECT "Id" AS "Value" FROM "Tasks" WHERE "Id" = {task.Id} FOR UPDATE""").ToListAsync(ct);
-        await db.Database.SqlQuery<long>($"""SELECT "Id" AS "Value" FROM "TaskRuns" WHERE "TaskId" = {task.Id} FOR UPDATE""").ToListAsync(ct);
+        await LockTaskAndRunsAsync(task.Id, ct);
 
         if (await db.TaskRuns.AnyAsync(r => r.TaskId == task.Id && r.Status == RunStatus.Running, ct))
             throw new WorkflowException("La tarea se está ejecutando. Cancela la ejecución y espera a que termine antes de eliminarla.");
@@ -210,7 +209,29 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
 
-        foreach (var attachment in attachments) storage.Delete(attachment);
+        // La tarea ya no existe: un archivo que no se pueda borrar no debe romper la operación ni impedir borrar los demás.
+        foreach (var attachment in attachments)
+        {
+            try
+            {
+                storage.Delete(attachment);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId} de la tarea #{TaskId}.", attachment.Id, task.Id);
+            }
+        }
+
         logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", actor, task.Id, task.Title);
+    }
+
+    /// <summary>
+    /// Bloquea (FOR UPDATE) la fila de la tarea y las de sus ejecuciones dentro de la transacción actual.
+    /// Es virtual sólo para poder probar <see cref="DeleteAsync"/> sin PostgreSQL: el proveedor en memoria no ejecuta SQL.
+    /// </summary>
+    protected virtual async Task LockTaskAndRunsAsync(int taskId, CancellationToken ct)
+    {
+        await db.Database.SqlQuery<int>($"""SELECT "Id" AS "Value" FROM "Tasks" WHERE "Id" = {taskId} FOR UPDATE""").ToListAsync(ct);
+        await db.Database.SqlQuery<long>($"""SELECT "Id" AS "Value" FROM "TaskRuns" WHERE "TaskId" = {taskId} FOR UPDATE""").ToListAsync(ct);
     }
 }

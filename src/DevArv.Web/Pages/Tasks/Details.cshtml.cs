@@ -88,7 +88,10 @@ public sealed class DetailsModel(
         if (task is null) return NotFound();
         try
         {
-            await tasks.DeleteAsync(task, Actor, ct);
+            await tasks.DeleteAsync(
+                task: task,
+                actor: Actor,
+                ct: ct);
         }
         catch (WorkflowException ex)
         {
