@@ -54,6 +54,8 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
         task.PullRequestNumber = pr.Number;
         task.PullRequestUrl = pr.HtmlUrl;
         task.PullRequestMergedAt = null;
+        // El orquestador la actualiza cuando GitHub termina de calcular si el pull request se puede integrar.
+        task.PullRequestHasConflicts = pr.HasConflicts ?? false;
         return Success(open is null ? $"Pull request creado: {pr.HtmlUrl}" : $"Se reutilizó el pull request abierto: {pr.HtmlUrl}");
     }
 
@@ -67,10 +69,12 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
         if (pr.Merged)
         {
             task.PullRequestMergedAt ??= DateTimeOffset.UtcNow;
+            task.PullRequestHasConflicts = false;
             return Success($"El pull request #{number} ya estaba integrado.");
         }
         await github.MergePullRequestAsync(p.RepoOwner, p.RepoName, number, $"#{task.Id} {task.Title}", ct);
         task.PullRequestMergedAt = DateTimeOffset.UtcNow;
+        task.PullRequestHasConflicts = false;
         return Success($"Merge (squash) del pull request #{number} realizado.");
     }
 

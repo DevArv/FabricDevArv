@@ -19,6 +19,11 @@ public class TaskRun
     public WorkerNode? Worker { get; set; }
     /// <summary>Copia de TaskItem.PreferredWorkerId al encolar.</summary>
     public int? PinnedWorkerId { get; set; }
+    /// <summary>
+    /// Ejecución pedida para arreglar los conflictos del pull request: el worker integra la rama base en la rama de
+    /// trabajo antes de iniciar al agente y el prompt le pide resolver los conflictos.
+    /// </summary>
+    public bool ResolveConflicts { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }

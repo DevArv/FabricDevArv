@@ -28,6 +28,7 @@ public static class DbInitializer
 
         await AddStageSkillColumnAsync(db, ct);
         await AddMergeColumnsAsync(db, ct);
+        await AddConflictColumnsAsync(db, ct);
 
         if (!await db.Stages.AnyAsync(ct))
         {
@@ -98,6 +99,28 @@ public static class DbInitializer
         """;
 
     private const string PendingDeployStageName = "Pendiente Deploy";
+
+    /// <summary>
+    /// Bases creadas antes de detectar conflictos en los pull requests: agrega <see cref="TaskItem.PullRequestHasConflicts"/>
+    /// y <see cref="TaskRun.ResolveConflicts"/>. No hace nada si las columnas ya existen.
+    /// </summary>
+    private static Task AddConflictColumnsAsync(AppDbContext db, CancellationToken ct) =>
+        db.Database.ExecuteSqlRawAsync(AddConflictColumnsSql, ct);
+
+    // Sin llaves en el SQL: EF Core lo pasa por string.Format.
+    private const string AddConflictColumnsSql = """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'Tasks' AND column_name = 'PullRequestHasConflicts') THEN
+                ALTER TABLE "Tasks" ADD COLUMN "PullRequestHasConflicts" boolean NOT NULL DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = current_schema() AND table_name = 'TaskRuns' AND column_name = 'ResolveConflicts') THEN
+                ALTER TABLE "TaskRuns" ADD COLUMN "ResolveConflicts" boolean NOT NULL DEFAULT FALSE;
+            END IF;
+        END $$;
+        """;
 
     public static async Task SeedDefaultWorkflowAsync(AppDbContext db, CancellationToken ct)
     {

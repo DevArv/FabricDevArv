@@ -10,7 +10,8 @@ namespace DevArv.Web.Services;
 /// Proceso en segundo plano del servidor:
 /// 1) ejecuta las columnas de sistema (crear PR, merge) y
 /// 2) marca como fallidas las ejecuciones de workers que dejaron de responder o excedieron su tiempo y
-/// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub.
+/// 3) mueve a la columna destino del merge las tareas cuyo pull request se integró en GitHub y marca las que
+///    tienen conflictos con la rama base.
 /// </summary>
 public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrator> logger) : BackgroundService
 {
@@ -45,7 +46,7 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
                 if (DateTimeOffset.UtcNow - _lastMergeCheck > MergeCheckInterval)
                 {
                     _lastMergeCheck = DateTimeOffset.UtcNow;
-                    await MoveMergedPullRequestsAsync(stoppingToken);
+                    await CheckPullRequestsAsync(stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -87,10 +88,11 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
     }
 
     /// <summary>
-    /// Consulta en GitHub los pull requests abiertos de las tareas y, si alguno se integró (merge),
-    /// hace entrar la tarea a la columna marcada como destino del merge (por defecto «Pendiente Deploy»).
+    /// Consulta en GitHub los pull requests abiertos de las tareas: si alguno se integró (merge), hace entrar la tarea a
+    /// la columna marcada como destino del merge (por defecto «Pendiente Deploy»); si no, registra si tiene conflictos
+    /// con la rama base (un pull request cerrado sin merge deja de marcarse con conflictos).
     /// </summary>
-    private async Task MoveMergedPullRequestsAsync(CancellationToken ct)
+    private async Task CheckPullRequestsAsync(CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var github = scope.ServiceProvider.GetRequiredService<GitHubService>();
@@ -102,10 +104,22 @@ public sealed class Orchestrator(IServiceScopeFactory scopes, ILogger<Orchestrat
             try
             {
                 var pr = await github.GetPullRequestAsync(watched.RepoOwner, watched.RepoName, watched.Number, ct);
-                if (!pr.Merged) continue;
-                logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
-                    watched.Number, watched.TaskId);
-                await workflow.OnPullRequestMergedAsync(watched.TaskId, watched.Number, "Sistema", ct);
+                if (pr.Merged)
+                {
+                    logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
+                        watched.Number, watched.TaskId);
+                    await workflow.OnPullRequestMergedAsync(watched.TaskId, watched.Number, "Sistema", ct);
+                    continue;
+                }
+
+                // null: GitHub aún calcula si se puede integrar; se conserva lo último registrado.
+                var hasConflicts = pr.State == "open" ? pr.HasConflicts : false;
+                if (hasConflicts is { } value && value != watched.HasConflicts)
+                {
+                    logger.LogInformation("Pull request #{Number} de la tarea {TaskId}: conflictos = {HasConflicts}.",
+                        watched.Number, watched.TaskId, value);
+                    await workflow.OnPullRequestConflictsCheckedAsync(watched.TaskId, watched.Number, value, "Sistema", ct);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

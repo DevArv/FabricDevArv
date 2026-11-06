@@ -13,6 +13,22 @@
     {
         <div class="status-pill @Labels.StatusCss(t.Status)">@Labels.StatusIcon(t.Status) @Labels.Of(t.Status)</div>
     }
+    @if (Model.ResolvingConflicts)
+    {
+        <div class="status-pill st-conflicts" title="El desarrollador integra @t.BaseBranch y resuelve los conflictos del pull request #@t.PullRequestNumber">🔧 Arreglando conflictos del PR</div>
+    }
+    else if (Model.ShowConflicts)
+    {
+        @* Fuera de .branches para que también se vea en la vista compacta. site.js no abre el detalle al pulsar el botón. *@
+        <div class="conflict-row">
+            <span class="status-pill st-conflicts" title="GitHub informa que el pull request #@t.PullRequestNumber no se puede integrar en @t.BaseBranch">⚠️ El PR tiene conflictos</span>
+            @if (Model.CanResolveConflicts)
+            {
+                <button type="button" class="conflict-fix" draggable="false" data-resolve-conflicts="@t.Id"
+                        title="Arreglar los conflictos: la tarea regresa al desarrollador, que integra @t.BaseBranch y resuelve los conflictos">🔧</button>
+            }
+        </div>
+    }
     @if (Model.DevelopmentElapsed is { } elapsed)
     {
         <span class="dev-timer" title="Tiempo que lleva el desarrollador implementando la tarea"

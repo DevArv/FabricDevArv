@@ -85,8 +85,50 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
         }
     }
 
+    /// <summary>
+    /// Arreglo de conflictos del pull request: integra <c>origin/{base}</c> en la rama de trabajo. Si hay conflictos deja
+    /// el merge a medias (archivos con marcadores) para que el agente los resuelva y devuelve los archivos en conflicto;
+    /// si la integración es limpia, git crea el commit del merge y devuelve una lista vacía.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> MergeBaseAsync(
+        AgentJob job, PreparedWorkspace ws, Action<string> log, CancellationToken ct)
+    {
+        var wt = ws.WorktreePath;
+        var source = $"origin/{job.BaseBranch}";
+        log($"$ git merge --no-edit {source}");
+        var merge = await RunGitAsync(wt, ct, null, "merge", "--no-edit", "-m",
+            $"Merge {source} en {job.WorkBranch} (DevArv #{job.TaskId}: conflictos del pull request)", source);
+
+        if (merge.Ok)
+        {
+            log($"{source} se integró sin conflictos.");
+            return [];
+        }
+
+        var conflicted = await ConflictedFilesAsync(wt, ct);
+        if (conflicted.Count == 0)
+        {
+            var err = string.IsNullOrWhiteSpace(merge.StdErr) ? merge.StdOut : merge.StdErr;
+            throw new GitException($"git merge falló ({merge.ExitCode}): {Redact(err.Trim())}");
+        }
+
+        log($"Conflictos en {conflicted.Count} archivo(s): {string.Join(", ", conflicted)}");
+        return conflicted;
+    }
+
+    private async Task<List<string>> ConflictedFilesAsync(string wt, CancellationToken ct)
+    {
+        var r = await GitAsync(wt, ct, null, "diff", "--name-only", "--diff-filter=U");
+        return r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    }
+
     /// <summary>Commit de lo pendiente y push de la rama de trabajo.</summary>
-    public async Task<PushResult> CommitAndPushAsync(AgentJob job, PreparedWorkspace ws, Action<string> log, CancellationToken ct)
+    /// <param name="conflictedFiles">
+    /// Archivos que quedaron en conflicto al integrar la rama base (<see cref="MergeBaseAsync"/>): si alguno conserva
+    /// marcadores de conflicto no se hace commit ni push.
+    /// </param>
+    public async Task<PushResult> CommitAndPushAsync(AgentJob job, PreparedWorkspace ws, Action<string> log, CancellationToken ct,
+        IReadOnlyCollection<string>? conflictedFiles = null)
     {
         var wt = ws.WorktreePath;
 
@@ -95,8 +137,23 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
             throw new GitException($"El agente cambió de rama ({branch}); se esperaba {job.WorkBranch}. No se hizo push.");
 
         await GitAsync(wt, ct, null, "add", "-A");
+
+        if (conflictedFiles is { Count: > 0 })
+        {
+            // --check marca las líneas agregadas que parecen marcadores de conflicto (también avisa de espacios al final,
+            // que se ignoran); sólo cuentan los archivos que estaban en conflicto. Se compara contra el commit inicial
+            // para incluir lo que el agente haya confirmado por su cuenta.
+            var check = await RunGitAsync(wt, ct, null, "diff", "--cached", "--check", ws.StartCommit);
+            var leftovers = LeftoverConflictMarkers(check.StdOut, conflictedFiles);
+            if (leftovers.Count > 0)
+                throw new GitException("Quedan marcadores de conflicto sin resolver; no se hizo commit ni push: "
+                                       + string.Join(", ", leftovers.Take(10)) + (leftovers.Count > 10 ? "…" : ""));
+        }
+
         var staged = await RunGitAsync(wt, ct, null, "diff", "--cached", "--quiet");
-        if (staged.ExitCode == 1)
+        // Un merge a medias se cierra con su commit aunque la resolución no cambie archivos respecto a HEAD.
+        var mergeInProgress = (await RunGitAsync(wt, ct, null, "rev-parse", "-q", "--verify", "MERGE_HEAD")).Ok;
+        if (staged.ExitCode == 1 || mergeInProgress)
         {
             log("$ git commit");
             await GitAsync(wt, ct, null, "commit", "-m", job.CommitMessage,
@@ -145,6 +202,25 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
             files.Add(new ChangedFile(status, parts[^1]));
         }
         return files;
+    }
+
+    /// <summary>
+    /// Ubicaciones (<c>archivo:línea</c>) de la salida de <c>git diff --check</c> que son marcadores de conflicto, sólo de
+    /// los archivos indicados.
+    /// </summary>
+    internal static List<string> LeftoverConflictMarkers(string checkOutput, IReadOnlyCollection<string> files)
+    {
+        var result = new List<string>();
+        foreach (var line in checkOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            const string marker = ": leftover conflict marker";
+            if (!line.EndsWith(marker, StringComparison.Ordinal)) continue;
+            var location = line[..^marker.Length];
+            var colon = location.LastIndexOf(':');
+            if (colon <= 0) continue;
+            if (files.Contains(location[..colon])) result.Add(location);
+        }
+        return result;
     }
 
     // ------------------------------------------------------------------ helpers de git
