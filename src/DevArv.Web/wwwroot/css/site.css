@@ -294,6 +294,22 @@ pre.log {
 }
 pre.log.copied, pre[data-copy].copied { border-color: var(--ok); }
 pre[data-copy] { cursor: copy; }
+/* Pestañas informativas del detalle (Log, Pruebas unitarias, Capturas, Pruebas de QA) */
+.report-tabs { margin: -4px 0 10px; }
+.report-tabs button { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--primary-2); box-shadow: 0 0 6px var(--primary-2); }
+.report-panel { min-height: 160px; }
+.log-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.log-toolbar-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.seg-tabs { display: inline-flex; border: 1px solid var(--line-2); border-radius: 8px; overflow: hidden; }
+.seg-tabs button { padding: 6px 12px; border: none; background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.seg-tabs button + button { border-left: 1px solid var(--line-2); }
+.seg-tabs button.on { background: var(--primary); color: #fff; }
+.report-source { font-size: 12px; margin: 0 0 6px; }
+.report-empty { padding: 18px; text-align: center; border: 1px dashed var(--line-2); border-radius: 10px; }
+.captures .attachment { width: 200px; }
+.captures .attachment img { height: 130px; }
+.small-note { font-size: 12px; margin: 6px 0 0; }
 .history { margin-top: 12px; }
 .comment { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px; background: var(--panel-2); }
 .comment.kind-feedback { border-color: #b45309; }

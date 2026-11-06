@@ -198,10 +198,10 @@
         <div class="markdown">@MarkdownRenderer.Render(t.Description)</div>
     </details>
 
-    <details open="@(t.Attachments.Count > 0)" class="section" data-key="files">
-        <summary>Adjuntos (@t.Attachments.Count/@Model.MaxFiles)</summary>
+    <details open="@(Model.Attachments.Count > 0)" class="section" data-key="files">
+        <summary>Adjuntos (@Model.Attachments.Count/@Model.MaxFiles)@(Model.Captures.Count > 0 ? $" · {Model.Captures.Count} captura(s)" : "")</summary>
         <div class="attachments">
-            @foreach (var a in t.Attachments.OrderBy(a => a.ID))
+            @foreach (var a in Model.Attachments)
             {
                 <div class="attachment">
                     @if (a.Kind == AttachmentKind.IMAGE)
@@ -261,33 +261,32 @@
             }
         </aside>
 
-        <section class="run-detail">
-            @if (run is null)
-            {
-                <p class="muted">Selecciona una ejecución.</p>
-            }
-            else
+        @{
+            void RunHead(TaskRun r)
             {
                 <div class="run-detail-head">
-                    <strong>@run.StageName</strong>
-                    <span class="run-status @Labels.StatusCss(run.Status)">@Labels.Of(run.Status)</span>
-                    @if (run.NumTurns is not null) { <span class="muted">@run.NumTurns turnos</span> }
-                    @if (run.HeadCommit is not null) { <code title="Commit">@(run.HeadCommit[..Math.Min(10, run.HeadCommit.Length)])</code> }
+                    <strong>@r.StageName</strong>
+                    <span class="run-status @Labels.StatusCss(r.Status)">@Labels.Of(r.Status)</span>
+                    @if (r.NumTurns is not null) { <span class="muted">@r.NumTurns turnos</span> }
+                    @if (r.HeadCommit is not null) { <code title="Commit">@(r.HeadCommit[..Math.Min(10, r.HeadCommit.Length)])</code> }
                 </div>
 
-                @if (run.ErrorMessage is not null)
+                @if (r.ErrorMessage is not null)
                 {
-                    <div class="alert error">@run.ErrorMessage</div>
+                    <div class="alert error">@r.ErrorMessage</div>
                 }
+            }
 
+            void RunSummary(TaskRun r)
+            {
                 <h4>Resultado</h4>
-                @if (string.IsNullOrWhiteSpace(run.Summary))
+                @if (string.IsNullOrWhiteSpace(r.Summary))
                 {
-                    <p class="muted">@(run.Status is RunStatus.RUNNING or RunStatus.QUEUED ? "En progreso…" : "Sin resultado.")</p>
+                    <p class="muted">@(r.Status is RunStatus.RUNNING or RunStatus.QUEUED ? "En progreso…" : "Sin resultado.")</p>
                 }
                 else
                 {
-                    <div class="markdown result">@MarkdownRenderer.Render(run.Summary)</div>
+                    <div class="markdown result">@MarkdownRenderer.Render(r.Summary)</div>
                 }
 
                 <h4>Archivos modificados</h4>
@@ -304,18 +303,150 @@
                         }
                     </ul>
                 }
+            }
+
+            void RunPrompt(TaskRun r)
+            {
+                @if (r.PromptSnapshot is not null)
+                {
+                    <details class="section" data-key="prompt">
+                        <summary>Prompt enviado al agente</summary>
+                        <pre class="log">@r.PromptSnapshot</pre>
+                    </details>
+                }
+            }
+
+            void ReportSection(TaskReportSectionViewModel? report, string missing)
+            {
+                @if (report is null)
+                {
+                    <p class="muted report-empty">@missing</p>
+                }
+                else
+                {
+                    <p class="muted report-source">
+                        Reportado por «@report.StageName» · @Model.Clock.Format(report.FinishedAt) ·
+                        <a href="@Model.SelfUrl(report.RunID)" data-modal-link>ver ejecución</a>
+                    </p>
+                    <div class="markdown result">@MarkdownRenderer.Render(report.Content)</div>
+                }
+            }
+        }
+
+        <section class="run-detail">
+            @if (Model.ShowReportTabs)
+            {
+                @* ---------- Pestañas informativas (la tarea ya llegó a «Creador de PR») ---------- *@
+                var reportGroup = $"task-{t.ID}-report";
+                var logGroup = $"task-{t.ID}-log";
+                <div class="tabs report-tabs" data-tabs="@reportGroup" role="tablist">
+                    <button type="button" class="on" data-tab="log">Log</button>
+                    <button type="button" data-tab="unit-tests">
+                        Pruebas unitarias
+                        @if (Model.UnitTests is not null) { <i class="tab-dot" title="El desarrollador reportó resultados"></i> }
+                    </button>
+                    <button type="button" data-tab="captures">
+                        Capturas
+                        @if (Model.Captures.Count > 0) { <span class="badge">@Model.Captures.Count</span> }
+                    </button>
+                    <button type="button" data-tab="qa-tests">
+                        Pruebas de QA
+                        @if (Model.QaTests is not null) { <i class="tab-dot" title="El desarrollador documentó las pruebas"></i> }
+                    </button>
+                </div>
+
+                <div class="report-panel" data-tab-panel="log" data-tab-group="@reportGroup">
+                    @if (run is null)
+                    {
+                        <p class="muted">Selecciona una ejecución.</p>
+                    }
+                    else
+                    {
+                        <div class="log-toolbar">
+                            <span class="muted">@Model.SelectedRunLogLines.ToString("N0") @(Model.SelectedRunLogLines == 1 ? "línea" : "líneas")</span>
+                            <span class="log-toolbar-actions">
+                                <span class="seg-tabs" data-tabs="@logGroup">
+                                    <button type="button" class="@(Model.IsLive ? "" : "on")" data-tab="summary">Resumen</button>
+                                    <button type="button" class="@(Model.IsLive ? "on" : "")" data-tab="full-log">Log completo</button>
+                                </span>
+                                <button type="button" class="btn" data-copy-target="#run-log-@run.ID">Copiar log</button>
+                            </span>
+                        </div>
+                        RunHead(run);
+                        <div data-tab-panel="summary" data-tab-group="@logGroup" hidden="@Model.IsLive">
+                            @{ RunSummary(run); }
+                        </div>
+                        <div data-tab-panel="full-log" data-tab-group="@logGroup" hidden="@(!Model.IsLive)">
+                            <pre class="log" id="run-log-@run.ID" data-autoscroll>@run.Log</pre>
+                        </div>
+                        RunPrompt(run);
+                    }
+                </div>
+
+                <div class="report-panel" data-tab-panel="unit-tests" data-tab-group="@reportGroup" hidden>
+                    @{ ReportSection(Model.UnitTests,
+                           "El desarrollador no reportó resultados de pruebas unitarias. Las próximas ejecuciones del desarrollador "
+                           + $"los incluyen en su resumen, en la sección «{TaskReport.UNIT_TESTS_HEADING}»."); }
+                </div>
+
+                <div class="report-panel" data-tab-panel="captures" data-tab-group="@reportGroup" hidden>
+                    @if (Model.Captures.Count == 0)
+                    {
+                        <p class="muted report-empty">Todavía no hay capturas con los cambios aplicados.</p>
+                    }
+                    else
+                    {
+                        <div class="attachments captures">
+                            @foreach (var c in Model.Captures)
+                            {
+                                <div class="attachment">
+                                    <a href="@Model.AttachmentUrl(c.ID)" target="_blank" rel="noopener"><img src="@Model.AttachmentUrl(c.ID)" alt="@c.FileName" loading="lazy" /></a>
+                                    <span class="name" title="@c.FileName">@c.FileName</span>
+                                    <small class="muted">@Model.Clock.Format(c.UploadedAt)</small>
+                                    <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("DeleteAttachment")" class="inline" data-confirm="¿Eliminar la captura «@c.FileName»?">
+                                        <input type="hidden" name="returnQuery" />
+                                        <input type="hidden" name="attachmentId" value="@c.ID" />
+                                        <button class="btn btn-ghost small">🗑</button>
+                                    </form>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (t.Attachments.Count < Model.MaxFiles)
+                    {
+                        <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("UploadCapture")" enctype="multipart/form-data" class="inline upload">
+                            <input type="hidden" name="returnQuery" />
+                            <input type="file" name="files" multiple accept=".png,.jpg,.jpeg,.gif,.webp" required />
+                            <button class="btn">Agregar capturas</button>
+                        </form>
+                        <p class="muted small-note">Imágenes PNG, JPG, GIF o WEBP. Cuentan para el máximo de @Model.MaxFiles archivos por tarea y no se envían al agente.</p>
+                    }
+                    else
+                    {
+                        <p class="muted small-note">La tarea ya tiene el máximo de @Model.MaxFiles archivos (adjuntos y capturas).</p>
+                    }
+                </div>
+
+                <div class="report-panel" data-tab-panel="qa-tests" data-tab-group="@reportGroup" hidden>
+                    @{ ReportSection(Model.QaTests,
+                           "El desarrollador no documentó las pruebas de QA. Las próximas ejecuciones del desarrollador las "
+                           + $"incluyen en su resumen, en la sección «{TaskReport.QA_TESTS_HEADING}»."); }
+                </div>
+            }
+            else if (run is null)
+            {
+                <p class="muted">Selecciona una ejecución.</p>
+            }
+            else
+            {
+                RunHead(run);
+                RunSummary(run);
 
                 <details class="section" data-key="log" open="@Model.IsLive">
                     <summary>Log completo (@run.Log.Length.ToString("N0") caracteres)</summary>
                     <pre class="log" data-autoscroll>@run.Log</pre>
                 </details>
-                @if (run.PromptSnapshot is not null)
-                {
-                    <details class="section" data-key="prompt">
-                        <summary>Prompt enviado al agente</summary>
-                        <pre class="log">@run.PromptSnapshot</pre>
-                    </details>
-                }
+                RunPrompt(run);
             }
         </section>
     </div>

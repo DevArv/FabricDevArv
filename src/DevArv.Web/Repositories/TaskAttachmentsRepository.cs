@@ -1,6 +1,7 @@
 using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Enums.Runs;
+using DevArv.Web.Enums.Tasks;
 using DevArv.Web.Models;
 using DevArv.Web.Services;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +25,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
 
     /// <summary>
     /// Adjunto de la tarea de una ejecución en curso de esa PC; null si la ejecución no es suya, ya no está en curso,
-    /// el adjunto no es de su tarea o el archivo no existe.
+    /// el adjunto no es de su tarea (o es una captura, que no se envía al agente) o el archivo no existe.
     /// </summary>
     public async Task<(TaskAttachment Attachment, string Path)?> GetFileForWorkerRunAsync(
         long RunID, long AttachmentID, int WorkerID, CancellationToken CT)
@@ -32,7 +33,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         var attachment = await Db.TaskRuns
             .Where(r => r.ID == RunID && r.WorkerID == WorkerID && r.Status == RunStatus.RUNNING)
             .SelectMany(r => r.Task.Attachments)
-            .FirstOrDefaultAsync(a => a.ID == AttachmentID, CT);
+            .FirstOrDefaultAsync(a => a.ID == AttachmentID && !a.IsCapture, CT);
         if (attachment is null) return null;
 
         var path = Storage.PathOf(attachment);
@@ -72,6 +73,52 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         catch
         {
             foreach (var attachment in saved) DeleteFromDisk(attachment);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Agrega capturas con los cambios aplicados (pestaña «Capturas»). Sólo se aceptan imágenes y cuentan para el
+    /// máximo de archivos por tarea. No se envían al agente. Si no se puede guardar en la base de datos, borra los
+    /// archivos que ya escribió en disco.
+    /// </summary>
+    public async Task AddCapturesAsync(int TaskID, IReadOnlyCollection<IFormFile> Files, string Actor, CancellationToken CT)
+    {
+        if (Files.Count == 0)
+            throw new ValidationFailedException(nameof(Files), "Selecciona al menos una imagen.");
+
+        var existing = await Db.TaskAttachments.CountAsync(a => a.TaskID == TaskID, CT);
+        List<ValidatedUpload> validated;
+        try
+        {
+            validated = await Storage.ValidateAsync(
+                Files: Files,
+                ExistingCount: existing,
+                CT: CT);
+        }
+        catch (AttachmentValidationException ex)
+        {
+            throw new ValidationFailedException(nameof(Files), ex.Message);
+        }
+        if (validated.FirstOrDefault(v => v.Type.Kind != AttachmentKind.IMAGE) is { } notImage)
+            throw new ValidationFailedException(nameof(Files),
+                $"«{notImage.File.FileName}» no es una imagen. Las capturas deben ser PNG, JPG, GIF o WEBP.");
+
+        var captures = await Storage.StoreAsync(
+            TaskID: TaskID,
+            Validated: validated,
+            CT: CT);
+        foreach (var capture in captures) capture.IsCapture = true;
+
+        try
+        {
+            Db.TaskAttachments.AddRange(captures);
+            Db.TaskEvents.Add(new TaskEvent { TaskID = TaskID, Actor = Actor, Message = $"{Actor} agregó {Files.Count} captura(s)" });
+            await Db.SaveChangesAsync(CT);
+        }
+        catch
+        {
+            foreach (var capture in captures) DeleteFromDisk(capture);
             throw;
         }
     }

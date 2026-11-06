@@ -78,4 +78,17 @@ public class DbInitializerTests
         Assert.DoesNotContain("{", sql);
         Assert.DoesNotContain("}", sql);
     }
+
+    [Fact]
+    public void CaptureColumnSql_UsesTheModuleTableName_AndHasNoBracesThatEfCoreWouldTreatAsPlaceholders()
+    {
+        // Corre después del renombrado: una base que ya usa los nombres por módulo también necesita la columna.
+        var sql = DbInitializer.ADD_CAPTURE_COLUMN_SQL;
+
+        Assert.Contains($"table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'IsCapture'", sql);
+        Assert.Contains($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" ADD COLUMN \"IsCapture\"", sql);
+        Assert.DoesNotContain("table_name = 'TaskAttachments'", sql);
+        Assert.DoesNotContain("{", sql);
+        Assert.DoesNotContain("}", sql);
+    }
 }

@@ -89,7 +89,9 @@ public static class WorkerApi
             PushChanges: stage.PushChanges,
             TimeoutMinutes: stage.TimeoutMinutes <= 0 ? DEFAULT_TIMEOUT_MINUTES : stage.TimeoutMinutes,
             CommitMessage: $"DevArv #{task.ID}: {task.Title}",
+            // Las capturas de la pestaña «Capturas» muestran el resultado, no definen la tarea: no van al agente.
             Attachments: task.Attachments
+                .Where(a => !a.IsCapture)
                 .OrderBy(a => a.ID)
                 .Select(a => new AttachmentInfo(a.ID, a.FileName, a.ContentType, a.Size))
                 .ToList(),

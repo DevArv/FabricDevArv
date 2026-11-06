@@ -56,6 +56,18 @@ Después sigue el flujo normal (Revisor de Código → Creador de PR, que reutil
 El estado desaparece solo cuando GitHub deja de informar conflictos; el botón no se muestra mientras la tarea tiene una
 ejecución en cola o en curso. Los workers deben actualizarse junto con el servidor para soportar este arreglo.
 
+**Pestañas informativas de la tarea:** cuando la tarea llega a 🔀 Creador de PR (está en esa columna, ya tuvo una
+ejecución en ella o ya tiene pull request), el detalle de la ejecución se muestra en pestañas:
+- **Log**: la ejecución seleccionada con su cantidad de líneas, «Resumen» (resultado y archivos modificados),
+  «Log completo» y «Copiar log».
+- **Pruebas unitarias** y **Pruebas de QA**: las secciones `## Pruebas unitarias` y `## Pruebas QA` del resumen final
+  de la última ejecución exitosa del desarrollador que las incluya. El servidor le pide al desarrollador esas secciones
+  en el prompt (variable `{{report}}`, o al final si la plantilla no la usa; no aplica al arreglo de conflictos).
+- **Capturas**: imágenes (PNG, JPG, GIF o WEBP) con los cambios aplicados, que se suben desde la misma pestaña.
+  Cuentan para el máximo de archivos por tarea y no se envían al agente.
+
+El punto azul junto a una pestaña indica que tiene contenido; la pestaña elegida se recuerda en la sesión del navegador.
+
 **Skill de la etapa:** cada columna de agente puede indicar un *skill* de Claude Code (campo **Skill** en **Flujo**).
 El Revisor de Código usa por defecto `revision`, el mismo skill de ShopyCube (`.claude/skills/revision/SKILL.md` en el
 repositorio del proyecto). El servidor agrega `Skill(<nombre>)` a las herramientas permitidas y pone en el prompt la

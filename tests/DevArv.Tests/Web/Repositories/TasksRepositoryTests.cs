@@ -764,6 +764,79 @@ public sealed class TasksRepositoryTests : IDisposable
         Assert.False(terminal.CanResolveConflicts);
     }
 
+    // ------------------------------------------------------------------ pestañas informativas
+
+    [Fact]
+    public async Task GetDetailsViewAsync_AfterPullRequestCreator_FillsReportTabs()
+    {
+        await SeedStagesAsync();
+        await using (var seed = CreateDbContext())
+        {
+            seed.Stages.Add(new Stage
+            {
+                ID = PULL_REQUEST_STAGE_ID, Name = "Creador de PR", Order = 2, Kind = StageKind.SYSTEM,
+                SystemAction = SystemAction.CREATE_PULL_REQUEST,
+            });
+            var task = NewTask("Tarea");
+            task.StageID = APPROVAL_STAGE_ID;
+            task.Attachments.Add(new TaskAttachment { FileName = "spec.png", StoredName = "a.png", Kind = AttachmentKind.IMAGE });
+            task.Attachments.Add(new TaskAttachment { FileName = "resultado.png", StoredName = "b.png", Kind = AttachmentKind.IMAGE, IsCapture = true });
+            seed.Tasks.Add(task);
+            await seed.SaveChangesAsync();
+
+            seed.TaskRuns.Add(new TaskRun
+            {
+                TaskID = task.ID, StageID = DEVELOPER_STAGE_ID, StageName = "Desarrollador", RunnerKind = StageKind.AGENT,
+                Status = RunStatus.SUCCEEDED, Summary = "Listo.\n## Pruebas unitarias\n10 aprobadas\n## Pruebas QA\n1. Abrir la tarea",
+            });
+            await seed.SaveChangesAsync();
+            seed.TaskRuns.Add(new TaskRun
+            {
+                TaskID = task.ID, StageID = PULL_REQUEST_STAGE_ID, StageName = "Creador de PR", RunnerKind = StageKind.SYSTEM,
+                Status = RunStatus.SUCCEEDED, Summary = "Pull request created", Log = "uno\ndos\ntres\n",
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var db = CreateDbContext();
+        var taskID = (await db.Tasks.SingleAsync()).ID;
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.True(details.ShowReportTabs);
+        Assert.Equal("Creador de PR", details.SelectedRun?.StageName);
+        Assert.Equal(3, details.SelectedRunLogLines);
+        Assert.Equal("10 aprobadas", details.UnitTests?.Content);
+        Assert.Equal("1. Abrir la tarea", details.QaTests?.Content);
+        Assert.Equal(["spec.png"], details.Attachments.Select(a => a.FileName));
+        Assert.Equal(["resultado.png"], details.Captures.Select(a => a.FileName));
+    }
+
+    [Fact]
+    public async Task GetDetailsViewAsync_BeforePullRequestCreator_HidesReportTabs()
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.IDLE,
+            Runs: [(RunStatus.SUCCEEDED, ResolveConflicts: false)],
+            HasPullRequest: false);
+
+        await using var db = CreateDbContext();
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.False(details.ShowReportTabs);
+    }
+
+    private const int PULL_REQUEST_STAGE_ID = 4;
+
     [Fact]
     public async Task GetBoardAsync_KeepsTheConflictFlagOfEachTask_EvenThoughTheBoardOnlyLoadsSomeColumns()
     {

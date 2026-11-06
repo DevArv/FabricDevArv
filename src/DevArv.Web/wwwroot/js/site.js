@@ -9,6 +9,7 @@
   const board = $('#board');
   let liveTimer = null;
   let dragging = false;
+  const TAB_STORAGE_PREFIX = 'devarv-tab:';
 
   // ------------------------------------------------------------------ modal
 
@@ -94,6 +95,20 @@
     if (card && !e.target.closest('a, button')) {
       const id = card.dataset.taskId;
       openModal(`/Tasks/Details/${id}?modal=true`, { pushTask: id });
+      return;
+    }
+
+    // Botón que copia el texto de otro elemento (p. ej. «Copiar log» copia el log completo aunque esté oculto).
+    const copyButton = e.target.closest('[data-copy-target]');
+    if (copyButton) {
+      const source = $(copyButton.dataset.copyTarget);
+      if (source && navigator.clipboard) {
+        const label = copyButton.textContent;
+        navigator.clipboard.writeText(source.textContent).then(
+          () => { copyButton.textContent = '✓ Copiado'; },
+          () => { copyButton.textContent = 'No se pudo copiar'; });
+        setTimeout(() => { copyButton.textContent = label; }, 1500);
+      }
       return;
     }
 
@@ -251,15 +266,32 @@
   // ------------------------------------------------------------------ contenido dinámico
 
   function initDynamic(root) {
-    // Pestañas
+    // Pestañas. Sin nombre (data-tabs) controlan los paneles del mismo contenedor; con nombre (data-tabs="grupo")
+    // controlan los paneles con data-tab-group="grupo" (permite pestañas anidadas) y recuerdan la pestaña elegida
+    // en la sesión del navegador, para que no se pierda al refrescar el detalle o al volver tras un formulario.
     $$('[data-tabs]', root).forEach(tabs => {
-      const scope = tabs.parentElement;
-      tabs.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-tab]');
+      const group = tabs.dataset.tabs;
+      const panels = () => group
+        ? $$('[data-tab-panel]', root).filter(p => p.dataset.tabGroup === group)
+        : $$('[data-tab-panel]', tabs.parentElement);
+      const activate = (name, remember) => {
+        const btn = $$('[data-tab]', tabs).find(b => b.dataset.tab === name);
         if (!btn) return;
         $$('[data-tab]', tabs).forEach(b => b.classList.toggle('on', b === btn));
-        $$('[data-tab-panel]', scope).forEach(p => { p.hidden = p.dataset.tabPanel !== btn.dataset.tab; });
+        panels().forEach(p => { p.hidden = p.dataset.tabPanel !== name; });
+        if (group && remember) {
+          try { sessionStorage.setItem(TAB_STORAGE_PREFIX + group, name); } catch { /* sin almacenamiento */ }
+        }
+      };
+      tabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tab]');
+        if (btn) activate(btn.dataset.tab, true);
       });
+      if (group) {
+        let saved = null;
+        try { saved = sessionStorage.getItem(TAB_STORAGE_PREFIX + group); } catch { /* sin almacenamiento */ }
+        if (saved) activate(saved, false);
+      }
     });
 
     // Rama base según el proyecto elegido

@@ -28,6 +28,12 @@ public sealed class DetailsModel(
     public bool ShowConflicts => Details.ShowConflicts;
     public bool CanResolveConflicts => Details.CanResolveConflicts;
     public bool ResolvingConflicts => Details.ResolvingConflicts;
+    public List<TaskAttachment> Attachments => Details.Attachments;
+    public List<TaskAttachment> Captures => Details.Captures;
+    public bool ShowReportTabs => Details.ShowReportTabs;
+    public int SelectedRunLogLines => Details.SelectedRunLogLines;
+    public TaskReportSectionViewModel? UnitTests => Details.UnitTests;
+    public TaskReportSectionViewModel? QaTests => Details.QaTests;
     public Clock Clock => ClockService;
     public string? Error => TempData["Error"] as string;
     public string? Notice => TempData["Notice"] as string;
@@ -214,6 +220,18 @@ public sealed class DetailsModel(
                 Actor: Actor,
                 CT: CT),
             Notice: "Archivos adjuntados.",
+            CT: CT);
+
+    public Task<IActionResult> OnPostUploadCaptureAsync(int ID, bool Modal, List<IFormFile> Files, CancellationToken CT) =>
+        ActAsync(
+            ID: ID,
+            Modal: Modal,
+            Action: item => AttachmentsRepository.AddCapturesAsync(
+                TaskID: item.ID,
+                Files: Files,
+                Actor: Actor,
+                CT: CT),
+            Notice: "Capturas agregadas.",
             CT: CT);
 
     public Task<IActionResult> OnPostDeleteAttachmentAsync(int ID, bool Modal, long AttachmentID, CancellationToken CT) =>

@@ -41,7 +41,14 @@ public sealed partial class PromptBuilder(Clock Clock)
             ["feedback"] = BuildFeedback(Item),
             ["skill"] = BuildSkill(Stage),
             ["conflicts"] = ResolveConflicts ? BuildConflicts(Item) : "",
+            ["report"] = BuildReport(
+                Stage: Stage,
+                ResolveConflicts: ResolveConflicts),
         };
+
+        // Las plantillas anteriores a {{report}} (ya guardadas en la base) reciben el bloque al final.
+        if (!template.Contains("{{report}}") && values["report"].Length > 0)
+            template = template.TrimEnd() + "\n\n{{report}}";
 
         // Las plantillas anteriores a {{skill}} (ya guardadas en la base) reciben el bloque al final.
         if (!template.Contains("{{skill}}") && values["skill"].Length > 0)
@@ -118,13 +125,33 @@ public sealed partial class PromptBuilder(Clock Clock)
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Secciones que el desarrollador (columna de agente que hace push) debe incluir en su resumen final; se muestran en
+    /// las pestañas «Pruebas unitarias» y «Pruebas de QA» del detalle. No aplica al arreglo de conflictos.
+    /// </summary>
+    private static string BuildReport(Stage Stage, bool ResolveConflicts)
+    {
+        if (!Stage.PushChanges || ResolveConflicts) return "";
+        var builder = new StringBuilder();
+        builder.AppendLine("## Reporte de pruebas");
+        builder.AppendLine("En tu resumen final incluye estas dos secciones, con estos títulos exactos (se muestran en las pestañas de la tarea):");
+        builder.AppendLine($"- `## {TaskReport.UNIT_TESTS_HEADING}`: los comandos de prueba que ejecutaste y su resultado (total, aprobadas, "
+                           + "fallidas y omitidas) y las pruebas que agregaste o modificaste. Si el proyecto no tiene pruebas o no se "
+                           + "pudieron ejecutar, dilo y explica por qué.");
+        builder.AppendLine($"- `## {TaskReport.QA_TESTS_HEADING}`: la guía funcional para que QA verifique los cambios: precondiciones, "
+                           + "pasos numerados y resultado esperado de cada caso, incluidos los casos borde.");
+        return builder.ToString();
+    }
+
     private static string BuildAttachments(TaskItem Item)
     {
-        if (Item.Attachments.Count == 0) return "";
+        // Las capturas de la pestaña «Capturas» no se descargan al worker (ver WorkerApi).
+        var attachments = Item.Attachments.Where(a => !a.IsCapture).OrderBy(a => a.ID).ToList();
+        if (attachments.Count == 0) return "";
         var builder = new StringBuilder();
         builder.AppendLine("## Archivos adjuntos");
         builder.AppendLine($"Están en `{PromptTokens.ATTACHMENTS_DIR}`. Ábrelos con la herramienta Read (soporta imágenes y PDF) antes de empezar:");
-        foreach (var attachment in Item.Attachments.OrderBy(a => a.ID))
+        foreach (var attachment in attachments)
         {
             var info = new AttachmentInfo(attachment.ID, attachment.FileName, attachment.ContentType, attachment.Size);
             builder.AppendLine($"- `{info.LocalFileName}` ({KindLabel(attachment)})");
