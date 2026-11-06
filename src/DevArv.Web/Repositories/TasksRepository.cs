@@ -7,12 +7,13 @@ using DevArv.Web.Enums.Runs;
 using DevArv.Web.Enums.Tasks;
 using DevArv.Web.Enums.Workflow;
 using DevArv.Web.Helpers;
+using DevArv.Web.Services;
 using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.Repositories;
 
-public class TasksRepository(AppDbContext db)
+public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger<TasksRepository> logger)
 {
     private const int MAX_BOARD_TASKS = 1000;
 
@@ -182,5 +183,22 @@ public class TasksRepository(AppDbContext db)
         task.UpdatedAt = DateTimeOffset.UtcNow;
         db.TaskEvents.Add(new TaskEvent { TaskId = task.Id, Actor = actor, Message = $"{actor} editó la tarea" });
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Elimina definitivamente una tarea con sus ejecuciones, comentarios, eventos y adjuntos (también los archivos en disco).
+    /// Lanza WorkflowException si un agente o el sistema la está ejecutando: hay que cancelarla primero.
+    /// </summary>
+    public async Task DeleteAsync(TaskItem task, string actor, CancellationToken ct)
+    {
+        if (await db.TaskRuns.AnyAsync(r => r.TaskId == task.Id && r.Status == RunStatus.Running, ct))
+            throw new WorkflowException("La tarea se está ejecutando. Cancela la ejecución y espera a que termine antes de eliminarla.");
+
+        var attachments = await db.TaskAttachments.Where(a => a.TaskId == task.Id).ToListAsync(ct);
+        db.Tasks.Remove(task);
+        await db.SaveChangesAsync(ct);
+
+        foreach (var attachment in attachments) storage.Delete(attachment);
+        logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", actor, task.Id, task.Title);
     }
 }

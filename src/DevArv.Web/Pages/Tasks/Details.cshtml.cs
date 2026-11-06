@@ -81,6 +81,23 @@ public sealed class DetailsModel(
     public Task<IActionResult> OnPostArchiveAsync(bool archived, CancellationToken ct) =>
         ActAsync(t => workflow.SetArchivedAsync(t, archived, Actor, ct), archived ? "Tarea archivada." : "Tarea restaurada.", ct);
 
+    /// <summary>Elimina la tarea. Si se pudo, vuelve al tablero (sin abrir la tarea); si no, muestra el error en la tarea.</summary>
+    public async Task<IActionResult> OnPostDeleteAsync(CancellationToken ct)
+    {
+        var task = await workflow.LoadTaskAsync(Id, ct);
+        if (task is null) return NotFound();
+        try
+        {
+            await tasks.DeleteAsync(task, Actor, ct);
+        }
+        catch (WorkflowException ex)
+        {
+            TempData["Error"] = ex.Message;
+            return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{Id}");
+        }
+        return Redirect(Modal ? $"/{BoardQuery(openTask: false)}" : "/");
+    }
+
     public Task<IActionResult> OnPostUpdateAsync(TaskUpdateViewModel input, CancellationToken ct) =>
         ActAsync(t => tasks.UpdateAsync(t, input, Actor, ct), "Cambios guardados.", ct);
 
@@ -117,14 +134,14 @@ public sealed class DetailsModel(
         return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{Id}");
     }
 
-    private string BoardQuery()
+    private string BoardQuery(bool openTask = true)
     {
         var returnQuery = Request.Form["returnQuery"].ToString();
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(returnQuery);
         var keep = query
             .Where(kv => kv.Key is "project" or "worker" or "waiting" or "compact" or "hideEmpty" or "archived" or "q")
             .ToDictionary(kv => kv.Key, kv => (string?)kv.Value.ToString());
-        keep["task"] = Id.ToString();
+        if (openTask) keep["task"] = Id.ToString();
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("", keep);
     }
 
