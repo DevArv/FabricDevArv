@@ -189,14 +189,26 @@ public class TasksRepository(AppDbContext db, AttachmentStorage storage, ILogger
     /// Elimina definitivamente una tarea con sus ejecuciones, comentarios, eventos y adjuntos (también los archivos en disco).
     /// Lanza WorkflowException si un agente o el sistema la está ejecutando: hay que cancelarla primero.
     /// </summary>
+    /// <remarks>
+    /// La comprobación y el borrado van en una transacción que bloquea (FOR UPDATE) la tarea y sus ejecuciones.
+    /// El reclamo de una ejecución (WorkflowService.TryMarkRunningAsync) actualiza la fila de la ejecución, así que
+    /// o bien espera a que termine el borrado (y ya no encuentra la fila), o bien se confirmó antes de que tomáramos
+    /// el bloqueo y la comprobación posterior ve la ejecución en curso y rechaza el borrado.
+    /// </remarks>
     public async Task DeleteAsync(TaskItem task, string actor, CancellationToken ct)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        await db.Database.SqlQuery<int>($"""SELECT "Id" AS "Value" FROM "Tasks" WHERE "Id" = {task.Id} FOR UPDATE""").ToListAsync(ct);
+        await db.Database.SqlQuery<long>($"""SELECT "Id" AS "Value" FROM "TaskRuns" WHERE "TaskId" = {task.Id} FOR UPDATE""").ToListAsync(ct);
+
         if (await db.TaskRuns.AnyAsync(r => r.TaskId == task.Id && r.Status == RunStatus.Running, ct))
             throw new WorkflowException("La tarea se está ejecutando. Cancela la ejecución y espera a que termine antes de eliminarla.");
 
         var attachments = await db.TaskAttachments.Where(a => a.TaskId == task.Id).ToListAsync(ct);
         db.Tasks.Remove(task);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         foreach (var attachment in attachments) storage.Delete(attachment);
         logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", actor, task.Id, task.Title);
