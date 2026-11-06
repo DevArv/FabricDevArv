@@ -32,7 +32,7 @@ public sealed class TasksRepositoryTests : IDisposable
     [Fact]
     public async Task DeleteAsync_WithRunningRun_ThrowsAndKeepsTaskAndFiles()
     {
-        var storedName = await SeedTaskAsync(RunStatus.Running);
+        var storedName = await SeedTaskAsync(RunStatus.RUNNING);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
@@ -52,10 +52,10 @@ public sealed class TasksRepositoryTests : IDisposable
 
     [Theory]
     [InlineData(null)]
-    [InlineData(RunStatus.Queued)]
-    [InlineData(RunStatus.Succeeded)]
-    [InlineData(RunStatus.Failed)]
-    [InlineData(RunStatus.Cancelled)]
+    [InlineData(RunStatus.QUEUED)]
+    [InlineData(RunStatus.SUCCEEDED)]
+    [InlineData(RunStatus.FAILED)]
+    [InlineData(RunStatus.CANCELLED)]
     public async Task DeleteAsync_WithoutRunningRun_DeletesTaskAttachmentsAndFiles(RunStatus? RunStatus)
     {
         var storedName = await SeedTaskAsync(RunStatus);
@@ -84,7 +84,7 @@ public sealed class TasksRepositoryTests : IDisposable
             var other = NewTask(Title: "Otra");
             seed.Tasks.Add(other);
             await seed.SaveChangesAsync();
-            seed.TaskRuns.Add(new TaskRun { TaskId = other.Id, StageId = other.StageId, Status = RunStatus.Running });
+            seed.TaskRuns.Add(new TaskRun { TaskID = other.ID, StageID = other.StageID, Status = RunStatus.RUNNING });
             await seed.SaveChangesAsync();
         }
 
@@ -141,26 +141,26 @@ public sealed class TasksRepositoryTests : IDisposable
     private async Task<int> SeedEditableTaskAsync()
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
-        db.Stages.Add(new Stage { Id = 1, Name = "Backlog", Kind = StageKind.Manual });
-        db.Workers.Add(new WorkerNode { Id = 5, Name = "PC-1", KeyHash = "h" });
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Kind = StageKind.MANUAL });
+        db.Workers.Add(new WorkerNode { ID = 5, Name = "PC-1", KeyHash = "h" });
         var task = NewTask("Original");
         task.Description = "Descripción original";
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        return task.Id;
+        return task.ID;
     }
 
     private static TaskUpdateViewModel UpdateRecord(
         string? Title = "Nuevo título", string? Description = "Nueva descripción", string? Labels = "api, ui, API",
         string? ModelOverride = " opus ", int? PreferredWorkerID = 5,
-        Priority Priority = Priority.High, Complexity Complexity = Complexity.Medium) =>
+        Priority Priority = Priority.HIGH, Complexity Complexity = Complexity.MEDIUM) =>
         new(Priority, Complexity, Labels, ModelOverride, PreferredWorkerID, Title, Description);
 
     private async Task<TaskItem> UpdateAsync(int TaskID, TaskUpdateViewModel Record)
     {
         await using var db = CreateDbContext();
-        var task = await db.Tasks.SingleAsync(t => t.Id == TaskID);
+        var task = await db.Tasks.SingleAsync(t => t.ID == TaskID);
         await CreateRepository(db).UpdateAsync(
             Item: task,
             Record: Record,
@@ -180,11 +180,11 @@ public sealed class TasksRepositoryTests : IDisposable
         var task = await check.Tasks.SingleAsync();
         Assert.Equal("Nuevo título", task.Title);
         Assert.Equal("Nueva descripción", task.Description);
-        Assert.Equal(Priority.High, task.Priority);
-        Assert.Equal(Complexity.Medium, task.Complexity);
+        Assert.Equal(Priority.HIGH, task.Priority);
+        Assert.Equal(Complexity.MEDIUM, task.Complexity);
         Assert.Equal("api, ui", task.Labels);
         Assert.Equal("opus", task.ModelOverride);
-        Assert.Equal(5, task.PreferredWorkerId);
+        Assert.Equal(5, task.PreferredWorkerID);
         Assert.Contains("tester editó la tarea", (await check.TaskEvents.SingleAsync()).Message);
     }
 
@@ -206,13 +206,16 @@ public sealed class TasksRepositoryTests : IDisposable
     {
         var taskID = await SeedEditableTaskAsync();
 
-        await UpdateAsync(taskID, UpdateRecord(Labels: "  ", ModelOverride: "  ", PreferredWorkerID: null));
+        await UpdateAsync(taskID, UpdateRecord(
+            Labels: "  ",
+            ModelOverride: "  ",
+            PreferredWorkerID: null));
 
         await using var check = CreateDbContext();
         var task = await check.Tasks.SingleAsync();
         Assert.Null(task.Labels);
         Assert.Null(task.ModelOverride);
-        Assert.Null(task.PreferredWorkerId);
+        Assert.Null(task.PreferredWorkerID);
     }
 
     [Fact]
@@ -314,9 +317,9 @@ public sealed class TasksRepositoryTests : IDisposable
         await using (var db = CreateDbContext())
         {
             db.Projects.AddRange(
-                new Project { Id = 1, Name = "Zeta", RepoOwner = "o", RepoName = "z", DefaultBranch = "main" },
-                new Project { Id = 2, Name = "Alfa", RepoOwner = "o", RepoName = "a", DefaultBranch = "develop" },
-                new Project { Id = 3, Name = "Apagado", RepoOwner = "o", RepoName = "x", IsActive = false });
+                new Project { ID = 1, Name = "Zeta", RepoOwner = "o", RepoName = "z", DefaultBranch = "main" },
+                new Project { ID = 2, Name = "Alfa", RepoOwner = "o", RepoName = "a", DefaultBranch = "develop" },
+                new Project { ID = 3, Name = "Apagado", RepoOwner = "o", RepoName = "x", IsActive = false });
             await db.SaveChangesAsync();
         }
 
@@ -333,9 +336,9 @@ public sealed class TasksRepositoryTests : IDisposable
             ProjectID: 999,
             CT: CancellationToken.None);
 
-        Assert.Equal(1, requested!.ProjectId);
+        Assert.Equal(1, requested!.ProjectID);
         Assert.Equal("main", requested.BaseBranch);
-        Assert.Equal(2, inactive!.ProjectId);
+        Assert.Equal(2, inactive!.ProjectID);
         Assert.Equal("develop", unknown!.BaseBranch);
     }
 
@@ -343,23 +346,23 @@ public sealed class TasksRepositoryTests : IDisposable
     {
         await using var db = CreateDbContext();
         db.Projects.AddRange(
-            new Project { Id = 1, Name = "P1", RepoOwner = "o", RepoName = "a" },
-            new Project { Id = 2, Name = "P2", RepoOwner = "o", RepoName = "b" });
+            new Project { ID = 1, Name = "P1", RepoOwner = "o", RepoName = "a" },
+            new Project { ID = 2, Name = "P2", RepoOwner = "o", RepoName = "b" });
         db.Stages.AddRange(
-            new Stage { Id = 1, Name = "Backlog", Order = 10, Kind = StageKind.Manual, SuccessStageId = 2 },
-            new Stage { Id = 2, Name = "Desarrollador", Order = 20, Kind = StageKind.Agent, PushChanges = true, RejectStageId = 1 });
+            new Stage { ID = 1, Name = "Backlog", Order = 10, Kind = StageKind.MANUAL, SuccessStageID = 2 },
+            new Stage { ID = 2, Name = "Desarrollador", Order = 20, Kind = StageKind.AGENT, PushChanges = true, RejectStageID = 1 });
         await db.SaveChangesAsync();
         db.Tasks.AddRange(
-            new TaskItem { Id = 1, Title = "Baja", ProjectId = 1, StageId = 1, Priority = Priority.Low, CreatedByName = "t" },
-            new TaskItem { Id = 2, Title = "Crítica", ProjectId = 1, StageId = 1, Priority = Priority.Critical, CreatedByName = "t" },
-            new TaskItem { Id = 3, Title = "Otro proyecto", ProjectId = 2, StageId = 1, CreatedByName = "t" },
-            new TaskItem { Id = 4, Title = "Archivada", ProjectId = 1, StageId = 1, ArchivedAt = DateTimeOffset.UtcNow, CreatedByName = "t" },
-            new TaskItem { Id = 5, Title = "En espera", ProjectId = 1, StageId = 1, Status = WorkStatus.WaitingApproval, CreatedByName = "t" },
-            new TaskItem { Id = 6, Title = "Programando", ProjectId = 1, StageId = 2, Status = WorkStatus.Running, LastWorkerName = "PC-1", CreatedByName = "t" });
+            new TaskItem { ID = 1, Title = "Baja", ProjectID = 1, StageID = 1, Priority = Priority.LOW, CreatedByName = "t" },
+            new TaskItem { ID = 2, Title = "Crítica", ProjectID = 1, StageID = 1, Priority = Priority.CRITICAL, CreatedByName = "t" },
+            new TaskItem { ID = 3, Title = "Otro proyecto", ProjectID = 2, StageID = 1, CreatedByName = "t" },
+            new TaskItem { ID = 4, Title = "Archivada", ProjectID = 1, StageID = 1, ArchivedAt = DateTimeOffset.UtcNow, CreatedByName = "t" },
+            new TaskItem { ID = 5, Title = "En espera", ProjectID = 1, StageID = 1, Status = WorkStatus.WAITING_APPROVAL, CreatedByName = "t" },
+            new TaskItem { ID = 6, Title = "Programando", ProjectID = 1, StageID = 2, Status = WorkStatus.RUNNING, LastWorkerName = "PC-1", CreatedByName = "t" });
         await db.SaveChangesAsync();
         db.TaskRuns.Add(new TaskRun
         {
-            TaskId = 6, StageId = 2, Status = RunStatus.Running, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            TaskID = 6, StageID = 2, Status = RunStatus.RUNNING, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
         });
         await db.SaveChangesAsync();
     }
@@ -460,14 +463,14 @@ public sealed class TasksRepositoryTests : IDisposable
         await SeedBoardAsync();
         await using (var db = CreateDbContext())
         {
-            (await db.Tasks.SingleAsync(t => t.Id == 1)).Description = new string('d', 5000);
-            (await db.Tasks.SingleAsync(t => t.Id == 2)).Description = "corta";
+            (await db.Tasks.SingleAsync(t => t.ID == 1)).Description = new string('d', 5000);
+            (await db.Tasks.SingleAsync(t => t.ID == 2)).Description = "corta";
             await db.SaveChangesAsync();
         }
 
         var board = await LoadBoardAsync(new BoardFilterViewModel());
 
-        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.Id);
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
         Assert.Equal(1000, cards[1].Item.Description.Length);
         Assert.Equal("corta", cards[2].Item.Description);
     }
@@ -478,7 +481,7 @@ public sealed class TasksRepositoryTests : IDisposable
         await SeedBoardAsync();
         await using (var db = CreateDbContext())
         {
-            var task = await db.Tasks.SingleAsync(t => t.Id == 6);
+            var task = await db.Tasks.SingleAsync(t => t.ID == 6);
             task.Labels = "api";
             task.WorkBranch = "devarv/6-x";
             task.PullRequestNumber = 9;
@@ -499,6 +502,37 @@ public sealed class TasksRepositoryTests : IDisposable
         Assert.Equal(1.25m, item.TotalCostUsd);
         Assert.Equal(321, item.TotalTokens);
         Assert.Equal("PC-1", item.LastWorkerName);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_OrdersEachColumnByPriority_CriticalFirst()
+    {
+        await using (var db = CreateDbContext())
+        {
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Order = 10 });
+            await db.SaveChangesAsync();
+            // Se insertan en un orden que no coincide con la prioridad ni con el alfabético.
+            foreach (var priority in new[] { Priority.LOW, Priority.CRITICAL, Priority.MEDIUM, Priority.HIGH })
+                db.Tasks.Add(new TaskItem { Title = priority.ToString(), ProjectID = 1, StageID = 1, Priority = priority, CreatedByName = "t" });
+            await db.SaveChangesAsync();
+        }
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        Assert.Equal(["CRITICAL", "HIGH", "MEDIUM", "LOW"], board.Columns[0].Tasks.Select(c => c.Item.Title));
+    }
+
+    [Fact]
+    public async Task LockSql_ReferencesTheTablesOfTheModel()
+    {
+        await using var db = CreateDbContext();
+
+        Assert.Contains($"\"{db.Model.FindEntityType(typeof(TaskItem))!.GetTableName()}\"", TasksRepository.LOCK_TASK_SQL);
+        Assert.Contains($"\"{db.Model.FindEntityType(typeof(TaskRun))!.GetTableName()}\"", TasksRepository.LOCK_RUNS_SQL);
+        // Las columnas conservan su nombre histórico.
+        Assert.Contains("\"TaskId\"", TasksRepository.LOCK_RUNS_SQL);
+        Assert.DoesNotContain("TaskID", TasksRepository.LOCK_RUNS_SQL);
     }
 
     [Fact]
@@ -541,8 +575,8 @@ public sealed class TasksRepositoryTests : IDisposable
         await using (var db = CreateDbContext())
         {
             db.TaskRuns.AddRange(
-                new TaskRun { Id = 10, TaskId = taskID, StageId = 1, ChangedFilesJson = """[{"Status":"M","Path":"a.cs"}]""" },
-                new TaskRun { Id = 11, TaskId = taskID, StageId = 1, ChangedFilesJson = "no es json" });
+                new TaskRun { ID = 10, TaskID = taskID, StageID = 1, ChangedFilesJson = """[{"Status":"M","Path":"a.cs"}]""" },
+                new TaskRun { ID = 11, TaskID = taskID, StageID = 1, ChangedFilesJson = "no es json" });
             await db.SaveChangesAsync();
         }
 
@@ -557,9 +591,9 @@ public sealed class TasksRepositoryTests : IDisposable
             RunID: 10,
             CT: CancellationToken.None);
 
-        Assert.Equal(11, latest!.SelectedRun!.Id);
+        Assert.Equal(11, latest!.SelectedRun!.ID);
         Assert.Empty(latest.SelectedRunFiles);
-        Assert.Equal(10, requested!.SelectedRun!.Id);
+        Assert.Equal(10, requested!.SelectedRun!.ID);
         Assert.Single(requested.SelectedRunFiles);
         Assert.Equal(["Original"], [requested.Item.Title]);
         Assert.Single(requested.Workers);
@@ -593,8 +627,8 @@ public sealed class TasksRepositoryTests : IDisposable
     private static TaskItem NewTask(string Title) => new()
     {
         Title = Title,
-        ProjectId = 1,
-        StageId = 1,
+        ProjectID = 1,
+        StageID = 1,
         CreatedByName = "tester",
     };
 
@@ -605,16 +639,16 @@ public sealed class TasksRepositoryTests : IDisposable
         await File.WriteAllBytesAsync(Path.Combine(_StorageDirectory, storedName), [1, 2, 3]);
 
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
-        db.Stages.Add(new Stage { Id = 1, Name = "Backlog", Kind = StageKind.Manual });
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Kind = StageKind.MANUAL });
         var task = NewTask("Tarea");
-        task.Attachments.Add(new TaskAttachment { FileName = "a.png", StoredName = storedName, Kind = AttachmentKind.Image });
+        task.Attachments.Add(new TaskAttachment { FileName = "a.png", StoredName = storedName, Kind = AttachmentKind.IMAGE });
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
         if (RunStatus is not null)
         {
-            db.TaskRuns.Add(new TaskRun { TaskId = task.Id, StageId = 1, Status = RunStatus.Value });
+            db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = 1, Status = RunStatus.Value });
             await db.SaveChangesAsync();
         }
         return storedName;

@@ -14,16 +14,17 @@ public sealed class CreateModel(
     TaskAttachmentsRepository AttachmentsRepository, WorkflowService WorkflowService,
     UserManager<IdentityUser> UserManager) : PageModel
 {
-    [BindProperty] public TaskCreateViewModel Input { get; set; } = new();
-    [BindProperty] public List<IFormFile> Files { get; set; } = [];
-    [BindProperty(SupportsGet = true)] public bool Modal { get; set; }
+    // Estado para la vista; los handlers lo asignan con lo que reciben del formulario y de la URL.
+    public TaskCreateViewModel Input { get; private set; } = new();
+    public bool Modal { get; private set; }
 
     public List<Project> Projects { get; private set; } = [];
     public List<WorkerNode> Workers { get; private set; } = [];
     public AttachmentOptions AttachmentLimits => AttachmentsRepository.Limits;
 
-    public async Task<IActionResult> OnGetAsync(int? ProjectID, CancellationToken CT)
+    public async Task<IActionResult> OnGetAsync(int? ProjectID, bool Modal, CancellationToken CT)
     {
+        this.Modal = Modal;
         var record = await TasksRepository.NewCreateAsync(
             ProjectID: ProjectID,
             CT: CT);
@@ -34,8 +35,10 @@ public sealed class CreateModel(
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(CancellationToken CT)
+    public async Task<IActionResult> OnPostAsync(TaskCreateViewModel Input, List<IFormFile> Files, bool Modal, CancellationToken CT)
     {
+        this.Input = Input;
+        this.Modal = Modal;
         await LoadListsAsync(CT);
         if (!ModelState.IsValid) return Page();
 
@@ -47,7 +50,7 @@ public sealed class CreateModel(
                 Actor: User.Identity?.Name ?? "?",
                 UserID: UserManager.GetUserId(User),
                 CT: CT);
-            return Redirect($"/?task={task.Id}");
+            return Redirect($"/?task={task.ID}");
         }
         catch (ValidationFailedException ex)
         {

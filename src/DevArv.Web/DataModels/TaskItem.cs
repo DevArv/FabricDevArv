@@ -4,15 +4,15 @@ namespace DevArv.Web.DataModels;
 
 public class TaskItem
 {
-    public int Id { get; set; }
+    public int ID { get; set; }
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
-    public int ProjectId { get; set; }
+    public int ProjectID { get; set; }
     public Project Project { get; set; } = null!;
-    public int StageId { get; set; }
+    public int StageID { get; set; }
     public Stage Stage { get; set; } = null!;
     public WorkStatus Status { get; set; }
-    public Priority Priority { get; set; } = Priority.Medium;
+    public Priority Priority { get; set; } = Priority.MEDIUM;
     public Complexity Complexity { get; set; }
     public string? Labels { get; set; }
 
@@ -24,13 +24,13 @@ public class TaskItem
     public DateTimeOffset? PullRequestMergedAt { get; set; }
 
     /// <summary>Si se define, sólo este worker (PC) puede ejecutar las etapas de agente.</summary>
-    public int? PreferredWorkerId { get; set; }
+    public int? PreferredWorkerID { get; set; }
     public WorkerNode? PreferredWorker { get; set; }
     public string? LastWorkerName { get; set; }
     /// <summary>Modelo que reemplaza el de la etapa para esta tarea (opus, sonnet, nombre completo…).</summary>
     public string? ModelOverride { get; set; }
 
-    public string? CreatedById { get; set; }
+    public string? CreatedByID { get; set; }
     public string CreatedByName { get; set; } = "";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

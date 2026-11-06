@@ -30,7 +30,11 @@ public sealed class GitHubService
 
     public async Task<RepoDetails> GetRepositoryAsync(string Owner, string Repo, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}", null, CT);
+        using var doc = await SendAsync(
+            Method: HttpMethod.Get,
+            Url: $"repos/{Escape(Owner)}/{Escape(Repo)}",
+            Payload: null,
+            CT: CT);
         var root = doc.RootElement;
         return new RepoDetails(
             root.GetProperty("full_name").GetString()!,
@@ -41,7 +45,11 @@ public sealed class GitHubService
 
     public async Task<IReadOnlyList<string>> ListBranchesAsync(string Owner, string Repo, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/branches?per_page=100", null, CT);
+        using var doc = await SendAsync(
+            Method: HttpMethod.Get,
+            Url: $"repos/{Escape(Owner)}/{Escape(Repo)}/branches?per_page=100",
+            Payload: null,
+            CT: CT);
         return doc.RootElement.EnumerateArray().Select(b => b.GetProperty("name").GetString()!).ToList();
     }
 
@@ -50,7 +58,11 @@ public sealed class GitHubService
         try
         {
             var path = string.Join("/", Branch.Split('/').Select(Uri.EscapeDataString));
-            using var _ = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/branches/{path}", null, CT);
+            using var _ = await SendAsync(
+                Method: HttpMethod.Get,
+                Url: $"repos/{Escape(Owner)}/{Escape(Repo)}/branches/{path}",
+                Payload: null,
+                CT: CT);
             return true;
         }
         catch (GitHubException ex) when (ex.Status == HttpStatusCode.NotFound)
@@ -63,28 +75,44 @@ public sealed class GitHubService
         string Owner, string Repo, string Head, string Base, string Title, string Body, CancellationToken CT)
     {
         var payload = new { title = Title, head = Head, @base = Base, body = Body, maintainer_can_modify = true };
-        using var doc = await SendAsync(HttpMethod.Post, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls", payload, CT);
+        using var doc = await SendAsync(
+            Method: HttpMethod.Post,
+            Url: $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls",
+            Payload: payload,
+            CT: CT);
         return ToPullRequest(doc.RootElement);
     }
 
     public async Task<PullRequestInfo?> FindOpenPullRequestAsync(string Owner, string Repo, string Head, CancellationToken CT)
     {
         var query = $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls?state=open&head={Escape(Owner + ":" + Head)}";
-        using var doc = await SendAsync(HttpMethod.Get, query, null, CT);
+        using var doc = await SendAsync(
+            Method: HttpMethod.Get,
+            Url: query,
+            Payload: null,
+            CT: CT);
         var first = doc.RootElement.EnumerateArray().FirstOrDefault();
         return first.ValueKind == JsonValueKind.Object ? ToPullRequest(first) : null;
     }
 
     public async Task<PullRequestInfo> GetPullRequestAsync(string Owner, string Repo, int Number, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}", null, CT);
+        using var doc = await SendAsync(
+            Method: HttpMethod.Get,
+            Url: $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}",
+            Payload: null,
+            CT: CT);
         return ToPullRequest(doc.RootElement);
     }
 
     public async Task MergePullRequestAsync(string Owner, string Repo, int Number, string CommitTitle, CancellationToken CT)
     {
         var payload = new { merge_method = "squash", commit_title = CommitTitle };
-        using var _ = await SendAsync(HttpMethod.Put, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}/merge", payload, CT);
+        using var _ = await SendAsync(
+            Method: HttpMethod.Put,
+            Url: $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}/merge",
+            Payload: payload,
+            CT: CT);
     }
 
     private static PullRequestInfo ToPullRequest(JsonElement PullRequest) => new(

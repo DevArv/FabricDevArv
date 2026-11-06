@@ -21,16 +21,16 @@ public class PromptBuilderTests
         var project = new Project { Name = "Fabric", RepoOwner = "acme", RepoName = "fabric", AgentInstructions = "Usa C#." };
         var task = new TaskItem
         {
-            Id = 222, Title = "Más adjuntos", Description = "Subir el límite a 15.", Project = project,
+            ID = 222, Title = "Más adjuntos", Description = "Subir el límite a 15.", Project = project,
             BaseBranch = "master", WorkBranch = "devarv/222-mas-adjuntos",
-            Attachments = [new TaskAttachment { Id = 7, FileName = "spec.pdf", Kind = AttachmentKind.Pdf, ContentType = "application/pdf" }],
+            Attachments = [new TaskAttachment { ID = 7, FileName = "spec.pdf", Kind = AttachmentKind.PDF, ContentType = "application/pdf" }],
             Comments =
             [
-                new TaskComment { Kind = CommentKind.Comment, Author = "ana", Body = "no se envía" },
-                new TaskComment { Kind = CommentKind.ReviewerNote, Author = "Revisor", Body = "Falta validar en backend.", CreatedAt = DateTimeOffset.UtcNow },
+                new TaskComment { Kind = CommentKind.COMMENT, Author = "ana", Body = "no se envía" },
+                new TaskComment { Kind = CommentKind.REVIEWER_NOTE, Author = "Revisor", Body = "Falta validar en backend.", CreatedAt = DateTimeOffset.UtcNow },
             ],
         };
-        var stage = new Stage { Kind = StageKind.Agent, PushChanges = true, AppendSystemPrompt = "Responde en español." };
+        var stage = new Stage { Kind = StageKind.AGENT, PushChanges = true, AppendSystemPrompt = "Responde en español." };
 
         var prompt = Builder().Build(task, stage);
 
@@ -38,16 +38,16 @@ public class PromptBuilderTests
         Assert.Contains("acme/fabric", prompt);
         Assert.Contains("`devarv/222-mas-adjuntos`", prompt);
         Assert.Contains("7-spec.pdf", prompt);
-        Assert.Contains(PromptTokens.AttachmentsDir, prompt);
+        Assert.Contains(PromptTokens.ATTACHMENTS_DIR, prompt);
         Assert.Contains("Falta validar en backend.", prompt);
         Assert.DoesNotContain("no se envía", prompt);
-        Assert.DoesNotContain("{{", prompt.Replace(PromptTokens.AttachmentsDir, ""));
+        Assert.DoesNotContain("{{", prompt.Replace(PromptTokens.ATTACHMENTS_DIR, ""));
         Assert.Equal("Usa C#.\n\nResponde en español.", PromptBuilder.BuildSystemAppend(task, stage));
     }
 
     private static TaskItem ReviewTask() => new()
     {
-        Id = 4, Title = "Skill en revisor", Description = "Usar el skill revision.", BaseBranch = "main",
+        ID = 4, Title = "Skill en revisor", Description = "Usar el skill revision.", BaseBranch = "main",
         WorkBranch = "fd_/4-skill", Project = new Project { Name = "Fabric", RepoOwner = "DevArv", RepoName = "FabricDevArv" },
     };
 
@@ -56,7 +56,7 @@ public class PromptBuilderTests
     {
         var stage = new Stage
         {
-            Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER,
+            Kind = StageKind.AGENT, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER,
             Skill = DefaultPrompts.REVIEWER_SKILL,
         };
 
@@ -73,7 +73,7 @@ public class PromptBuilderTests
     [Fact]
     public void Build_WithoutSkill_LeavesNoSkillBlock()
     {
-        var stage = new Stage { Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER };
+        var stage = new Stage { Kind = StageKind.AGENT, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER };
 
         var prompt = Builder().Build(ReviewTask(), stage);
 
@@ -84,7 +84,7 @@ public class PromptBuilderTests
     [Fact]
     public void Build_TemplateWithoutSkillVariable_AppendsSkillBlockAtTheEnd()
     {
-        var stage = new Stage { Kind = StageKind.Agent, PromptTemplate = "Revisa la tarea {{task.id}}.", Skill = "revision" };
+        var stage = new Stage { Kind = StageKind.AGENT, PromptTemplate = "Revisa la tarea {{task.id}}.", Skill = "revision" };
 
         var prompt = Builder().Build(ReviewTask(), stage);
 
@@ -112,10 +112,10 @@ public class PromptBuilderTests
     {
         var task = ReviewTask();
         task.Description = "Mostrar {{feedback}} y {{project.name}} tal cual.";
-        task.Comments = [new TaskComment { Kind = CommentKind.Feedback, Author = "ana", Body = "SECRETO-DE-FEEDBACK", CreatedAt = DateTimeOffset.UtcNow }];
+        task.Comments = [new TaskComment { Kind = CommentKind.FEEDBACK, Author = "ana", Body = "SECRETO-DE-FEEDBACK", CreatedAt = DateTimeOffset.UtcNow }];
         var stage = new Stage
         {
-            Kind = StageKind.Agent,
+            Kind = StageKind.AGENT,
             PromptTemplate = "Descripción: {{task.description}}\nProyecto: {{project.name}}\n{{feedback}}",
         };
 
@@ -128,7 +128,7 @@ public class PromptBuilderTests
     [Fact]
     public void Build_UnknownPlaceholders_AreLeftUntouched()
     {
-        var stage = new Stage { Kind = StageKind.Agent, PromptTemplate = "Hola {{no.existe}} de {{task.id}}" };
+        var stage = new Stage { Kind = StageKind.AGENT, PromptTemplate = "Hola {{no.existe}} de {{task.id}}" };
 
         var prompt = Builder().Build(ReviewTask(), stage);
 

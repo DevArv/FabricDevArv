@@ -47,12 +47,12 @@ public static class WorkerApi
 
         var task = run.Task;
         var stage = await Workflow.GetStageAsync(
-            StageID: run.StageId,
+            StageID: run.StageID,
             CT: CT);
         if (stage is null || string.IsNullOrEmpty(task.WorkBranch))
         {
             await Workflow.CompleteRunAsync(
-                RunID: run.Id,
+                RunID: run.ID,
                 Completion: SystemActionExecutor.Failure("La columna o la rama de trabajo no existen."),
                 Actor: worker.Name,
                 CT: CT);
@@ -66,8 +66,8 @@ public static class WorkerApi
             CT: CT);
 
         var job = new AgentJob(
-            RunId: run.Id,
-            TaskId: task.Id,
+            RunID: run.ID,
+            TaskID: task.ID,
             TaskTitle: task.Title,
             StageName: stage.Name,
             Repo: new RepoInfo(task.Project.RepoOwner, task.Project.RepoName,
@@ -84,10 +84,10 @@ public static class WorkerApi
             ExtraArgs: Lines(stage.ExtraArgs),
             PushChanges: stage.PushChanges,
             TimeoutMinutes: stage.TimeoutMinutes <= 0 ? DEFAULT_TIMEOUT_MINUTES : stage.TimeoutMinutes,
-            CommitMessage: $"DevArv #{task.Id}: {task.Title}",
+            CommitMessage: $"DevArv #{task.ID}: {task.Title}",
             Attachments: task.Attachments
-                .OrderBy(a => a.Id)
-                .Select(a => new AttachmentInfo(a.Id, a.FileName, a.ContentType, a.Size))
+                .OrderBy(a => a.ID)
+                .Select(a => new AttachmentInfo(a.ID, a.FileName, a.ContentType, a.Size))
                 .ToList());
 
         return Results.Ok(job);
@@ -99,7 +99,7 @@ public static class WorkerApi
         var worker = WorkerAuthFilter.Current(Http);
         var response = await Runs.AppendLogAsync(
             RunID: RunID,
-            WorkerID: worker.Id,
+            WorkerID: worker.ID,
             Text: Chunk.Text,
             CT: CT);
         return response is null ? Results.NotFound() : Results.Ok(response);
@@ -113,7 +113,7 @@ public static class WorkerApi
 
         var owns = await Runs.IsAssignedToWorkerAsync(
             RunID: RunID,
-            WorkerID: worker.Id,
+            WorkerID: worker.ID,
             CT: CT);
         if (!owns) return Results.NotFound();
 
@@ -132,7 +132,7 @@ public static class WorkerApi
         var file = await Attachments.GetFileForWorkerRunAsync(
             RunID: RunID,
             AttachmentID: AttachmentID,
-            WorkerID: worker.Id,
+            WorkerID: worker.ID,
             CT: CT);
         if (file is null) return Results.NotFound();
 

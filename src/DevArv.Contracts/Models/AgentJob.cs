@@ -1,9 +1,11 @@
+using System.Text.Json.Serialization;
+
 namespace DevArv.Contracts.Models;
 
 /// <summary>Trabajo que el servidor entrega a un worker: una etapa de agente de una tarea.</summary>
 public sealed record AgentJob(
-    long RunId,
-    int TaskId,
+    [property: JsonPropertyName("runId")] long RunID,
+    [property: JsonPropertyName("taskId")] int TaskID,
     string TaskTitle,
     string StageName,
     RepoInfo Repo,

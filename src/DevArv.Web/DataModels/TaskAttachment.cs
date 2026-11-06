@@ -4,8 +4,8 @@ namespace DevArv.Web.DataModels;
 
 public class TaskAttachment
 {
-    public long Id { get; set; }
-    public int TaskId { get; set; }
+    public long ID { get; set; }
+    public int TaskID { get; set; }
     public TaskItem Task { get; set; } = null!;
     public string FileName { get; set; } = "";
     public string ContentType { get; set; } = "";

@@ -8,25 +8,29 @@ namespace DevArv.Web.Pages.Projects;
 
 public sealed class EditModel(ProjectsRepository ProjectsRepository, GitHubService GitHubService) : PageModel
 {
-    [BindProperty(SupportsGet = true)] public int? Id { get; set; }
-    [BindProperty] public ProjectEditViewModel Input { get; set; } = new();
+    // Estado para la vista; los handlers lo asignan con lo que reciben de la URL y del formulario.
+    public int? ID { get; private set; }
+    public ProjectEditViewModel Input { get; private set; } = new();
     public string? Message { get; private set; }
     public bool MessageIsError { get; private set; }
     public bool GitHubConfigured => GitHubService.IsConfigured;
 
-    public async Task<IActionResult> OnGetAsync(CancellationToken CT)
+    public async Task<IActionResult> OnGetAsync(int? ID, CancellationToken CT)
     {
-        if (Id is null) return Page();
+        this.ID = ID;
+        if (ID is null) return Page();
         var record = await ProjectsRepository.GetEditAsync(
-            ID: Id.Value,
+            ID: ID.Value,
             CT: CT);
         if (record is null) return NotFound();
         Input = record;
         return Page();
     }
 
-    public async Task<IActionResult> OnPostTestAsync(CancellationToken CT)
+    public async Task<IActionResult> OnPostTestAsync(int? ID, ProjectEditViewModel Input, CancellationToken CT)
     {
+        this.ID = ID;
+        this.Input = Input;
         ModelState.Clear();
         var result = await ProjectsRepository.TestConnectionAsync(
             Record: Input,
@@ -36,14 +40,16 @@ public sealed class EditModel(ProjectsRepository ProjectsRepository, GitHubServi
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(CancellationToken CT)
+    public async Task<IActionResult> OnPostAsync(int? ID, ProjectEditViewModel Input, CancellationToken CT)
     {
+        this.ID = ID;
+        this.Input = Input;
         if (!ModelState.IsValid) return Page();
 
         try
         {
             var found = await ProjectsRepository.SaveAsync(
-                ID: Id,
+                ID: ID,
                 Record: Input,
                 CT: CT);
             if (!found) return NotFound();

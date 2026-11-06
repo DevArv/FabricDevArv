@@ -26,8 +26,8 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
 
         var root = _Options.Workspace.ResolveRoot();
         var repoDir = Path.Combine(root, "repos", SafeSegment(Job.Repo.Owner), SafeSegment(Job.Repo.Name));
-        var workDir = Path.Combine(root, "work", $"task-{Job.TaskId}");
-        var attachDir = Path.Combine(root, "attachments", $"task-{Job.TaskId}");
+        var workDir = Path.Combine(root, "work", $"task-{Job.TaskID}");
+        var attachDir = Path.Combine(root, "attachments", $"task-{Job.TaskID}");
 
         var gate = _RepoLocks.GetOrAdd(repoDir, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(CT);
@@ -38,14 +38,28 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
                 if (Directory.Exists(repoDir)) DeleteDirectory(repoDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(repoDir)!);
                 Log($"$ git clone {Job.Repo.CloneUrl}");
-                await GitAsync(root, CT, WithAuth: Job.Repo.CloneUrl, "clone", "--no-checkout", Job.Repo.CloneUrl, repoDir);
+                await GitAsync(
+                    Cwd: root,
+                    Args: ["clone", "--no-checkout", Job.Repo.CloneUrl, repoDir],
+                    CT: CT,
+                    WithAuth: Job.Repo.CloneUrl);
             }
 
-            await GitAsync(repoDir, CT, null, "config", "user.name", _Options.Git.AuthorName);
-            await GitAsync(repoDir, CT, null, "config", "user.email", _Options.Git.AuthorEmail);
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["config", "user.name", _Options.Git.AuthorName],
+                CT: CT);
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["config", "user.email", _Options.Git.AuthorEmail],
+                CT: CT);
 
             Log("$ git fetch origin --prune");
-            await GitAsync(repoDir, CT, WithAuth: Job.Repo.CloneUrl, "fetch", "origin", "--prune");
+            await GitAsync(
+                Cwd: repoDir,
+                Args: ["fetch", "origin", "--prune"],
+                CT: CT,
+                WithAuth: Job.Repo.CloneUrl);
 
             var baseExists = await RefExistsAsync(
                 RepoDir: repoDir,
@@ -63,20 +77,38 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
             if (await IsWorktreeAsync(workDir, CT))
             {
                 Log($"$ git checkout -B {Job.WorkBranch} {startPoint}  (worktree existente)");
-                await GitAsync(workDir, CT, null, "reset", "--hard");
-                await GitAsync(workDir, CT, null, "clean", "-fd");
-                await GitAsync(workDir, CT, null, "checkout", "-B", Job.WorkBranch, startPoint);
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["reset", "--hard"],
+                    CT: CT);
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["clean", "-fd"],
+                    CT: CT);
+                await GitAsync(
+                    Cwd: workDir,
+                    Args: ["checkout", "-B", Job.WorkBranch, startPoint],
+                    CT: CT);
             }
             else
             {
                 if (Directory.Exists(workDir)) DeleteDirectory(workDir);
-                await GitAsync(repoDir, CT, null, "worktree", "prune");
+                await GitAsync(
+                    Cwd: repoDir,
+                    Args: ["worktree", "prune"],
+                    CT: CT);
                 Directory.CreateDirectory(Path.GetDirectoryName(workDir)!);
                 Log($"$ git worktree add -B {Job.WorkBranch} {workDir} {startPoint}");
-                await GitAsync(repoDir, CT, null, "worktree", "add", "-f", "-B", Job.WorkBranch, workDir, startPoint);
+                await GitAsync(
+                    Cwd: repoDir,
+                    Args: ["worktree", "add", "-f", "-B", Job.WorkBranch, workDir, startPoint],
+                    CT: CT);
             }
 
-            var head = (await GitAsync(workDir, CT, null, "rev-parse", "HEAD")).StdOut.Trim();
+            var head = (await GitAsync(
+                Cwd: workDir,
+                Args: ["rev-parse", "HEAD"],
+                CT: CT)).StdOut.Trim();
             Log(remoteExists
                 ? $"Rama {Job.WorkBranch} retomada desde origin ({Short(head)})."
                 : $"Rama {Job.WorkBranch} creada desde {Job.BaseBranch} ({Short(head)}).");
@@ -97,20 +129,34 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
     {
         var worktree = Workspace.WorktreePath;
 
-        var branch = (await GitAsync(worktree, CT, null, "rev-parse", "--abbrev-ref", "HEAD")).StdOut.Trim();
+        var branch = (await GitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "--abbrev-ref", "HEAD"],
+            CT: CT)).StdOut.Trim();
         if (!string.Equals(branch, Job.WorkBranch, StringComparison.Ordinal))
             throw new GitException($"El agente cambió de rama ({branch}); se esperaba {Job.WorkBranch}. No se hizo push.");
 
-        await GitAsync(worktree, CT, null, "add", "-A");
-        var staged = await RunGitAsync(worktree, CT, null, "diff", "--cached", "--quiet");
+        await GitAsync(
+            Cwd: worktree,
+            Args: ["add", "-A"],
+            CT: CT);
+        var staged = await RunGitAsync(
+            Cwd: worktree,
+            Args: ["diff", "--cached", "--quiet"],
+            CT: CT);
         if (staged.ExitCode == 1)
         {
             Log("$ git commit");
-            await GitAsync(worktree, CT, null, "commit", "-m", Job.CommitMessage,
-                "-m", $"Etapa: {Job.StageName}\nGenerado por DevArv con Claude Code.");
+            await GitAsync(
+                Cwd: worktree,
+                Args: ["commit", "-m", Job.CommitMessage, "-m", $"Etapa: {Job.StageName}\nGenerado por DevArv con Claude Code."],
+                CT: CT);
         }
 
-        var head = (await GitAsync(worktree, CT, null, "rev-parse", "HEAD")).StdOut.Trim();
+        var head = (await GitAsync(
+            Cwd: worktree,
+            Args: ["rev-parse", "HEAD"],
+            CT: CT)).StdOut.Trim();
         var changed = await ChangedFilesAsync(
             Worktree: worktree,
             BaseBranch: Job.BaseBranch,
@@ -120,7 +166,11 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
         if (head != Workspace.StartCommit || (!Workspace.RemoteBranchExisted && changed.Count > 0))
         {
             Log($"$ git push origin HEAD:refs/heads/{Job.WorkBranch}");
-            await GitAsync(worktree, CT, WithAuth: Job.Repo.CloneUrl, "push", "origin", $"HEAD:refs/heads/{Job.WorkBranch}");
+            await GitAsync(
+                Cwd: worktree,
+                Args: ["push", "origin", $"HEAD:refs/heads/{Job.WorkBranch}"],
+                CT: CT,
+                WithAuth: Job.Repo.CloneUrl);
             pushed = true;
         }
         else
@@ -134,13 +184,19 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
 
     public async Task<string?> HeadAsync(PreparedWorkspace Workspace, CancellationToken CT)
     {
-        var r = await RunGitAsync(Workspace.WorktreePath, CT, null, "rev-parse", "HEAD");
+        var r = await RunGitAsync(
+            Cwd: Workspace.WorktreePath,
+            Args: ["rev-parse", "HEAD"],
+            CT: CT);
         return r.Ok ? r.StdOut.Trim() : null;
     }
 
     private async Task<List<ChangedFile>> ChangedFilesAsync(string Worktree, string BaseBranch, CancellationToken CT)
     {
-        var r = await GitAsync(Worktree, CT, null, "diff", "--name-status", "-M", $"origin/{BaseBranch}...HEAD");
+        var r = await GitAsync(
+            Cwd: Worktree,
+            Args: ["diff", "--name-status", "-M", $"origin/{BaseBranch}...HEAD"],
+            CT: CT);
         return ParseNameStatus(r.StdOut);
     }
 
@@ -160,18 +216,28 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
     // ------------------------------------------------------------------ helpers de git
 
     private async Task<bool> RefExistsAsync(string RepoDir, string Reference, CancellationToken CT) =>
-        (await RunGitAsync(RepoDir, CT, null, "rev-parse", "--verify", "--quiet", Reference)).Ok;
+        (await RunGitAsync(
+            Cwd: RepoDir,
+            Args: ["rev-parse", "--verify", "--quiet", Reference],
+            CT: CT)).Ok;
 
     private async Task<bool> IsWorktreeAsync(string Dir, CancellationToken CT)
     {
         if (!Directory.Exists(Dir) || !File.Exists(Path.Combine(Dir, ".git"))) return false;
-        var r = await RunGitAsync(Dir, CT, null, "rev-parse", "--is-inside-work-tree");
+        var r = await RunGitAsync(
+            Cwd: Dir,
+            Args: ["rev-parse", "--is-inside-work-tree"],
+            CT: CT);
         return r.Ok && r.StdOut.Trim() == "true";
     }
 
-    private async Task<ProcessResult> GitAsync(string Cwd, CancellationToken CT, string? WithAuth, params string[] Args)
+    private async Task<ProcessResult> GitAsync(string Cwd, IReadOnlyList<string> Args, CancellationToken CT, string? WithAuth = null)
     {
-        var r = await RunGitAsync(Cwd, CT, WithAuth, Args);
+        var r = await RunGitAsync(
+            Cwd: Cwd,
+            Args: Args,
+            CT: CT,
+            WithAuth: WithAuth);
         if (!r.Ok)
         {
             var err = string.IsNullOrWhiteSpace(r.StdErr) ? r.StdOut : r.StdErr;
@@ -180,7 +246,7 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> Options)
         return r;
     }
 
-    private Task<ProcessResult> RunGitAsync(string Cwd, CancellationToken CT, string? WithAuth, params string[] Args)
+    private Task<ProcessResult> RunGitAsync(string Cwd, IReadOnlyList<string> Args, CancellationToken CT, string? WithAuth = null)
     {
         var all = new List<string>();
         if (WithAuth is not null)

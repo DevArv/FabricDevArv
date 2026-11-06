@@ -26,8 +26,12 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     private const int MAX_DESCRIPTION_LENGTH = 50_000;
     private const int MAX_MODEL_OVERRIDE_LENGTH = 100;
 
+    // SQL manual del bloqueo FOR UPDATE: los nombres de tabla vienen de TableNames (los de columna no cambian).
+    internal const string LOCK_TASK_SQL = $$"""SELECT "Id" AS "Value" FROM "{{TableNames.TASKS}}" WHERE "Id" = {0} FOR UPDATE""";
+    internal const string LOCK_RUNS_SQL = $$"""SELECT "Id" AS "Value" FROM "{{TableNames.TASK_RUNS}}" WHERE "TaskId" = {0} FOR UPDATE""";
+
     public Task<int> CountWaitingAsync(CancellationToken CT) =>
-        Db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WaitingApproval, CT);
+        Db.Tasks.CountAsync(t => t.ArchivedAt == null && t.Status == WorkStatus.WAITING_APPROVAL, CT);
 
     /// <summary>
     /// Tareas que el agente desarrollador (columna de agente que hace commit y push) está ejecutando ahora,
@@ -35,43 +39,46 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     /// </summary>
     public Task<int> CountDevelopingAsync(CancellationToken CT) =>
         Db.Tasks.CountAsync(t => t.ArchivedAt == null
-                                 && t.Status == WorkStatus.Running
-                                 && t.Stage.Kind == StageKind.Agent
+                                 && t.Status == WorkStatus.RUNNING
+                                 && t.Stage.Kind == StageKind.AGENT
                                  && t.Stage.PushChanges, CT);
 
     public async Task<BoardViewModel> GetBoardAsync(BoardFilterViewModel Filter, CancellationToken CT)
     {
         var stages = await Db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(CT);
-        var names = stages.ToDictionary(s => s.Id, s => s.Name);
+        var names = stages.ToDictionary(s => s.ID, s => s.Name);
 
         var query = Db.Tasks.AsNoTracking()
             .Where(t => Filter.Archived ? t.ArchivedAt != null : t.ArchivedAt == null);
-        if (Filter.ProjectID is { } projectID) query = query.Where(t => t.ProjectId == projectID);
+        if (Filter.ProjectID is { } projectID) query = query.Where(t => t.ProjectID == projectID);
         if (!string.IsNullOrWhiteSpace(Filter.WorkerName)) query = query.Where(t => t.LastWorkerName == Filter.WorkerName);
-        if (Filter.Waiting) query = query.Where(t => t.Status == WorkStatus.WaitingApproval);
+        if (Filter.Waiting) query = query.Where(t => t.Status == WorkStatus.WAITING_APPROVAL);
         if (!string.IsNullOrWhiteSpace(Filter.Query))
         {
             var term = Filter.Query.Trim().TrimStart('#');
             var like = BuildLikePattern(term);
             query = int.TryParse(term, out var taskID)
-                ? query.Where(t => t.Id == taskID || EF.Functions.ILike(t.Title, like))
+                ? query.Where(t => t.ID == taskID || EF.Functions.ILike(t.Title, like))
                 : query.Where(t => EF.Functions.ILike(t.Title, like) || EF.Functions.ILike(t.Description, like));
         }
 
         var tasks = await query
-            .OrderByDescending(t => t.Priority)
+            // La prioridad se guarda como texto: ordenar por la columna sería alfabético (Medium, Low, High, Critical).
+            .OrderByDescending(t => t.Priority == Priority.CRITICAL ? 3
+                                    : t.Priority == Priority.HIGH ? 2
+                                    : t.Priority == Priority.MEDIUM ? 1 : 0)
             .ThenBy(t => t.CreatedAt)
             .Take(MAX_BOARD_TASKS)
             .Select(t => new TaskItem
             {
-                Id = t.Id,
+                ID = t.ID,
                 Title = t.Title,
                 Description = t.Description.Length > MAX_CARD_DESCRIPTION_CHARS
                     ? t.Description.Substring(0, MAX_CARD_DESCRIPTION_CHARS)
                     : t.Description,
-                ProjectId = t.ProjectId,
+                ProjectID = t.ProjectID,
                 Project = t.Project,
-                StageId = t.StageId,
+                StageID = t.StageID,
                 Status = t.Status,
                 Priority = t.Priority,
                 Complexity = t.Complexity,
@@ -101,9 +108,9 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             .Select(t => new BoardCardViewModel
             {
                 Item = t,
-                DevelopmentElapsed = developingSince.TryGetValue(t.Id, out var since) && now > since ? now - since : null,
+                DevelopmentElapsed = developingSince.TryGetValue(t.ID, out var since) && now > since ? now - since : null,
             })
-            .GroupBy(c => c.Item.StageId)
+            .GroupBy(c => c.Item.StageID)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         return new BoardViewModel
@@ -115,9 +122,9 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             Columns = stages.Select(s => new BoardColumnViewModel
             {
                 Stage = s,
-                Tasks = byStage.GetValueOrDefault(s.Id) ?? [],
-                SuccessName = s.SuccessStageId is { } ok ? names.GetValueOrDefault(ok) : null,
-                RejectName = s.RejectStageId is { } ko ? names.GetValueOrDefault(ko) : null,
+                Tasks = byStage.GetValueOrDefault(s.ID) ?? [],
+                SuccessName = s.SuccessStageID is { } ok ? names.GetValueOrDefault(ok) : null,
+                RejectName = s.RejectStageID is { } ko ? names.GetValueOrDefault(ko) : null,
             }).ToList(),
         };
     }
@@ -133,19 +140,19 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     private async Task<Dictionary<int, DateTimeOffset>> GetDevelopingSinceAsync(
         List<Stage> Stages, List<TaskItem> Tasks, CancellationToken CT)
     {
-        var developerStages = Stages.Where(s => s.Kind == StageKind.Agent && s.PushChanges).Select(s => s.Id).ToHashSet();
-        var running = Tasks.Where(t => t.Status == WorkStatus.Running && developerStages.Contains(t.StageId))
-            .ToDictionary(t => t.Id, t => t.StageId);
+        var developerStages = Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges).Select(s => s.ID).ToHashSet();
+        var running = Tasks.Where(t => t.Status == WorkStatus.RUNNING && developerStages.Contains(t.StageID))
+            .ToDictionary(t => t.ID, t => t.StageID);
         if (running.Count == 0) return new Dictionary<int, DateTimeOffset>();
 
         var ids = running.Keys.ToList();
         var runs = await Db.TaskRuns.AsNoTracking()
-            .Where(r => ids.Contains(r.TaskId) && r.Status == RunStatus.Running && r.StartedAt != null)
-            .Select(r => new { r.TaskId, r.StageId, StartedAt = r.StartedAt!.Value })
+            .Where(r => ids.Contains(r.TaskID) && r.Status == RunStatus.RUNNING && r.StartedAt != null)
+            .Select(r => new { r.TaskID, r.StageID, StartedAt = r.StartedAt!.Value })
             .ToListAsync(CT);
 
-        return runs.Where(r => running[r.TaskId] == r.StageId)
-            .GroupBy(r => r.TaskId)
+        return runs.Where(r => running[r.TaskID] == r.StageID)
+            .GroupBy(r => r.TaskID)
             .ToDictionary(g => g.Key, g => g.Max(r => r.StartedAt));
     }
 
@@ -156,11 +163,11 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     public async Task<TaskCreateViewModel?> NewCreateAsync(int? ProjectID, CancellationToken CT)
     {
         var active = Db.Projects.AsNoTracking().Where(p => p.IsActive);
-        var project = (ProjectID is null ? null : await active.FirstOrDefaultAsync(p => p.Id == ProjectID, CT))
+        var project = (ProjectID is null ? null : await active.FirstOrDefaultAsync(p => p.ID == ProjectID, CT))
                       ?? await active.OrderBy(p => p.Name).FirstOrDefaultAsync(CT);
         return project is null
             ? null
-            : new TaskCreateViewModel { ProjectId = project.Id, BaseBranch = project.DefaultBranch };
+            : new TaskCreateViewModel { ProjectID = project.ID, BaseBranch = project.DefaultBranch };
     }
 
     /// <summary>
@@ -169,10 +176,12 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     /// </summary>
     public async Task<TaskDetailsViewModel?> GetDetailsViewAsync(int ID, long? RunID, CancellationToken CT)
     {
-        var task = await GetDetailsAsync(ID, CT);
+        var task = await GetDetailsAsync(
+            ID: ID,
+            CT: CT);
         if (task is null) return null;
 
-        var selectedRun = task.Runs.FirstOrDefault(r => r.Id == RunID) ?? task.Runs.FirstOrDefault();
+        var selectedRun = task.Runs.FirstOrDefault(r => r.ID == RunID) ?? task.Runs.FirstOrDefault();
         return new TaskDetailsViewModel
         {
             Item = task,
@@ -203,10 +212,10 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             .Include(t => t.Runs).ThenInclude(r => r.Worker)
             .AsSplitQuery()
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Id == ID, CT);
+            .FirstOrDefaultAsync(t => t.ID == ID, CT);
         if (task is null) return null;
 
-        task.Runs = task.Runs.OrderByDescending(r => r.Id).ToList();
+        task.Runs = task.Runs.OrderByDescending(r => r.ID).ToList();
         return task;
     }
 
@@ -230,8 +239,8 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             throw new ValidationFailedException(nameof(Record.Priority), "Prioridad inválida.");
         if (!Enum.IsDefined(Record.Complexity))
             throw new ValidationFailedException(nameof(Record.Complexity), "Complejidad inválida.");
-        if (Record.PreferredWorkerId is not null && !await Db.Workers.AnyAsync(w => w.Id == Record.PreferredWorkerId, CT))
-            throw new ValidationFailedException(nameof(Record.PreferredWorkerId), "La PC no existe.");
+        if (Record.PreferredWorkerID is not null && !await Db.Workers.AnyAsync(w => w.ID == Record.PreferredWorkerID, CT))
+            throw new ValidationFailedException(nameof(Record.PreferredWorkerID), "La PC no existe.");
 
         if (!string.IsNullOrWhiteSpace(Record.Title))
         {
@@ -243,9 +252,9 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
         Item.Complexity = Record.Complexity;
         Item.Labels = TaskLabelsHelper.Normalize(Record.Labels);
         Item.ModelOverride = string.IsNullOrEmpty(modelOverride) ? null : modelOverride;
-        Item.PreferredWorkerId = Record.PreferredWorkerId;
+        Item.PreferredWorkerID = Record.PreferredWorkerID;
         Item.UpdatedAt = DateTimeOffset.UtcNow;
-        Db.TaskEvents.Add(new TaskEvent { TaskId = Item.Id, Actor = Actor, Message = $"{Actor} editó la tarea" });
+        Db.TaskEvents.Add(new TaskEvent { TaskID = Item.ID, Actor = Actor, Message = $"{Actor} editó la tarea" });
         await Db.SaveChangesAsync(CT);
     }
 
@@ -263,12 +272,14 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     {
         await using var transaction = await Db.Database.BeginTransactionAsync(CT);
 
-        await LockTaskAndRunsAsync(Item.Id, CT);
+        await LockTaskAndRunsAsync(
+            TaskID: Item.ID,
+            CT: CT);
 
-        if (await Db.TaskRuns.AnyAsync(r => r.TaskId == Item.Id && r.Status == RunStatus.Running, CT))
+        if (await Db.TaskRuns.AnyAsync(r => r.TaskID == Item.ID && r.Status == RunStatus.RUNNING, CT))
             throw new WorkflowException("La tarea se está ejecutando. Cancela la ejecución y espera a que termine antes de eliminarla.");
 
-        var attachments = await Db.TaskAttachments.Where(a => a.TaskId == Item.Id).ToListAsync(CT);
+        var attachments = await Db.TaskAttachments.Where(a => a.TaskID == Item.ID).ToListAsync(CT);
         Db.Tasks.Remove(Item);
         await Db.SaveChangesAsync(CT);
         await transaction.CommitAsync(CT);
@@ -282,11 +293,11 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId} de la tarea #{TaskId}.", attachment.Id, Item.Id);
+                Logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId} de la tarea #{TaskId}.", attachment.ID, Item.ID);
             }
         }
 
-        Logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", Actor, Item.Id, Item.Title);
+        Logger.LogInformation("{Actor} eliminó la tarea #{TaskId} «{Title}».", Actor, Item.ID, Item.Title);
     }
 
     /// <summary>
@@ -295,7 +306,7 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
     /// </summary>
     protected virtual async Task LockTaskAndRunsAsync(int TaskID, CancellationToken CT)
     {
-        await Db.Database.SqlQuery<int>($"""SELECT "Id" AS "Value" FROM "Tasks" WHERE "Id" = {TaskID} FOR UPDATE""").ToListAsync(CT);
-        await Db.Database.SqlQuery<long>($"""SELECT "Id" AS "Value" FROM "TaskRuns" WHERE "TaskId" = {TaskID} FOR UPDATE""").ToListAsync(CT);
+        await Db.Database.SqlQueryRaw<int>(LOCK_TASK_SQL, TaskID).ToListAsync(CT);
+        await Db.Database.SqlQueryRaw<long>(LOCK_RUNS_SQL, TaskID).ToListAsync(CT);
     }
 }

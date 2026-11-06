@@ -10,7 +10,7 @@ namespace DevArv.Web.Pages;
 [IgnoreAntiforgeryToken]
 public sealed class ErrorModel : PageModel
 {
-    public string? RequestId { get; private set; }
+    public string? RequestID { get; private set; }
 
-    public void OnGet() => RequestId = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
+    public void OnGet() => RequestID = Activity.Current?.Id ?? HttpContext.TraceIdentifier;
 }

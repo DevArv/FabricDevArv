@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using DevArv.Tests.TestSupport;
 using DevArv.Web.DataModels;
 using DevArv.Web.DatabaseConnection;
@@ -18,8 +17,8 @@ public sealed class ProjectsRepositoryTests
 
     private AppDbContext CreateDbContext() => TestDatabase.CreateContext(_DatabaseName);
 
-    private static GitHubService CreateGitHub(Func<HttpRequestMessage, HttpResponseMessage>? Respond = null, string Token = "token") =>
-        new(new HttpClient(new StubHandler(Respond ?? (_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)))),
+    private static GitHubService CreateGitHub(Func<CapturedRequest, HttpResponseMessage>? Respond = null, string Token = "token") =>
+        new(new HttpClient(new StubHttpHandler(Respond ?? (_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)))),
             Options.Create(new GitHubOptions { Token = Token }));
 
     private ProjectsRepository CreateRepository(AppDbContext Db, GitHubService? GitHub = null) =>
@@ -33,8 +32,7 @@ public sealed class ProjectsRepositoryTests
         BranchPrefix = "devarv/",
     };
 
-    private static HttpResponseMessage Json(HttpStatusCode Status, string Body) =>
-        new(Status) { Content = new StringContent(Body, Encoding.UTF8, "application/json") };
+    private static HttpResponseMessage Json(HttpStatusCode Status, string Body) => StubHttpHandler.Json(Status, Body);
 
     // ------------------------------------------------------------------ lecturas
 
@@ -61,14 +59,14 @@ public sealed class ProjectsRepositoryTests
     {
         await using (var db = CreateDbContext())
         {
-            db.Stages.Add(new Stage { Id = 1, Name = "S" });
+            db.Stages.Add(new Stage { ID = 1, Name = "S" });
             db.Projects.AddRange(
-                new Project { Id = 1, Name = "Con tareas", RepoOwner = "o", RepoName = "a" },
-                new Project { Id = 2, Name = "Vacío", RepoOwner = "o", RepoName = "b" });
+                new Project { ID = 1, Name = "Con tareas", RepoOwner = "o", RepoName = "a" },
+                new Project { ID = 2, Name = "Vacío", RepoOwner = "o", RepoName = "b" });
             db.Tasks.AddRange(
-                new TaskItem { Title = "1", ProjectId = 1, StageId = 1, TotalCostUsd = 1.5m },
-                new TaskItem { Title = "2", ProjectId = 1, StageId = 1, TotalCostUsd = 2m },
-                new TaskItem { Title = "archivada", ProjectId = 1, StageId = 1, TotalCostUsd = 3m, ArchivedAt = DateTimeOffset.UtcNow });
+                new TaskItem { Title = "1", ProjectID = 1, StageID = 1, TotalCostUsd = 1.5m },
+                new TaskItem { Title = "2", ProjectID = 1, StageID = 1, TotalCostUsd = 2m },
+                new TaskItem { Title = "archivada", ProjectID = 1, StageID = 1, TotalCostUsd = 3m, ArchivedAt = DateTimeOffset.UtcNow });
             await db.SaveChangesAsync();
         }
 
@@ -92,7 +90,7 @@ public sealed class ProjectsRepositoryTests
             var project = new Project { Name = "Fabric", RepoOwner = "acme", RepoName = "fabric", AgentInstructions = "Usa C#." };
             db.Projects.Add(project);
             await db.SaveChangesAsync();
-            id = project.Id;
+            id = project.ID;
         }
 
         await using var check = CreateDbContext();
@@ -183,7 +181,7 @@ public sealed class ProjectsRepositoryTests
             var project = new Project { Name = "Vieja", RepoOwner = "o", RepoName = "r" };
             db.Projects.Add(project);
             await db.SaveChangesAsync();
-            id = project.Id;
+            id = project.ID;
         }
         await using var update = CreateDbContext();
         var record = ValidRecord();
@@ -256,7 +254,7 @@ public sealed class ProjectsRepositoryTests
     public async Task TestConnectionAsync_Success_NormalizesTheRepositoryAndKeepsAnExistingBranch()
     {
         await using var db = CreateDbContext();
-        var github = CreateGitHub(request => request.RequestUri!.AbsolutePath switch
+        var github = CreateGitHub(request => request.PathAndQuery.Split('?')[0] switch
         {
             "/repos/acme/fabric" => Json(HttpStatusCode.OK,
                 """{"full_name":"acme/Fabric","default_branch":"main","private":true,"html_url":"https://github.com/acme/Fabric"}"""),
@@ -280,7 +278,7 @@ public sealed class ProjectsRepositoryTests
     public async Task TestConnectionAsync_UnknownBranch_FallsBackToTheRepositoryDefault()
     {
         await using var db = CreateDbContext();
-        var github = CreateGitHub(request => request.RequestUri!.AbsolutePath.EndsWith("/branches")
+        var github = CreateGitHub(request => request.PathAndQuery.Contains("/branches")
             ? Json(HttpStatusCode.OK, """[{"name":"master"}]""")
             : Json(HttpStatusCode.OK, """{"full_name":"acme/fabric","default_branch":"master","private":false,"html_url":"x"}"""));
         var record = ValidRecord();
@@ -323,11 +321,5 @@ public sealed class ProjectsRepositoryTests
 
         Assert.True(result.IsError);
         Assert.Contains("GitHub:Token", result.Message);
-    }
-
-    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> Respond) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage Request, CancellationToken CT) =>
-            Task.FromResult(Respond(Request));
     }
 }

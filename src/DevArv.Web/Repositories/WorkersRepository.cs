@@ -20,13 +20,13 @@ public class WorkersRepository(AppDbContext Db)
     public async Task<Dictionary<int, string>> GetCurrentRunsAsync(CancellationToken CT)
     {
         var running = await Db.TaskRuns.AsNoTracking()
-            .Where(r => r.Status == RunStatus.Running && r.WorkerId != null)
-            .OrderByDescending(r => r.Id)
-            .Select(r => new { WorkerId = r.WorkerId!.Value, r.TaskId, r.StageName })
+            .Where(r => r.Status == RunStatus.RUNNING && r.WorkerID != null)
+            .OrderByDescending(r => r.ID)
+            .Select(r => new { WorkerID = r.WorkerID!.Value, r.TaskID, r.StageName })
             .ToListAsync(CT);
         return running
-            .GroupBy(r => r.WorkerId)
-            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(r => $"#{r.TaskId} · {r.StageName}")));
+            .GroupBy(r => r.WorkerID)
+            .ToDictionary(g => g.Key, g => string.Join(", ", g.Select(r => $"#{r.TaskID} · {r.StageName}")));
     }
 
     /// <summary>Registra una PC y devuelve su API key en claro (única vez que se conoce).</summary>
@@ -65,7 +65,7 @@ public class WorkersRepository(AppDbContext Db)
 
     public async Task DeleteAsync(int ID, CancellationToken CT)
     {
-        if (await Db.TaskRuns.AnyAsync(r => r.WorkerId == ID && r.Status == RunStatus.Running, CT))
+        if (await Db.TaskRuns.AnyAsync(r => r.WorkerID == ID && r.Status == RunStatus.RUNNING, CT))
             throw new ValidationFailedException(nameof(ID), "La PC tiene una ejecución en curso; cancélala o espera a que termine.");
 
         var worker = await Db.Workers.FindAsync([ID], CT);
@@ -91,9 +91,15 @@ public class WorkersRepository(AppDbContext Db)
     /// <summary>Guarda los datos que la PC reporta en su latido; los textos se recortan al tamaño de su columna.</summary>
     public async Task RecordHeartbeatAsync(WorkerNode Worker, HeartbeatRequest Request, CancellationToken CT)
     {
-        Worker.MachineName = Limit(Request.MachineName, 100);
-        Worker.Version = Limit(Request.Version, 40);
-        Worker.OsDescription = Limit(Request.OsDescription, 200);
+        Worker.MachineName = Limit(
+            Value: Request.MachineName,
+            Max: 100);
+        Worker.Version = Limit(
+            Value: Request.Version,
+            Max: 40);
+        Worker.OsDescription = Limit(
+            Value: Request.OsDescription,
+            Max: 200);
         Worker.RunningJobs = Math.Max(0, Request.RunningJobs);
         await Db.SaveChangesAsync(CT);
     }

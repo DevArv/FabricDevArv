@@ -11,7 +11,10 @@ public class GitHubRepositoryParserTests
     [InlineData("git@github.com:mi-org/mi.repo.git", "mi-org", "mi.repo")]
     public void Parses(string Input, string Owner, string Repo)
     {
-        Assert.True(GitHubRepositoryParser.TryParse(Input, out var o, out var r));
+        Assert.True(GitHubRepositoryParser.TryParse(
+            Input: Input,
+            Owner: out var o,
+            Repo: out var r));
         Assert.Equal(Owner, o);
         Assert.Equal(Repo, r);
     }
@@ -20,5 +23,8 @@ public class GitHubRepositoryParserTests
     [InlineData("https://gitlab.com/a/b")]
     [InlineData("solo-un-nombre")]
     [InlineData("a/b/c")]
-    public void RejectsInvalid(string Input) => Assert.False(GitHubRepositoryParser.TryParse(Input, out _, out _));
+    public void RejectsInvalid(string Input) => Assert.False(GitHubRepositoryParser.TryParse(
+        Input: Input,
+        Owner: out _,
+        Repo: out _));
 }

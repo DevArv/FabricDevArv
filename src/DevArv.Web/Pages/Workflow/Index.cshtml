@@ -24,32 +24,32 @@
                 @if (s.IsMergeDestination) { <span class="label" title="Las tareas entran aquí al hacer merge de su pull request">al hacer merge</span> }
                 <div class="muted">
                     @Labels.Of(s.Kind)
-                    @if (s.Kind == StageKind.Agent)
+                    @if (s.Kind == StageKind.AGENT)
                     {
                         <text> · modelo <code>@(s.Model ?? "por defecto")</code> · permisos <code>@s.PermissionMode</code>
                         @(s.PushChanges ? " · hace commit y push" : "")@(s.RequiresDecision ? " · emite veredicto" : "")
                         @if (!string.IsNullOrWhiteSpace(s.Skill)) { <text> · skill <code>@s.Skill</code></text> } · máx. @s.TimeoutMinutes min</text>
                     }
-                    @if (s.Kind == StageKind.System) { <text> · @Labels.Of(s.SystemAction)</text> }
+                    @if (s.Kind == StageKind.SYSTEM) { <text> · @Labels.Of(s.SystemAction)</text> }
                 </div>
                 <div class="transitions">
-                    @if (s.SuccessStageId is not null) { <span>✓ → @Model.NameOf(s.SuccessStageId)</span> }
-                    @if (s.RejectStageId is not null) { <span>⊘ → @Model.NameOf(s.RejectStageId)</span> }
+                    @if (s.SuccessStageID is not null) { <span>✓ → @Model.NameOf(s.SuccessStageID)</span> }
+                    @if (s.RejectStageID is not null) { <span>⊘ → @Model.NameOf(s.RejectStageID)</span> }
                 </div>
             </div>
-            <span class="count" title="Tareas en la columna">@Model.TaskCounts.GetValueOrDefault(s.Id)</span>
+            <span class="count" title="Tareas en la columna">@Model.TaskCounts.GetValueOrDefault(s.ID)</span>
             <div class="flow-actions">
                 <form method="post" asp-page-handler="Move" class="inline">
-                    <input type="hidden" name="id" value="@s.Id" /><input type="hidden" name="direction" value="-1" />
+                    <input type="hidden" name="id" value="@s.ID" /><input type="hidden" name="direction" value="-1" />
                     <button class="btn btn-ghost small" title="Subir">▲</button>
                 </form>
                 <form method="post" asp-page-handler="Move" class="inline">
-                    <input type="hidden" name="id" value="@s.Id" /><input type="hidden" name="direction" value="1" />
+                    <input type="hidden" name="id" value="@s.ID" /><input type="hidden" name="direction" value="1" />
                     <button class="btn btn-ghost small" title="Bajar">▼</button>
                 </form>
-                <a class="btn small" href="/Workflow/Edit/@s.Id">Editar</a>
+                <a class="btn small" href="/Workflow/Edit/@s.ID">Editar</a>
                 <form method="post" asp-page-handler="Delete" class="inline" data-confirm="¿Eliminar la columna «@s.Name»?">
-                    <input type="hidden" name="id" value="@s.Id" />
+                    <input type="hidden" name="id" value="@s.ID" />
                     <button class="btn btn-ghost small">🗑</button>
                 </form>
             </div>

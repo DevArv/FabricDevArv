@@ -15,22 +15,22 @@ public sealed class RunsRepositoryTests
     private async Task<long> SeedRunAsync(int WorkerID, RunStatus Status, bool CancelRequested = false)
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
-        db.Stages.Add(new Stage { Id = 1, Name = "S" });
+        db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "S" });
         await db.SaveChangesAsync();
-        var task = new TaskItem { Title = "T", ProjectId = 1, StageId = 1 };
+        var task = new TaskItem { Title = "T", ProjectID = 1, StageID = 1 };
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        var run = new TaskRun { TaskId = task.Id, StageId = 1, Status = Status, WorkerId = WorkerID, CancelRequested = CancelRequested };
+        var run = new TaskRun { TaskID = task.ID, StageID = 1, Status = Status, WorkerID = WorkerID, CancelRequested = CancelRequested };
         db.TaskRuns.Add(run);
         await db.SaveChangesAsync();
-        return run.Id;
+        return run.ID;
     }
 
     [Fact]
     public async Task IsAssignedToWorkerAsync_OnlyForTheWorkerThatTookTheRun()
     {
-        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.RUNNING);
         await using var db = CreateDbContext();
         var repository = new RunsRepository(db);
 
@@ -51,7 +51,7 @@ public sealed class RunsRepositoryTests
     [Fact]
     public async Task AppendLogAsync_RunOfAnotherWorker_ReturnsNullAndWritesNothing()
     {
-        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.RUNNING);
         await using var db = CreateDbContext();
         var repository = new RecordingRunsRepository(db);
 
@@ -66,10 +66,10 @@ public sealed class RunsRepositoryTests
     }
 
     [Theory]
-    [InlineData(RunStatus.Queued)]
-    [InlineData(RunStatus.Succeeded)]
-    [InlineData(RunStatus.Failed)]
-    [InlineData(RunStatus.Cancelled)]
+    [InlineData(RunStatus.QUEUED)]
+    [InlineData(RunStatus.SUCCEEDED)]
+    [InlineData(RunStatus.FAILED)]
+    [InlineData(RunStatus.CANCELLED)]
     public async Task AppendLogAsync_RunNoLongerRunning_TellsTheWorkerToStop(RunStatus Status)
     {
         var runID = await SeedRunAsync(WorkerID: 7, Status);
@@ -90,7 +90,7 @@ public sealed class RunsRepositoryTests
     [Fact]
     public async Task AppendLogAsync_RunningRun_WritesTheCleanedText()
     {
-        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.RUNNING);
         await using var db = CreateDbContext();
         var repository = new RecordingRunsRepository(db);
 
@@ -110,7 +110,7 @@ public sealed class RunsRepositoryTests
     [Fact]
     public async Task AppendLogAsync_NullText_OnlyMarksActivity()
     {
-        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.RUNNING);
         await using var db = CreateDbContext();
         var repository = new RecordingRunsRepository(db);
 
@@ -126,7 +126,10 @@ public sealed class RunsRepositoryTests
     [Fact]
     public async Task AppendLogAsync_RunWithPendingCancellation_ReportsIt()
     {
-        var runID = await SeedRunAsync(WorkerID: 7, RunStatus.Running, CancelRequested: true);
+        var runID = await SeedRunAsync(
+            WorkerID: 7,
+            Status: RunStatus.RUNNING,
+            CancelRequested: true);
         await using var db = CreateDbContext();
         var repository = new RecordingRunsRepository(db);
 

@@ -46,17 +46,17 @@ public sealed class WorkflowServiceTests : IDisposable
     private async Task SeedFlowAsync()
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "Fabric", RepoOwner = "acme", RepoName = "fabric", BranchPrefix = "devarv/" });
-        db.Projects.Add(new Project { Id = 2, Name = "Inactivo", RepoOwner = "acme", RepoName = "old", IsActive = false });
-        db.Workers.Add(new WorkerNode { Id = 1, Name = "PC-1", KeyHash = "h1" });
-        db.Workers.Add(new WorkerNode { Id = 2, Name = "PC-2", KeyHash = "h2", IsEnabled = false });
+        db.Projects.Add(new Project { ID = 1, Name = "Fabric", RepoOwner = "acme", RepoName = "fabric", BranchPrefix = "devarv/" });
+        db.Projects.Add(new Project { ID = 2, Name = "Inactivo", RepoOwner = "acme", RepoName = "old", IsActive = false });
+        db.Workers.Add(new WorkerNode { ID = 1, Name = "PC-1", KeyHash = "h1" });
+        db.Workers.Add(new WorkerNode { ID = 2, Name = "PC-2", KeyHash = "h2", IsEnabled = false });
         db.Stages.AddRange(
-            new Stage { Id = BACKLOG, Name = "Backlog", Order = 10, Kind = StageKind.Manual, IsInitial = true, SuccessStageId = APPROVAL },
-            new Stage { Id = APPROVAL, Name = "Aprobación", Order = 20, Kind = StageKind.HumanApproval, SuccessStageId = DEVELOPER, RejectStageId = BACKLOG },
-            new Stage { Id = DEVELOPER, Name = "Desarrollador", Order = 30, Kind = StageKind.Agent, PushChanges = true, SuccessStageId = REVIEWER, TimeoutMinutes = 30 },
-            new Stage { Id = REVIEWER, Name = "Revisor", Order = 40, Kind = StageKind.Agent, RequiresDecision = true, SuccessStageId = PENDING_DEPLOY, RejectStageId = DEVELOPER, TimeoutMinutes = 30 },
-            new Stage { Id = PENDING_DEPLOY, Name = "Pendiente Deploy", Order = 50, Kind = StageKind.Manual, IsMergeDestination = true, SuccessStageId = DONE },
-            new Stage { Id = DONE, Name = "Terminado", Order = 60, Kind = StageKind.Terminal });
+            new Stage { ID = BACKLOG, Name = "Backlog", Order = 10, Kind = StageKind.MANUAL, IsInitial = true, SuccessStageID = APPROVAL },
+            new Stage { ID = APPROVAL, Name = "Aprobación", Order = 20, Kind = StageKind.HUMAN_APPROVAL, SuccessStageID = DEVELOPER, RejectStageID = BACKLOG },
+            new Stage { ID = DEVELOPER, Name = "Desarrollador", Order = 30, Kind = StageKind.AGENT, PushChanges = true, SuccessStageID = REVIEWER, TimeoutMinutes = 30 },
+            new Stage { ID = REVIEWER, Name = "Revisor", Order = 40, Kind = StageKind.AGENT, RequiresDecision = true, SuccessStageID = PENDING_DEPLOY, RejectStageID = DEVELOPER, TimeoutMinutes = 30 },
+            new Stage { ID = PENDING_DEPLOY, Name = "Pendiente Deploy", Order = 50, Kind = StageKind.MANUAL, IsMergeDestination = true, SuccessStageID = DONE },
+            new Stage { ID = DONE, Name = "Terminado", Order = 60, Kind = StageKind.TERMINAL });
         await db.SaveChangesAsync();
     }
 
@@ -64,10 +64,10 @@ public sealed class WorkflowServiceTests : IDisposable
     {
         Title = "  Mi tarea  ",
         Description = "Detalle",
-        ProjectId = ProjectID,
+        ProjectID = ProjectID,
         BaseBranch = "main",
         StartNow = StartNow,
-        PreferredWorkerId = PreferredWorkerID,
+        PreferredWorkerID = PreferredWorkerID,
     };
 
     private async Task<int> CreateTaskAsync(bool StartNow = false)
@@ -79,7 +79,7 @@ public sealed class WorkflowServiceTests : IDisposable
             Actor: "tester",
             UserID: "user-1",
             CT: CancellationToken.None);
-        return task.Id;
+        return task.ID;
     }
 
     /// <summary>Crea una tarea y la mueve a la columna; si es de agente deja su ejecución «en curso» en la PC 1.</summary>
@@ -98,15 +98,15 @@ public sealed class WorkflowServiceTests : IDisposable
         }
 
         await using var mark = CreateDbContext();
-        var run = await mark.TaskRuns.SingleAsync(r => r.TaskId == taskID && r.Status == RunStatus.Queued);
-        run.Status = RunStatus.Running;
-        run.WorkerId = 1;
+        var run = await mark.TaskRuns.SingleAsync(r => r.TaskID == taskID && r.Status == RunStatus.QUEUED);
+        run.Status = RunStatus.RUNNING;
+        run.WorkerID = 1;
         run.StartedAt = DateTimeOffset.UtcNow;
         run.LastActivityAt = DateTimeOffset.UtcNow;
-        var taskRow = await mark.Tasks.SingleAsync(t => t.Id == taskID);
-        taskRow.Status = WorkStatus.Running;
+        var taskRow = await mark.Tasks.SingleAsync(t => t.ID == taskID);
+        taskRow.Status = WorkStatus.RUNNING;
         await mark.SaveChangesAsync();
-        return (taskID, run.Id);
+        return (taskID, run.ID);
     }
 
     private static RunCompletion Completion(
@@ -137,12 +137,12 @@ public sealed class WorkflowServiceTests : IDisposable
         var taskID = await CreateTaskAsync();
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
         Assert.Equal("Mi tarea", task.Title);
-        Assert.Equal(BACKLOG, task.StageId);
-        Assert.Equal(WorkStatus.Idle, task.Status);
+        Assert.Equal(BACKLOG, task.StageID);
+        Assert.Equal(WorkStatus.IDLE, task.Status);
         Assert.Equal("tester", task.CreatedByName);
-        Assert.Equal("user-1", task.CreatedById);
+        Assert.Equal("user-1", task.CreatedByID);
         Assert.Contains("creó la tarea en «Backlog»", (await check.TaskEvents.SingleAsync()).Message);
     }
 
@@ -154,13 +154,13 @@ public sealed class WorkflowServiceTests : IDisposable
         var taskID = await CreateTaskAsync(StartNow: true);
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(DEVELOPER, task.StageId);
-        Assert.Equal(WorkStatus.Queued, task.Status);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(DEVELOPER, task.StageID);
+        Assert.Equal(WorkStatus.QUEUED, task.Status);
         Assert.Equal($"devarv/{taskID}-mi-tarea", task.WorkBranch);
         var run = await check.TaskRuns.SingleAsync();
-        Assert.Equal(RunStatus.Queued, run.Status);
-        Assert.Equal(StageKind.Agent, run.RunnerKind);
+        Assert.Equal(RunStatus.QUEUED, run.Status);
+        Assert.Equal(StageKind.AGENT, run.RunnerKind);
     }
 
     [Fact]
@@ -183,8 +183,8 @@ public sealed class WorkflowServiceTests : IDisposable
             UserID: null,
             CT: CancellationToken.None);
 
-        Assert.Equal(1, withEnabled.PreferredWorkerId);
-        Assert.Null(withDisabled.PreferredWorkerId);
+        Assert.Equal(1, withEnabled.PreferredWorkerID);
+        Assert.Null(withDisabled.PreferredWorkerID);
     }
 
     [Theory]
@@ -241,7 +241,7 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var attachment = await check.TaskAttachments.SingleAsync();
-        Assert.Equal(task.Id, attachment.TaskId);
+        Assert.Equal(task.ID, attachment.TaskID);
         Assert.Single(Directory.GetFiles(_StorageDirectory));
     }
 
@@ -297,9 +297,9 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        var result = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(DEVELOPER, result.StageId);
-        Assert.Equal(WorkStatus.Queued, result.Status);
+        var result = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(DEVELOPER, result.StageID);
+        Assert.Equal(WorkStatus.QUEUED, result.Status);
         Assert.Contains(await check.TaskEvents.ToListAsync(), e => e.Message.Contains("ana aprobó en «Aprobación»"));
     }
 
@@ -318,7 +318,7 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        Assert.Equal(APPROVAL, (await check.Tasks.SingleAsync()).StageId);
+        Assert.Equal(APPROVAL, (await check.Tasks.SingleAsync()).StageID);
         Assert.Contains(await check.TaskEvents.ToListAsync(), e => e.Message.Contains("ana avanzó en «Backlog»"));
     }
 
@@ -381,9 +381,9 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        Assert.Equal(BACKLOG, (await check.Tasks.SingleAsync()).StageId);
+        Assert.Equal(BACKLOG, (await check.Tasks.SingleAsync()).StageID);
         var comment = await check.TaskComments.SingleAsync();
-        Assert.Equal(CommentKind.Feedback, comment.Kind);
+        Assert.Equal(CommentKind.FEEDBACK, comment.Kind);
         Assert.Equal("Falta el botón", comment.Body);
     }
 
@@ -403,7 +403,7 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        Assert.Equal(DEVELOPER, (await check.Tasks.SingleAsync()).StageId);
+        Assert.Equal(DEVELOPER, (await check.Tasks.SingleAsync()).StageID);
     }
 
     [Theory]
@@ -432,7 +432,7 @@ public sealed class WorkflowServiceTests : IDisposable
         }
         await act();
         await using var check = CreateDbContext();
-        Assert.Equal(CommentKind.Feedback, (await check.TaskComments.SingleAsync()).Kind);
+        Assert.Equal(CommentKind.FEEDBACK, (await check.TaskComments.SingleAsync()).Kind);
     }
 
     [Fact]
@@ -465,8 +465,8 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        var runs = await check.TaskRuns.OrderBy(r => r.Id).ToListAsync();
-        Assert.Equal([RunStatus.Cancelled, RunStatus.Queued], runs.Select(r => r.Status));
+        var runs = await check.TaskRuns.OrderBy(r => r.ID).ToListAsync();
+        Assert.Equal([RunStatus.CANCELLED, RunStatus.QUEUED], runs.Select(r => r.Status));
     }
 
     [Fact]
@@ -500,9 +500,9 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var result = await check.Tasks.SingleAsync();
-        Assert.Equal(WorkStatus.Idle, result.Status);
+        Assert.Equal(WorkStatus.IDLE, result.Status);
         Assert.Equal("Cancelado por ana", result.LastError);
-        Assert.Equal(RunStatus.Cancelled, (await check.TaskRuns.SingleAsync()).Status);
+        Assert.Equal(RunStatus.CANCELLED, (await check.TaskRuns.SingleAsync()).Status);
     }
 
     [Fact]
@@ -522,7 +522,7 @@ public sealed class WorkflowServiceTests : IDisposable
         await using (var archived = CreateDbContext())
         {
             Assert.NotNull((await archived.Tasks.SingleAsync()).ArchivedAt);
-            Assert.Equal(RunStatus.Cancelled, (await archived.TaskRuns.SingleAsync()).Status);
+            Assert.Equal(RunStatus.CANCELLED, (await archived.TaskRuns.SingleAsync()).Status);
         }
 
         await service.SetArchivedAsync(
@@ -566,7 +566,7 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        Assert.Equal(WorkStatus.Done, (await check.Tasks.SingleAsync()).Status);
+        Assert.Equal(WorkStatus.DONE, (await check.Tasks.SingleAsync()).Status);
     }
 
     [Fact]
@@ -606,7 +606,7 @@ public sealed class WorkflowServiceTests : IDisposable
             Actor: "ana",
             CT: CancellationToken.None));
         await using var moved = CreateDbContext();
-        Assert.Equal(APPROVAL, (await moved.Tasks.SingleAsync()).StageId);
+        Assert.Equal(APPROVAL, (await moved.Tasks.SingleAsync()).StageID);
     }
 
     // ------------------------------------------------------------------ resultado de una ejecución
@@ -620,17 +620,17 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(ChangedFiles: _OneFile, ResultText: "Listo"));
 
         await using var check = CreateDbContext();
-        var run = await check.TaskRuns.SingleAsync(r => r.Id == runID);
-        Assert.Equal(RunStatus.Succeeded, run.Status);
+        var run = await check.TaskRuns.SingleAsync(r => r.ID == runID);
+        Assert.Equal(RunStatus.SUCCEEDED, run.Status);
         Assert.Equal("Listo", run.Summary);
         Assert.Equal("abc123", run.HeadCommit);
         Assert.Contains("src/A.cs", run.ChangedFilesJson);
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(REVIEWER, task.StageId);
-        Assert.Equal(WorkStatus.Queued, task.Status);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(REVIEWER, task.StageID);
+        Assert.Equal(WorkStatus.QUEUED, task.Status);
         Assert.Equal(0.5m, task.TotalCostUsd);
         Assert.Equal(100, task.TotalTokens);
-        Assert.Equal(1, await check.TaskRuns.CountAsync(r => r.StageId == REVIEWER && r.Status == RunStatus.Queued));
+        Assert.Equal(1, await check.TaskRuns.CountAsync(r => r.StageID == REVIEWER && r.Status == RunStatus.QUEUED));
     }
 
     [Fact]
@@ -642,11 +642,11 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(ChangedFiles: []));
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(WorkStatus.Failed, task.Status);
-        Assert.Equal(DEVELOPER, task.StageId);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(WorkStatus.FAILED, task.Status);
+        Assert.Equal(DEVELOPER, task.StageID);
         Assert.Contains("sin cambios", task.LastError);
-        Assert.Equal(RunStatus.Failed, (await check.TaskRuns.SingleAsync()).Status);
+        Assert.Equal(RunStatus.FAILED, (await check.TaskRuns.SingleAsync()).Status);
     }
 
     [Fact]
@@ -659,8 +659,8 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, payload);
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(WorkStatus.Failed, task.Status);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(WorkStatus.FAILED, task.Status);
         Assert.Null((await check.TaskRuns.SingleAsync()).ChangedFilesJson);
     }
 
@@ -673,9 +673,9 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(ResultText: "Todo bien.\nVEREDICTO: APROBADO"));
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(PENDING_DEPLOY, task.StageId);
-        Assert.Equal(RunDecision.Approved, (await check.TaskRuns.SingleAsync()).Decision);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(PENDING_DEPLOY, task.StageID);
+        Assert.Equal(RunDecision.APPROVED, (await check.TaskRuns.SingleAsync()).Decision);
     }
 
     [Fact]
@@ -687,11 +687,11 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(ResultText: "Falta una prueba.\nVEREDICTO: RECHAZADO"));
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(DEVELOPER, task.StageId);
-        Assert.Equal(WorkStatus.Queued, task.Status);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(DEVELOPER, task.StageID);
+        Assert.Equal(WorkStatus.QUEUED, task.Status);
         var note = await check.TaskComments.SingleAsync();
-        Assert.Equal(CommentKind.ReviewerNote, note.Kind);
+        Assert.Equal(CommentKind.REVIEWER_NOTE, note.Kind);
         Assert.Contains("Falta una prueba", note.Body);
     }
 
@@ -704,9 +704,9 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(ResultText: "Se ve bien"));
 
         await using var check = CreateDbContext();
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(WorkStatus.Failed, task.Status);
-        Assert.Equal(REVIEWER, task.StageId);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(WorkStatus.FAILED, task.Status);
+        Assert.Equal(REVIEWER, task.StageID);
         Assert.Contains("veredicto", task.LastError);
     }
 
@@ -720,9 +720,9 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var run = await check.TaskRuns.SingleAsync();
-        Assert.Equal(RunStatus.Failed, run.Status);
+        Assert.Equal(RunStatus.FAILED, run.Status);
         Assert.Equal("git falló", run.ErrorMessage);
-        Assert.Equal(WorkStatus.Failed, (await check.Tasks.SingleAsync(t => t.Id == taskID)).Status);
+        Assert.Equal(WorkStatus.FAILED, (await check.Tasks.SingleAsync(t => t.ID == taskID)).Status);
     }
 
     [Fact]
@@ -746,10 +746,10 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(Success: false, Cancelled: true));
 
         await using var check = CreateDbContext();
-        Assert.Equal(RunStatus.Cancelled, (await check.TaskRuns.SingleAsync()).Status);
-        var task = await check.Tasks.SingleAsync(t => t.Id == taskID);
-        Assert.Equal(WorkStatus.Idle, task.Status);
-        Assert.Equal(DEVELOPER, task.StageId);
+        Assert.Equal(RunStatus.CANCELLED, (await check.TaskRuns.SingleAsync()).Status);
+        var task = await check.Tasks.SingleAsync(t => t.ID == taskID);
+        Assert.Equal(WorkStatus.IDLE, task.Status);
+        Assert.Equal(DEVELOPER, task.StageID);
     }
 
     [Fact]
@@ -762,8 +762,8 @@ public sealed class WorkflowServiceTests : IDisposable
         await CompleteAsync(runID, Completion(Success: false, ErrorMessage: "tarde"));
 
         await using var check = CreateDbContext();
-        Assert.Equal(RunStatus.Succeeded, (await check.TaskRuns.SingleAsync(r => r.Id == runID)).Status);
-        Assert.Equal(REVIEWER, (await check.Tasks.SingleAsync(t => t.Id == taskID)).StageId);
+        Assert.Equal(RunStatus.SUCCEEDED, (await check.TaskRuns.SingleAsync(r => r.ID == runID)).Status);
+        Assert.Equal(REVIEWER, (await check.Tasks.SingleAsync(t => t.ID == taskID)).StageID);
     }
 
     [Fact]
@@ -780,10 +780,10 @@ public sealed class WorkflowServiceTests : IDisposable
     {
         var (_, runID) = await TaskRunningInAsync(DEVELOPER);
         await using var db = CreateDbContext();
-        var run = await db.TaskRuns.SingleAsync(r => r.Id == runID);
+        var run = await db.TaskRuns.SingleAsync(r => r.ID == runID);
         run.LastActivityAt = LastActivity;
         run.StartedAt = StartedAt ?? LastActivity;
-        var worker = await db.Workers.SingleAsync(w => w.Id == 1);
+        var worker = await db.Workers.SingleAsync(w => w.ID == 1);
         worker.LastSeenAt = WorkerSeen;
         await db.SaveChangesAsync();
         return runID;
@@ -803,10 +803,10 @@ public sealed class WorkflowServiceTests : IDisposable
 
         Assert.Equal(1, failed);
         await using var check = CreateDbContext();
-        var run = await check.TaskRuns.SingleAsync(r => r.Id == runID);
-        Assert.Equal(RunStatus.Failed, run.Status);
+        var run = await check.TaskRuns.SingleAsync(r => r.ID == runID);
+        Assert.Equal(RunStatus.FAILED, run.Status);
         Assert.Contains("dejó de responder", run.ErrorMessage);
-        Assert.Equal(WorkStatus.Failed, (await check.Tasks.SingleAsync()).Status);
+        Assert.Equal(WorkStatus.FAILED, (await check.Tasks.SingleAsync()).Status);
     }
 
     [Fact]
@@ -840,7 +840,7 @@ public sealed class WorkflowServiceTests : IDisposable
 
         Assert.Equal(1, failed);
         await using var check = CreateDbContext();
-        Assert.Contains("tiempo máximo", (await check.TaskRuns.SingleAsync(r => r.Id == runID)).ErrorMessage);
+        Assert.Contains("tiempo máximo", (await check.TaskRuns.SingleAsync(r => r.ID == runID)).ErrorMessage);
     }
 
     [Fact]
@@ -862,7 +862,7 @@ public sealed class WorkflowServiceTests : IDisposable
     private async Task SetPullRequestAsync(int TaskID, int Number)
     {
         await using var db = CreateDbContext();
-        var task = await db.Tasks.SingleAsync(t => t.Id == TaskID);
+        var task = await db.Tasks.SingleAsync(t => t.ID == TaskID);
         task.PullRequestNumber = Number;
         await db.SaveChangesAsync();
     }
@@ -893,7 +893,7 @@ public sealed class WorkflowServiceTests : IDisposable
         await SetPullRequestAsync(archived, 13);
         await using (var db = CreateDbContext())
         {
-            (await db.Tasks.SingleAsync(t => t.Id == archived)).ArchivedAt = DateTimeOffset.UtcNow;
+            (await db.Tasks.SingleAsync(t => t.ID == archived)).ArchivedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync();
         }
 
@@ -901,10 +901,10 @@ public sealed class WorkflowServiceTests : IDisposable
         var watched = await CreateService(check).GetPullRequestsToWatchAsync(CancellationToken.None);
 
         var item = Assert.Single(watched);
-        Assert.Equal(before, item.TaskId);
+        Assert.Equal(before, item.TaskID);
         Assert.Equal(11, item.Number);
         Assert.Equal("acme", item.RepoOwner);
-        Assert.DoesNotContain(watched, w => w.TaskId == withoutPullRequest);
+        Assert.DoesNotContain(watched, w => w.TaskID == withoutPullRequest);
     }
 
     [Fact]
@@ -915,7 +915,7 @@ public sealed class WorkflowServiceTests : IDisposable
         await SetPullRequestAsync(taskID, 11);
         await using (var db = CreateDbContext())
         {
-            (await db.Stages.SingleAsync(s => s.Id == PENDING_DEPLOY)).IsMergeDestination = false;
+            (await db.Stages.SingleAsync(s => s.ID == PENDING_DEPLOY)).IsMergeDestination = false;
             await db.SaveChangesAsync();
         }
 
@@ -941,7 +941,7 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var task = await check.Tasks.SingleAsync();
-        Assert.Equal(PENDING_DEPLOY, task.StageId);
+        Assert.Equal(PENDING_DEPLOY, task.StageID);
         Assert.NotNull(task.PullRequestMergedAt);
     }
 
@@ -962,7 +962,7 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var task = await check.Tasks.SingleAsync();
-        Assert.Equal(DONE, task.StageId);
+        Assert.Equal(DONE, task.StageID);
         Assert.NotNull(task.PullRequestMergedAt);
     }
 
@@ -982,7 +982,7 @@ public sealed class WorkflowServiceTests : IDisposable
 
         await using var check = CreateDbContext();
         var task = await check.Tasks.SingleAsync();
-        Assert.Equal(BACKLOG, task.StageId);
+        Assert.Equal(BACKLOG, task.StageID);
         Assert.Null(task.PullRequestMergedAt);
     }
 

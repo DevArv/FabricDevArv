@@ -14,8 +14,8 @@ public sealed class ServerClient
     {
         _Http = Http;
         _Http.BaseAddress = EnvironmentData.GetBaseAddress();
-        _Http.DefaultRequestHeaders.Remove(WorkerHeaders.ApiKey);
-        _Http.DefaultRequestHeaders.Add(WorkerHeaders.ApiKey, EnvironmentData.ApiKey);
+        _Http.DefaultRequestHeaders.Remove(WorkerHeaders.API_KEY);
+        _Http.DefaultRequestHeaders.Add(WorkerHeaders.API_KEY, EnvironmentData.ApiKey);
         _Http.Timeout = TimeSpan.FromSeconds(100);
     }
 

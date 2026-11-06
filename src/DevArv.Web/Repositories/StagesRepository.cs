@@ -14,10 +14,10 @@ public class StagesRepository(AppDbContext Db)
 
     /// <summary>Todas las columnas excepto <paramref name="ExcludedID"/> (destinos posibles al editar una columna).</summary>
     public Task<List<Stage>> GetOthersAsync(int? ExcludedID, CancellationToken CT) =>
-        Db.Stages.AsNoTracking().Where(s => s.Id != ExcludedID).OrderBy(s => s.Order).ToListAsync(CT);
+        Db.Stages.AsNoTracking().Where(s => s.ID != ExcludedID).OrderBy(s => s.Order).ToListAsync(CT);
 
     public Task<Dictionary<int, int>> GetTaskCountsAsync(CancellationToken CT) =>
-        Db.Tasks.GroupBy(t => t.StageId)
+        Db.Tasks.GroupBy(t => t.StageID)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.Key, x => x.Count, CT);
 
@@ -29,14 +29,14 @@ public class StagesRepository(AppDbContext Db)
 
     public async Task<StageEditViewModel?> GetEditAsync(int ID, CancellationToken CT)
     {
-        var stage = await Db.Stages.AsNoTracking().FirstOrDefaultAsync(x => x.Id == ID, CT);
+        var stage = await Db.Stages.AsNoTracking().FirstOrDefaultAsync(x => x.ID == ID, CT);
         return stage is null
             ? null
             : new StageEditViewModel
             {
                 Name = stage.Name, Icon = stage.Icon, Kind = stage.Kind, Description = stage.Description, IsInitial = stage.IsInitial,
                 IsMergeDestination = stage.IsMergeDestination,
-                SuccessStageId = stage.SuccessStageId, RejectStageId = stage.RejectStageId, Model = stage.Model,
+                SuccessStageID = stage.SuccessStageID, RejectStageID = stage.RejectStageID, Model = stage.Model,
                 PermissionMode = stage.PermissionMode, AllowedTools = stage.AllowedTools, DisallowedTools = stage.DisallowedTools,
                 MaxTurns = stage.MaxTurns, ExtraArgs = stage.ExtraArgs, PromptTemplate = stage.PromptTemplate,
                 AppendSystemPrompt = stage.AppendSystemPrompt, Skill = stage.Skill, PushChanges = stage.PushChanges,
@@ -55,13 +55,13 @@ public class StagesRepository(AppDbContext Db)
 
         if (!PermissionModes.ALL.Contains(Record.PermissionMode))
             errors.Add(("Input.PermissionMode", "Modo de permisos inválido."));
-        if (Record.SuccessStageId is { } ok && !others.Any(s => s.Id == ok))
+        if (Record.SuccessStageID is { } ok && !others.Any(s => s.ID == ok))
             errors.Add(("Input.SuccessStageId", "Columna destino inválida."));
-        if (Record.RejectStageId is { } ko && !others.Any(s => s.Id == ko))
+        if (Record.RejectStageID is { } ko && !others.Any(s => s.ID == ko))
             errors.Add(("Input.RejectStageId", "Columna de rechazo inválida."));
-        if (Record.Kind == StageKind.System && Record.SystemAction == SystemAction.None)
+        if (Record.Kind == StageKind.SYSTEM && Record.SystemAction == SystemAction.NONE)
             errors.Add(("Input.SystemAction", "Elige la acción de sistema."));
-        if (Record.RequiresDecision && Record.RejectStageId is null)
+        if (Record.RequiresDecision && Record.RejectStageID is null)
             errors.Add(("Input.RejectStageId", "Una etapa con veredicto necesita columna de rechazo."));
 
         var badArg = Lines(Record.ExtraArgs).FirstOrDefault(a => a.Contains(' ') && a.StartsWith("--"));
@@ -100,8 +100,8 @@ public class StagesRepository(AppDbContext Db)
         stage.Icon = string.IsNullOrWhiteSpace(Record.Icon) ? "📋" : Record.Icon.Trim();
         stage.Kind = Record.Kind;
         stage.Description = Record.Description;
-        stage.SuccessStageId = Record.SuccessStageId;
-        stage.RejectStageId = Record.RejectStageId;
+        stage.SuccessStageID = Record.SuccessStageID;
+        stage.RejectStageID = Record.RejectStageID;
         stage.Model = string.IsNullOrWhiteSpace(Record.Model) ? null : Record.Model.Trim();
         stage.PermissionMode = Record.PermissionMode;
         stage.AllowedTools = Record.AllowedTools;
@@ -110,11 +110,11 @@ public class StagesRepository(AppDbContext Db)
         stage.ExtraArgs = Record.ExtraArgs;
         stage.PromptTemplate = Record.PromptTemplate;
         stage.AppendSystemPrompt = Record.AppendSystemPrompt;
-        stage.Skill = Record.Kind == StageKind.Agent ? NormalizeSkill(Record.Skill) : null;
-        stage.PushChanges = Record.Kind == StageKind.Agent && Record.PushChanges;
-        stage.RequiresDecision = Record.Kind == StageKind.Agent && Record.RequiresDecision;
+        stage.Skill = Record.Kind == StageKind.AGENT ? NormalizeSkill(Record.Skill) : null;
+        stage.PushChanges = Record.Kind == StageKind.AGENT && Record.PushChanges;
+        stage.RequiresDecision = Record.Kind == StageKind.AGENT && Record.RequiresDecision;
         stage.TimeoutMinutes = Record.TimeoutMinutes;
-        stage.SystemAction = Record.Kind == StageKind.System ? Record.SystemAction : SystemAction.None;
+        stage.SystemAction = Record.Kind == StageKind.SYSTEM ? Record.SystemAction : SystemAction.NONE;
 
         if (Record.IsInitial)
         {
@@ -139,7 +139,7 @@ public class StagesRepository(AppDbContext Db)
     public async Task MoveAsync(int ID, int Direction, CancellationToken CT)
     {
         var stages = await Db.Stages.OrderBy(s => s.Order).ToListAsync(CT);
-        var index = stages.FindIndex(s => s.Id == ID);
+        var index = stages.FindIndex(s => s.ID == ID);
         var other = index + Math.Sign(Direction);
         if (index < 0 || other < 0 || other >= stages.Count) return;
 
@@ -150,10 +150,10 @@ public class StagesRepository(AppDbContext Db)
 
     public async Task DeleteAsync(int ID, CancellationToken CT)
     {
-        if (await Db.Tasks.AnyAsync(t => t.StageId == ID, CT))
+        if (await Db.Tasks.AnyAsync(t => t.StageID == ID, CT))
             throw new ValidationFailedException(nameof(ID),
                 "No se puede eliminar una columna que tiene tareas (incluidas las archivadas). Muévelas primero.");
-        if (await Db.TaskRuns.AnyAsync(r => r.StageId == ID, CT))
+        if (await Db.TaskRuns.AnyAsync(r => r.StageID == ID, CT))
             throw new ValidationFailedException(nameof(ID),
                 "La columna tiene historial de ejecuciones; en lugar de eliminarla, déjala sin tareas o renómbrala.");
 

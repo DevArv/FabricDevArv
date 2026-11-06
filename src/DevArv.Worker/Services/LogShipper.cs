@@ -68,7 +68,10 @@ public sealed class LogShipper : IAsyncDisposable
         try
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            var response = await _Server.AppendLogAsync(_RunID, chunk, timeout.Token);
+            var response = await _Server.AppendLogAsync(
+                RunID: _RunID,
+                Text: chunk,
+                CT: timeout.Token);
             _LastSent = DateTimeOffset.UtcNow;
             if (response.CancelRequested && !CancelledByServer)
             {

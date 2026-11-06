@@ -36,17 +36,17 @@ public static class FileSignature
     private static DetectedFile? DetectByContent(ReadOnlySpan<byte> Head)
     {
         if (StartsWith(Head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
-            return new(AttachmentKind.Image, "image/png", ".png");
+            return new(AttachmentKind.IMAGE, "image/png", ".png");
         if (StartsWith(Head, [0xFF, 0xD8, 0xFF]))
-            return new(AttachmentKind.Image, "image/jpeg", ".jpg");
+            return new(AttachmentKind.IMAGE, "image/jpeg", ".jpg");
         if (StartsWith(Head, "GIF87a"u8) || StartsWith(Head, "GIF89a"u8))
-            return new(AttachmentKind.Image, "image/gif", ".gif");
+            return new(AttachmentKind.IMAGE, "image/gif", ".gif");
         if (Head.Length >= 12 && StartsWith(Head, "RIFF"u8) && Head.Slice(8, 4).SequenceEqual("WEBP"u8))
-            return new(AttachmentKind.Image, "image/webp", ".webp");
+            return new(AttachmentKind.IMAGE, "image/webp", ".webp");
         if (StartsWith(Head, "%PDF-"u8))
-            return new(AttachmentKind.Pdf, "application/pdf", ".pdf");
+            return new(AttachmentKind.PDF, "application/pdf", ".pdf");
         if (LooksLikeHtml(Head))
-            return new(AttachmentKind.Html, "text/html", ".html");
+            return new(AttachmentKind.HTML, "text/html", ".html");
         return null;
     }
 

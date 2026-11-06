@@ -45,21 +45,21 @@
             <tr class="@(w.IsEnabled ? "" : "inactive")">
                 <td><i class="dot @(online ? "online" : "offline")"></i> <strong>@w.Name</strong></td>
                 <td>@(!w.IsEnabled ? "Deshabilitada" : online ? "En línea" : "Sin conexión")</td>
-                <td>@(Model.CurrentRuns.GetValueOrDefault(w.Id) ?? "—")</td>
+                <td>@(Model.CurrentRuns.GetValueOrDefault(w.ID) ?? "—")</td>
                 <td>@(w.LastSeenAt is null ? "nunca" : Clock.Format(w.LastSeenAt, "dd/MM/yyyy HH:mm:ss"))</td>
                 <td class="muted">@w.MachineName @(w.Version is null ? "" : $"· v{w.Version}") @(w.OsDescription is null ? "" : $"· {w.OsDescription}")</td>
                 <td><code>@w.KeyPrefix…</code></td>
                 <td class="nowrap">
                     <form method="post" asp-page-handler="Toggle" class="inline">
-                        <input type="hidden" name="id" value="@w.Id" />
+                        <input type="hidden" name="id" value="@w.ID" />
                         <button class="btn small">@(w.IsEnabled ? "Deshabilitar" : "Habilitar")</button>
                     </form>
                     <form method="post" asp-page-handler="Regenerate" class="inline" data-confirm="La clave actual dejará de funcionar. ¿Continuar?">
-                        <input type="hidden" name="id" value="@w.Id" />
+                        <input type="hidden" name="id" value="@w.ID" />
                         <button class="btn small">Nueva clave</button>
                     </form>
                     <form method="post" asp-page-handler="Delete" class="inline" data-confirm="¿Eliminar la PC «@w.Name»?">
-                        <input type="hidden" name="id" value="@w.Id" />
+                        <input type="hidden" name="id" value="@w.ID" />
                         <button class="btn btn-ghost small">🗑</button>
                     </form>
                 </td>

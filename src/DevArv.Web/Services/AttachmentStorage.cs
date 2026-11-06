@@ -85,7 +85,7 @@ public sealed class AttachmentStorage
 
                 saved.Add(new TaskAttachment
                 {
-                    TaskId = TaskID,
+                    TaskID = TaskID,
                     FileName = SanitizeFileName(file.FileName),
                     ContentType = type.ContentType,
                     Kind = type.Kind,

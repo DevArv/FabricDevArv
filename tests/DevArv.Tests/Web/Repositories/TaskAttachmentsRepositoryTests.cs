@@ -39,13 +39,13 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     private async Task<int> SeedTaskAsync()
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
-        db.Stages.Add(new Stage { Id = 1, Name = "S" });
+        db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "S" });
         await db.SaveChangesAsync();
-        var task = new TaskItem { Title = "T", ProjectId = 1, StageId = 1 };
+        var task = new TaskItem { Title = "T", ProjectID = 1, StageID = 1 };
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        return task.Id;
+        return task.ID;
     }
 
     private async Task<(int TaskID, TaskAttachment Attachment)> SeedAttachmentAsync()
@@ -56,7 +56,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
         await using var db = CreateDbContext();
         var attachment = new TaskAttachment
         {
-            TaskId = taskID, FileName = "a.png", StoredName = storedName, ContentType = "image/png", Kind = AttachmentKind.Image,
+            TaskID = taskID, FileName = "a.png", StoredName = storedName, ContentType = "image/png", Kind = AttachmentKind.IMAGE,
         };
         db.TaskAttachments.Add(attachment);
         await db.SaveChangesAsync();
@@ -132,7 +132,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
         await using var check = CreateDbContext();
         var attachments = await check.TaskAttachments.OrderBy(a => a.FileName).ToListAsync();
         Assert.Equal(["dos.png", "uno.png"], attachments.Select(a => a.FileName));
-        Assert.All(attachments, a => Assert.Equal(AttachmentKind.Image, a.Kind));
+        Assert.All(attachments, a => Assert.Equal(AttachmentKind.IMAGE, a.Kind));
         Assert.Equal(2, FilesOnDisk().Length);
         Assert.Contains("adjuntó 2 archivo(s)", (await check.TaskEvents.SingleAsync()).Message);
     }
@@ -162,7 +162,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         await CreateRepository(db).DeleteAsync(
             TaskID: taskID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             Actor: "tester",
             CT: CancellationToken.None);
 
@@ -180,7 +180,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         await Assert.ThrowsAsync<ValidationFailedException>(() => CreateRepository(db).DeleteAsync(
             TaskID: taskID + 1,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             Actor: "tester",
             CT: CancellationToken.None));
 
@@ -208,7 +208,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
         await using var db = CreateDbContext();
         await CreateRepository(db).DeleteAsync(
             TaskID: taskID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             Actor: "tester",
             CT: CancellationToken.None);
 
@@ -226,7 +226,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         var file = await CreateRepository(db).GetFileAsync(
             TaskID: taskID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             CT: CancellationToken.None);
 
         Assert.NotNull(file);
@@ -241,7 +241,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         var file = await CreateRepository(db).GetFileAsync(
             TaskID: taskID + 1,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             CT: CancellationToken.None);
 
         Assert.Null(file);
@@ -256,7 +256,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         var file = await CreateRepository(db).GetFileAsync(
             TaskID: taskID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             CT: CancellationToken.None);
 
         Assert.Null(file);
@@ -265,22 +265,25 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     private async Task<long> SeedRunAsync(int TaskID, int WorkerID, RunStatus Status)
     {
         await using var db = CreateDbContext();
-        var run = new TaskRun { TaskId = TaskID, StageId = 1, WorkerId = WorkerID, Status = Status };
+        var run = new TaskRun { TaskID = TaskID, StageID = 1, WorkerID = WorkerID, Status = Status };
         db.TaskRuns.Add(run);
         await db.SaveChangesAsync();
-        return run.Id;
+        return run.ID;
     }
 
     [Fact]
     public async Task GetFileForWorkerRunAsync_RunningRunOfThatWorker_ReturnsTheFile()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
-        var runID = await SeedRunAsync(taskID, WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(
+            TaskID: taskID,
+            WorkerID: 7,
+            Status: RunStatus.RUNNING);
         await using var db = CreateDbContext();
 
         var file = await CreateRepository(db).GetFileForWorkerRunAsync(
             RunID: runID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             WorkerID: 7,
             CT: CancellationToken.None);
 
@@ -291,12 +294,15 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     public async Task GetFileForWorkerRunAsync_RunOfAnotherWorker_ReturnsNull()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
-        var runID = await SeedRunAsync(taskID, WorkerID: 7, RunStatus.Running);
+        var runID = await SeedRunAsync(
+            TaskID: taskID,
+            WorkerID: 7,
+            Status: RunStatus.RUNNING);
         await using var db = CreateDbContext();
 
         var file = await CreateRepository(db).GetFileForWorkerRunAsync(
             RunID: runID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             WorkerID: 8,
             CT: CancellationToken.None);
 
@@ -307,12 +313,15 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     public async Task GetFileForWorkerRunAsync_RunNoLongerRunning_ReturnsNull()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
-        var runID = await SeedRunAsync(taskID, WorkerID: 7, RunStatus.Succeeded);
+        var runID = await SeedRunAsync(
+            TaskID: taskID,
+            WorkerID: 7,
+            Status: RunStatus.SUCCEEDED);
         await using var db = CreateDbContext();
 
         var file = await CreateRepository(db).GetFileForWorkerRunAsync(
             RunID: runID,
-            AttachmentID: attachment.Id,
+            AttachmentID: attachment.ID,
             WorkerID: 7,
             CT: CancellationToken.None);
 

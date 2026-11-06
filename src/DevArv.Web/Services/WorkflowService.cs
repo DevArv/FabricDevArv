@@ -26,14 +26,14 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     private const int DEFAULT_TIMEOUT_MINUTES = 60;
 
     public Task<TaskItem?> LoadTaskAsync(int TaskID, CancellationToken CT) =>
-        Db.Tasks.Include(t => t.Stage).Include(t => t.Project).FirstOrDefaultAsync(t => t.Id == TaskID, CT);
+        Db.Tasks.Include(t => t.Stage).Include(t => t.Project).FirstOrDefaultAsync(t => t.ID == TaskID, CT);
 
     public async Task<Stage> GetInitialStageAsync(CancellationToken CT) =>
         await Db.Stages.OrderByDescending(s => s.IsInitial).ThenBy(s => s.Order).FirstOrDefaultAsync(CT)
         ?? throw new WorkflowException("No hay columnas configuradas en el flujo.");
 
     public Task<Stage?> GetStageAsync(int StageID, CancellationToken CT) =>
-        Db.Stages.AsNoTracking().FirstOrDefaultAsync(s => s.Id == StageID, CT);
+        Db.Stages.AsNoTracking().FirstOrDefaultAsync(s => s.ID == StageID, CT);
 
     /// <summary>
     /// Crea una tarea: valida proyecto y adjuntos, la inserta, guarda los archivos y la hace entrar a su primera columna
@@ -44,7 +44,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         TaskCreateViewModel Record, IReadOnlyCollection<IFormFile> Files, string Actor, string? UserID, CancellationToken CT)
     {
         var errors = new List<(string Field, string Message)>();
-        var project = await Db.Projects.FirstOrDefaultAsync(p => p.Id == Record.ProjectId && p.IsActive, CT);
+        var project = await Db.Projects.FirstOrDefaultAsync(p => p.ID == Record.ProjectID && p.IsActive, CT);
         if (project is null) errors.Add(("Input.ProjectId", "Selecciona un proyecto activo."));
 
         List<ValidatedUpload> uploads = [];
@@ -62,8 +62,8 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         if (errors.Count > 0 || project is null) throw new ValidationFailedException(errors);
 
         var initial = await GetInitialStageAsync(CT);
-        var preferredWorkerID = await Db.Workers.AnyAsync(w => w.Id == Record.PreferredWorkerId && w.IsEnabled, CT)
-            ? Record.PreferredWorkerId
+        var preferredWorkerID = await Db.Workers.AnyAsync(w => w.ID == Record.PreferredWorkerID && w.IsEnabled, CT)
+            ? Record.PreferredWorkerID
             : null;
 
         await using var transaction = await Db.Database.BeginTransactionAsync(CT);
@@ -74,23 +74,23 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             {
                 Title = Record.Title.Trim(),
                 Description = Record.Description?.Trim() ?? "",
-                ProjectId = project.Id,
+                ProjectID = project.ID,
                 Project = project,
-                StageId = initial.Id,
+                StageID = initial.ID,
                 BaseBranch = Record.BaseBranch.Trim(),
                 Priority = Record.Priority,
                 Complexity = Record.Complexity,
                 Labels = TaskLabelsHelper.Normalize(Record.Labels),
                 ModelOverride = string.IsNullOrWhiteSpace(Record.ModelOverride) ? null : Record.ModelOverride.Trim(),
-                PreferredWorkerId = preferredWorkerID,
-                CreatedById = UserID,
+                PreferredWorkerID = preferredWorkerID,
+                CreatedByID = UserID,
                 CreatedByName = Actor,
             };
             Db.Tasks.Add(task);
             await Db.SaveChangesAsync(CT);
 
             stored = await Storage.StoreAsync(
-                TaskID: task.Id,
+                TaskID: task.ID,
                 Validated: uploads,
                 CT: CT);
             Db.TaskAttachments.AddRange(stored);
@@ -98,7 +98,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             var start = initial;
             if (Record.StartNow)
             {
-                start = await Db.Stages.Where(s => s.Kind == StageKind.Agent && s.PushChanges)
+                start = await Db.Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges)
                     .OrderBy(s => s.Order).FirstOrDefaultAsync(CT) ?? initial;
             }
             await EnterStageAsync(
@@ -142,7 +142,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             TaskID: TaskID,
             CT: CT);
         if (task is null) return false;
-        if (task.StageId != StageID)
+        if (task.StageID != StageID)
         {
             await MoveAsync(
                 Item: task,
@@ -155,12 +155,12 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
 
     public async Task ApproveAsync(TaskItem Item, string Actor, CancellationToken CT)
     {
-        if (Item.Stage.Kind is not (StageKind.HumanApproval or StageKind.Manual))
+        if (Item.Stage.Kind is not (StageKind.HUMAN_APPROVAL or StageKind.MANUAL))
             throw new WorkflowException("Esta columna no se aprueba manualmente.");
-        var nextID = Item.Stage.SuccessStageId
+        var nextID = Item.Stage.SuccessStageID
             ?? throw new WorkflowException($"«{Item.Stage.Name}» no tiene columna destino configurada.");
         var next = await Db.Stages.FindAsync([nextID], CT) ?? throw new WorkflowException("La columna destino no existe.");
-        var verb = Item.Stage.Kind == StageKind.HumanApproval ? "aprobó" : "avanzó";
+        var verb = Item.Stage.Kind == StageKind.HUMAN_APPROVAL ? "aprobó" : "avanzó";
         await EnterStageAsync(
             Item: Item,
             Stage: next,
@@ -175,15 +175,15 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         if (string.IsNullOrWhiteSpace(Feedback))
             throw new WorkflowException("Describe los cambios que necesitas.");
 
-        var targetID = Item.Stage.RejectStageId
-            ?? await Db.Stages.Where(s => s.Kind == StageKind.Agent && s.PushChanges)
-                .OrderBy(s => s.Order).Select(s => (int?)s.Id).FirstOrDefaultAsync(CT)
+        var targetID = Item.Stage.RejectStageID
+            ?? await Db.Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges)
+                .OrderBy(s => s.Order).Select(s => (int?)s.ID).FirstOrDefaultAsync(CT)
             ?? throw new WorkflowException("No hay columna destino para pedir cambios.");
         var target = await Db.Stages.FindAsync([targetID], CT) ?? throw new WorkflowException("La columna destino no existe.");
 
         Db.TaskComments.Add(new TaskComment
         {
-            TaskId = Item.Id, Kind = CommentKind.Feedback, Author = Actor, Body = Feedback.Trim(),
+            TaskID = Item.ID, Kind = CommentKind.FEEDBACK, Author = Actor, Body = Feedback.Trim(),
         });
         await EnterStageAsync(
             Item: Item,
@@ -199,8 +199,8 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         if (string.IsNullOrWhiteSpace(Body)) throw new WorkflowException("El comentario está vacío.");
         Db.TaskComments.Add(new TaskComment
         {
-            TaskId = Item.Id,
-            Kind = AsFeedback ? CommentKind.Feedback : CommentKind.Comment,
+            TaskID = Item.ID,
+            Kind = AsFeedback ? CommentKind.FEEDBACK : CommentKind.COMMENT,
             Author = Actor,
             Body = Body.Trim(),
         });
@@ -224,14 +224,14 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     public async Task CancelAsync(TaskItem Item, string Actor, CancellationToken CT)
     {
         var cancelled = await CancelActiveRunsAsync(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             CT: CT);
         if (cancelled == 0) throw new WorkflowException("No hay ejecuciones activas.");
-        Item.Status = WorkStatus.Idle;
+        Item.Status = WorkStatus.IDLE;
         Item.LastError = $"Cancelado por {Actor}";
         Item.UpdatedAt = DateTimeOffset.UtcNow;
         AddEvent(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             Actor: Actor,
             Message: $"{Actor} canceló la ejecución en «{Item.Stage.Name}»");
         await Db.SaveChangesAsync(CT);
@@ -242,12 +242,12 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         if (Archived)
         {
             await CancelActiveRunsAsync(
-                TaskID: Item.Id,
+                TaskID: Item.ID,
                 CT: CT);
         }
         Item.ArchivedAt = Archived ? DateTimeOffset.UtcNow : null;
         AddEvent(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             Actor: Actor,
             Message: Archived ? $"{Actor} archivó la tarea" : $"{Actor} restauró la tarea");
         await Db.SaveChangesAsync(CT);
@@ -272,7 +272,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
 
         return tasks
             .Where(t => MergedPullRequestRule.ShouldMove(t.Stage, destination))
-            .Select(t => new WatchedPullRequest(t.Id, t.Project.RepoOwner, t.Project.RepoName, t.PullRequestNumber!.Value))
+            .Select(t => new WatchedPullRequest(t.ID, t.Project.RepoOwner, t.Project.RepoName, t.PullRequestNumber!.Value))
             .ToList();
     }
 
@@ -302,7 +302,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         {
             task.UpdatedAt = DateTimeOffset.UtcNow;
             AddEvent(
-                TaskID: task.Id,
+                TaskID: task.ID,
                 Actor: Actor,
                 Message: $"Se hizo merge del pull request #{Number} en GitHub");
         }
@@ -318,13 +318,13 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     public async Task EnterStageAsync(TaskItem Item, Stage Stage, string Actor, string Message, CancellationToken CT)
     {
         await CancelActiveRunsAsync(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             CT: CT);
 
         if (Item.Project is null) await Db.Entry(Item).Reference(t => t.Project).LoadAsync(CT);
 
         var now = DateTimeOffset.UtcNow;
-        Item.StageId = Stage.Id;
+        Item.StageID = Stage.ID;
         Item.Stage = Stage;
         Item.StageEnteredAt = now;
         Item.UpdatedAt = now;
@@ -332,36 +332,36 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
 
         switch (Stage.Kind)
         {
-            case StageKind.Agent:
-            case StageKind.System:
+            case StageKind.AGENT:
+            case StageKind.SYSTEM:
                 if (string.IsNullOrEmpty(Item.WorkBranch))
-                    Item.WorkBranch = $"{Item.Project!.BranchPrefix}{Item.Id}-{Slug.Create(Item.Title)}";
+                    Item.WorkBranch = $"{Item.Project!.BranchPrefix}{Item.ID}-{Slug.Create(Item.Title)}";
                 Db.TaskRuns.Add(new TaskRun
                 {
-                    TaskId = Item.Id,
-                    StageId = Stage.Id,
+                    TaskID = Item.ID,
+                    StageID = Stage.ID,
                     StageName = Stage.Name,
                     RunnerKind = Stage.Kind,
-                    Status = RunStatus.Queued,
-                    PinnedWorkerId = Stage.Kind == StageKind.Agent ? Item.PreferredWorkerId : null,
-                    Model = Stage.Kind == StageKind.Agent ? (Item.ModelOverride ?? Stage.Model) : null,
+                    Status = RunStatus.QUEUED,
+                    PinnedWorkerID = Stage.Kind == StageKind.AGENT ? Item.PreferredWorkerID : null,
+                    Model = Stage.Kind == StageKind.AGENT ? (Item.ModelOverride ?? Stage.Model) : null,
                     CreatedAt = now,
                 });
-                Item.Status = WorkStatus.Queued;
+                Item.Status = WorkStatus.QUEUED;
                 break;
-            case StageKind.HumanApproval:
-                Item.Status = WorkStatus.WaitingApproval;
+            case StageKind.HUMAN_APPROVAL:
+                Item.Status = WorkStatus.WAITING_APPROVAL;
                 break;
-            case StageKind.Terminal:
-                Item.Status = WorkStatus.Done;
+            case StageKind.TERMINAL:
+                Item.Status = WorkStatus.DONE;
                 break;
             default:
-                Item.Status = WorkStatus.Idle;
+                Item.Status = WorkStatus.IDLE;
                 break;
         }
 
         AddEvent(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             Actor: Actor,
             Message: Message);
     }
@@ -370,11 +370,11 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     public async Task<TaskRun?> ClaimNextAgentRunAsync(WorkerNode Worker, CancellationToken CT)
     {
         var candidates = await Db.TaskRuns
-            .Where(r => r.Status == RunStatus.Queued && r.RunnerKind == StageKind.Agent
-                        && (r.PinnedWorkerId == null || r.PinnedWorkerId == Worker.Id)
+            .Where(r => r.Status == RunStatus.QUEUED && r.RunnerKind == StageKind.AGENT
+                        && (r.PinnedWorkerID == null || r.PinnedWorkerID == Worker.ID)
                         && r.Task.ArchivedAt == null && r.Task.Project.IsActive)
             .OrderBy(r => r.CreatedAt)
-            .Select(r => r.Id)
+            .Select(r => r.ID)
             .Take(5)
             .ToListAsync(CT);
 
@@ -382,7 +382,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         {
             if (await TryMarkRunningAsync(
                     RunID: runID,
-                    WorkerID: Worker.Id,
+                    WorkerID: Worker.ID,
                     CT: CT))
             {
                 return await OnRunStartedAsync(
@@ -398,9 +398,9 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     public async Task<TaskRun?> ClaimNextSystemRunAsync(CancellationToken CT)
     {
         var candidates = await Db.TaskRuns
-            .Where(r => r.Status == RunStatus.Queued && r.RunnerKind == StageKind.System && r.Task.ArchivedAt == null)
+            .Where(r => r.Status == RunStatus.QUEUED && r.RunnerKind == StageKind.SYSTEM && r.Task.ArchivedAt == null)
             .OrderBy(r => r.CreatedAt)
-            .Select(r => r.Id)
+            .Select(r => r.ID)
             .Take(5)
             .ToListAsync(CT);
 
@@ -431,10 +431,10 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     {
         DateTimeOffset? now = DateTimeOffset.UtcNow;
         var updated = await Db.TaskRuns
-            .Where(r => r.Id == RunID && r.Status == RunStatus.Queued)
+            .Where(r => r.ID == RunID && r.Status == RunStatus.QUEUED)
             .ExecuteUpdateAsync(s => s
-                .SetProperty(r => r.Status, RunStatus.Running)
-                .SetProperty(r => r.WorkerId, WorkerID)
+                .SetProperty(r => r.Status, RunStatus.RUNNING)
+                .SetProperty(r => r.WorkerID, WorkerID)
                 .SetProperty(r => r.StartedAt, now)
                 .SetProperty(r => r.LastActivityAt, now), CT);
         return updated == 1;
@@ -448,13 +448,13 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             .Include(r => r.Task).ThenInclude(t => t.Attachments)
             .Include(r => r.Task).ThenInclude(t => t.Comments)
             .AsSplitQuery()
-            .FirstAsync(r => r.Id == RunID, CT);
+            .FirstAsync(r => r.ID == RunID, CT);
 
-        run.Task.Status = WorkStatus.Running;
+        run.Task.Status = WorkStatus.RUNNING;
         run.Task.UpdatedAt = DateTimeOffset.UtcNow;
-        if (run.RunnerKind == StageKind.Agent) run.Task.LastWorkerName = Actor;
+        if (run.RunnerKind == StageKind.AGENT) run.Task.LastWorkerName = Actor;
         AddEvent(
-            TaskID: run.TaskId,
+            TaskID: run.TaskID,
             Actor: Actor,
             Message: $"{Actor} tomó el pedido «{run.StageName}»");
         await Db.SaveChangesAsync(CT);
@@ -467,8 +467,8 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         var run = await Db.TaskRuns
             .Include(r => r.Task).ThenInclude(t => t.Stage)
             .Include(r => r.Task).ThenInclude(t => t.Project)
-            .FirstOrDefaultAsync(r => r.Id == RunID, CT);
-        if (run is null || run.Status != RunStatus.Running)
+            .FirstOrDefaultAsync(r => r.ID == RunID, CT);
+        if (run is null || run.Status != RunStatus.RUNNING)
         {
             Logger.LogWarning("Resultado ignorado para la ejecución {RunId}: no está en curso.", RunID);
             return;
@@ -485,7 +485,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         run.CacheReadTokens = Completion.CacheReadTokens;
         run.CacheWriteTokens = Completion.CacheWriteTokens;
         run.NumTurns = Completion.NumTurns;
-        run.SessionId = Completion.SessionId;
+        run.SessionID = Completion.SessionID;
         run.Model = Completion.Model ?? run.Model;
         run.HeadCommit = Completion.HeadCommit;
         run.Summary = Clean(Completion.ResultText);
@@ -496,20 +496,20 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         task.UpdatedAt = now;
 
         // Sólo la ejecución más reciente de la columna actual puede mover la tarea.
-        var isCurrent = task.StageId == run.StageId
-                        && !await Db.TaskRuns.AnyAsync(r => r.TaskId == task.Id && r.Id > run.Id, CT);
+        var isCurrent = task.StageID == run.StageID
+                        && !await Db.TaskRuns.AnyAsync(r => r.TaskID == task.ID && r.ID > run.ID, CT);
 
         if (Completion.Cancelled || run.CancelRequested)
         {
-            run.Status = RunStatus.Cancelled;
+            run.Status = RunStatus.CANCELLED;
             run.ErrorMessage = Clean(Completion.ErrorMessage) ?? "Ejecución cancelada";
-            if (isCurrent && task.Status is WorkStatus.Running or WorkStatus.Queued)
+            if (isCurrent && task.Status is WorkStatus.RUNNING or WorkStatus.QUEUED)
             {
-                task.Status = WorkStatus.Idle;
+                task.Status = WorkStatus.IDLE;
                 task.LastError = "Ejecución cancelada";
             }
             AddEvent(
-                TaskID: task.Id,
+                TaskID: task.ID,
                 Actor: Actor,
                 Message: $"Se canceló «{run.StageName}»");
             await Db.SaveChangesAsync(CT);
@@ -541,7 +541,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             return;
         }
 
-        run.Status = RunStatus.Succeeded;
+        run.Status = RunStatus.SUCCEEDED;
         if (!isCurrent)
         {
             await Db.SaveChangesAsync(CT);
@@ -553,25 +553,25 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             run.Decision = DecisionParser.Parse(Completion.ResultText);
             switch (run.Decision)
             {
-                case RunDecision.None:
-                    task.Status = WorkStatus.Failed;
+                case RunDecision.NONE:
+                    task.Status = WorkStatus.FAILED;
                     task.LastError = "El agente no emitió veredicto («VEREDICTO: APROBADO» o «VEREDICTO: RECHAZADO»).";
                     AddEvent(
-                        TaskID: task.Id,
+                        TaskID: task.ID,
                         Actor: Actor,
                         Message: $"«{stage.Name}» terminó sin veredicto");
                     await Db.SaveChangesAsync(CT);
                     return;
 
-                case RunDecision.Rejected:
+                case RunDecision.REJECTED:
                     Db.TaskComments.Add(new TaskComment
                     {
-                        TaskId = task.Id, Kind = CommentKind.ReviewerNote, Author = stage.Name,
-                        Body = run.Summary ?? "", RunId = run.Id,
+                        TaskID = task.ID, Kind = CommentKind.REVIEWER_NOTE, Author = stage.Name,
+                        Body = run.Summary ?? "", RunID = run.ID,
                     });
                     await GoToAsync(
                         Item: task,
-                        StageID: stage.RejectStageId,
+                        StageID: stage.RejectStageID,
                         Actor: Actor,
                         Reason: $"«{stage.Name}» rechazó",
                         CT: CT);
@@ -580,10 +580,10 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             }
         }
 
-        var verb = run.Decision == RunDecision.Approved ? "aprobó" : "completó";
+        var verb = run.Decision == RunDecision.APPROVED ? "aprobó" : "completó";
         await GoToAsync(
             Item: task,
-            StageID: stage.SuccessStageId,
+            StageID: stage.SuccessStageID,
             Actor: Actor,
             Reason: $"«{stage.Name}» {verb}",
             CT: CT);
@@ -599,14 +599,14 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         var now = DateTimeOffset.UtcNow;
 
         var running = await Db.TaskRuns.AsNoTracking()
-            .Where(r => r.Status == RunStatus.Running && r.RunnerKind == StageKind.Agent)
+            .Where(r => r.Status == RunStatus.RUNNING && r.RunnerKind == StageKind.AGENT)
             .Select(r => new
             {
-                r.Id,
+                r.ID,
                 r.StartedAt,
                 r.LastActivityAt,
                 WorkerSeen = r.Worker != null ? r.Worker.LastSeenAt : null,
-                Timeout = Db.Stages.Where(s => s.Id == r.StageId).Select(s => (int?)s.TimeoutMinutes).FirstOrDefault(),
+                Timeout = Db.Stages.Where(s => s.ID == r.StageID).Select(s => (int?)s.TimeoutMinutes).FirstOrDefault(),
             })
             .ToListAsync(CT);
 
@@ -622,9 +622,9 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
                 reason = "La ejecución excedió el tiempo máximo de la columna.";
 
             if (reason is null) continue;
-            Logger.LogWarning("Ejecución {RunId}: {Reason}", run.Id, reason);
+            Logger.LogWarning("Ejecución {RunId}: {Reason}", run.ID, reason);
             await CompleteRunAsync(
-                RunID: run.Id,
+                RunID: run.ID,
                 Completion: SystemActionExecutor.Failure(reason),
                 Actor: "Vigilante",
                 CT: CT);
@@ -638,9 +638,9 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
         var next = StageID is null ? null : await Db.Stages.FindAsync([StageID.Value], CT);
         if (next is null)
         {
-            Item.Status = WorkStatus.Done;
+            Item.Status = WorkStatus.DONE;
             AddEvent(
-                TaskID: Item.Id,
+                TaskID: Item.ID,
                 Actor: Actor,
                 Message: $"{Reason}; la columna no tiene destino configurado");
             return;
@@ -655,15 +655,15 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
 
     private async Task FailAsync(TaskRun Run, TaskItem Item, bool IsCurrent, string Error, string Actor, CancellationToken CT)
     {
-        Run.Status = RunStatus.Failed;
+        Run.Status = RunStatus.FAILED;
         Run.ErrorMessage = Error;
         if (IsCurrent)
         {
-            Item.Status = WorkStatus.Failed;
+            Item.Status = WorkStatus.FAILED;
             Item.LastError = Error;
         }
         AddEvent(
-            TaskID: Item.Id,
+            TaskID: Item.ID,
             Actor: Actor,
             Message: $"«{Run.StageName}» falló: {Truncate(Error, 300)}");
         await Db.SaveChangesAsync(CT);
@@ -673,28 +673,28 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     {
         // Incluye las ejecuciones ya agregadas al contexto y aún no guardadas.
         var active = await Db.TaskRuns
-            .Where(r => r.TaskId == TaskID && (r.Status == RunStatus.Queued || r.Status == RunStatus.Running))
+            .Where(r => r.TaskID == TaskID && (r.Status == RunStatus.QUEUED || r.Status == RunStatus.RUNNING))
             .ToListAsync(CT);
         active.AddRange(Db.ChangeTracker.Entries<TaskRun>()
-            .Where(e => e.State == EntityState.Added && e.Entity.TaskId == TaskID)
+            .Where(e => e.State == EntityState.Added && e.Entity.TaskID == TaskID)
             .Select(e => e.Entity));
 
         var now = DateTimeOffset.UtcNow;
         foreach (var run in active.Distinct())
         {
-            if (run.Status == RunStatus.Queued)
+            if (run.Status == RunStatus.QUEUED)
             {
-                run.Status = RunStatus.Cancelled;
+                run.Status = RunStatus.CANCELLED;
                 run.FinishedAt = now;
                 run.ErrorMessage = "Cancelada antes de iniciar";
             }
-            else if (run.Status == RunStatus.Running)
+            else if (run.Status == RunStatus.RUNNING)
             {
                 // El worker se entera en su próximo envío de log y detiene el proceso.
                 run.CancelRequested = true;
-                if (run.RunnerKind == StageKind.System || run.LastActivityAt < now - _RunMaxLogAge)
+                if (run.RunnerKind == StageKind.SYSTEM || run.LastActivityAt < now - _RunMaxLogAge)
                 {
-                    run.Status = RunStatus.Cancelled;
+                    run.Status = RunStatus.CANCELLED;
                     run.FinishedAt = now;
                     run.ErrorMessage = "Cancelada";
                 }
@@ -704,7 +704,7 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
     }
 
     public void AddEvent(int TaskID, string Actor, string Message) =>
-        Db.TaskEvents.Add(new TaskEvent { TaskId = TaskID, Actor = Actor, Message = Truncate(Message, 1000) });
+        Db.TaskEvents.Add(new TaskEvent { TaskID = TaskID, Actor = Actor, Message = Truncate(Message, 1000) });
 
     /// <summary>PostgreSQL no admite el carácter NUL en columnas de texto.</summary>
     public static string? Clean(string? Text) => Text?.Replace("\0", "");

@@ -17,7 +17,7 @@ public sealed class IndexModel(StagesRepository StagesRepository) : PageModel
         TaskCounts = await StagesRepository.GetTaskCountsAsync(CT);
     }
 
-    public string NameOf(int? ID) => Stages.FirstOrDefault(s => s.Id == ID)?.Name ?? "—";
+    public string NameOf(int? ID) => Stages.FirstOrDefault(s => s.ID == ID)?.Name ?? "—";
 
     public async Task<IActionResult> OnPostMoveAsync(int ID, int Direction, CancellationToken CT)
     {

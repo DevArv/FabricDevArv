@@ -71,9 +71,19 @@ Reglas:
 - **Un tipo público por archivo**, con el nombre del archivo igual al del tipo. Las excepciones propias van junto al servicio o repository que las lanza.
 - Los namespaces siguen la estructura de carpetas (`DevArv.Web.Repositories`, `DevArv.Web.Enums.Tasks`…).
 - Cada Repository nuevo se registra en `Program.cs` como `AddScoped`.
-- `DevArv.Contracts` es el contrato HTTP entre servidor y worker: solo DTOs (`Models/`), sin dependencias. Cambiarlo exige actualizar Web y Worker a la vez.
+- `DevArv.Contracts` es el contrato HTTP entre servidor y worker: solo DTOs (`Models/`), sin dependencias. Cambiarlo exige actualizar Web y Worker a la vez. Los miembros siguen el nombrado del código (`RunID`), pero el nombre del JSON se fija con `[JsonPropertyName("runId")]`: los workers instalados en otras PCs pueden estar en otra versión. `WireFormatTests` congela esos nombres.
 - `DevArv.Worker` se organiza igual: `EnvironmentConfig/`, `Helpers/` (sin estado), `Models/` (opciones y resultados), `Services/` (clases con dependencias).
+
+## Base de datos y nombrado
+
+El nombrado del código sigue el skill `code-naming` (parámetros y `ID` en PascalCase/mayúsculas, constantes y miembros de enum en `UPPER_SNAKE_CASE`, campos privados `_Pascal`, llamadas con parámetros nombrados). Para no romper las bases ya creadas:
+
+- **Tablas**: `Modulo_Tabla` (`Tasks_Tasks`, `Workflow_Stages`, `Identity_Users`…). Los nombres viven en `DatabaseConnection/TableNames.cs`; el modelo, `DbInitializer` y el SQL escrito a mano usan esas constantes. Las bases creadas con los nombres antiguos se renombran solas al arrancar (`DbInitializer.TABLE_RENAMES`, un bloque atómico e idempotente).
+- **Columnas**: en el código la palabra es `ID` (`TaskID`), pero la columna conserva su nombre histórico (`TaskId`); `AppDbContext` hace ese mapeo en un solo lugar. No hace falta renombrar columnas.
+- **Enums**: el código usa `WAITING_APPROVAL`; la base guarda el texto `WaitingApproval` (`EnumNameStringConverter`). No cambies los miembros de un enum sin revisar ese texto: está guardado en las filas existentes. Una prioridad no se ordena por su columna (es texto): usa el rango explícito de `TasksRepository.GetBoardAsync`.
+- **SQL escrito a mano**: solo `DbInitializer` y el bloqueo `FOR UPDATE` de `TasksRepository`. El proveedor en memoria de las pruebas no ejecuta SQL, así que cualquier cambio ahí hay que probarlo contra PostgreSQL.
+- **PageModels**: no se usa `[BindProperty]`. Los handlers reciben sus datos como parámetros (`OnPostAsync(int? ID, XxxViewModel Input, …)`) y asignan las propiedades de solo lectura que consume la vista.
 
 ## Pruebas
 
-`tests/DevArv.Tests` replica la estructura de `src`: `Web/Helpers`, `Web/Services`, `Web/Repositories`, `Worker/Helpers`, `Worker/Services`. Un archivo de pruebas por clase, con el sufijo `Tests` (`SlugTests`, `PromptBuilderTests`).
+`tests/DevArv.Tests` replica la estructura de `src`: `Web/DatabaseConnection`, `Web/Helpers`, `Web/Services`, `Web/Repositories`, `Worker/Helpers`, `Worker/Services`. Un archivo de pruebas por clase, con el sufijo `Tests` (`SlugTests`, `PromptBuilderTests`).

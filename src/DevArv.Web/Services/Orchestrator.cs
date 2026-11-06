@@ -78,11 +78,11 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                Logger.LogWarning(ex, "Falló la acción de sistema de la ejecución {RunId}", run.Id);
+                Logger.LogWarning(ex, "Falló la acción de sistema de la ejecución {RunId}", run.ID);
                 completion = SystemActionExecutor.Failure(ex.Message);
             }
             await workflow.CompleteRunAsync(
-                RunID: run.Id,
+                RunID: run.ID,
                 Completion: completion,
                 Actor: "Sistema",
                 CT: CT);
@@ -111,9 +111,9 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
                     CT: CT);
                 if (!pr.Merged) continue;
                 Logger.LogInformation("Pull request #{Number} de la tarea {TaskId} integrado; se mueve la tarea.",
-                    watched.Number, watched.TaskId);
+                    watched.Number, watched.TaskID);
                 await workflow.OnPullRequestMergedAsync(
-                    TaskID: watched.TaskId,
+                    TaskID: watched.TaskID,
                     Number: watched.Number,
                     Actor: "Sistema",
                     CT: CT);
@@ -121,7 +121,7 @@ public sealed class Orchestrator(IServiceScopeFactory Scopes, ILogger<Orchestrat
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 Logger.LogWarning(ex, "No se pudo revisar el pull request #{Number} de la tarea {TaskId}",
-                    watched.Number, watched.TaskId);
+                    watched.Number, watched.TaskID);
             }
         }
     }

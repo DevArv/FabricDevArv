@@ -23,7 +23,7 @@ public sealed partial class PromptBuilder(Clock Clock)
 
         var values = new Dictionary<string, string>
         {
-            ["task.id"] = Item.Id.ToString(),
+            ["task.id"] = Item.ID.ToString(),
             ["task.title"] = Item.Title,
             ["task.description"] = string.IsNullOrWhiteSpace(Item.Description) ? "_(sin descripción)_" : Item.Description,
             ["task.priority"] = Labels.Of(Item.Priority),
@@ -92,10 +92,10 @@ public sealed partial class PromptBuilder(Clock Clock)
         if (Item.Attachments.Count == 0) return "";
         var builder = new StringBuilder();
         builder.AppendLine("## Archivos adjuntos");
-        builder.AppendLine($"Están en `{PromptTokens.AttachmentsDir}`. Ábrelos con la herramienta Read (soporta imágenes y PDF) antes de empezar:");
-        foreach (var attachment in Item.Attachments.OrderBy(a => a.Id))
+        builder.AppendLine($"Están en `{PromptTokens.ATTACHMENTS_DIR}`. Ábrelos con la herramienta Read (soporta imágenes y PDF) antes de empezar:");
+        foreach (var attachment in Item.Attachments.OrderBy(a => a.ID))
         {
-            var info = new AttachmentInfo(attachment.Id, attachment.FileName, attachment.ContentType, attachment.Size);
+            var info = new AttachmentInfo(attachment.ID, attachment.FileName, attachment.ContentType, attachment.Size);
             builder.AppendLine($"- `{info.LocalFileName}` ({KindLabel(attachment)})");
         }
         return builder.ToString();
@@ -103,16 +103,16 @@ public sealed partial class PromptBuilder(Clock Clock)
 
     private static string KindLabel(TaskAttachment Attachment) => Attachment.Kind switch
     {
-        AttachmentKind.Image => "imagen",
-        AttachmentKind.Pdf => "PDF",
-        AttachmentKind.Html => "HTML de referencia",
+        AttachmentKind.IMAGE => "imagen",
+        AttachmentKind.PDF => "PDF",
+        AttachmentKind.HTML => "HTML de referencia",
         _ => Attachment.ContentType,
     };
 
     private string BuildFeedback(TaskItem Item)
     {
         var items = Item.Comments
-            .Where(c => c.Kind is CommentKind.Feedback or CommentKind.ReviewerNote)
+            .Where(c => c.Kind is CommentKind.FEEDBACK or CommentKind.REVIEWER_NOTE)
             .OrderByDescending(c => c.CreatedAt)
             .Take(MAX_FEEDBACK_ITEMS)
             .Reverse()
@@ -124,7 +124,7 @@ public sealed partial class PromptBuilder(Clock Clock)
         for (var i = 0; i < items.Count; i++)
         {
             var comment = items[i];
-            var who = comment.Kind == CommentKind.ReviewerNote ? "Revisor automático" : comment.Author;
+            var who = comment.Kind == CommentKind.REVIEWER_NOTE ? "Revisor automático" : comment.Author;
             var latest = i == items.Count - 1 ? " — **el más reciente, prioritario**" : "";
             builder.AppendLine($"### {Labels.Of(comment.Kind)} · {who} · {Clock.Format(comment.CreatedAt)}{latest}");
             builder.AppendLine(comment.Body.Trim());

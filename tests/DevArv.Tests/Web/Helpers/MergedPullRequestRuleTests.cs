@@ -7,15 +7,15 @@ namespace DevArv.Tests.Web.Helpers;
 public class MergedPullRequestRuleTests
 {
     private static readonly Stage _PendingDeploy =
-        new() { Id = 9, Name = "Pendiente Deploy", Order = 90, Kind = StageKind.Manual, IsMergeDestination = true };
+        new() { ID = 9, Name = "Pendiente Deploy", Order = 90, Kind = StageKind.MANUAL, IsMergeDestination = true };
 
     [Theory]
-    [InlineData(StageKind.HumanApproval, 70)] // Aprobación Producto
-    [InlineData(StageKind.HumanApproval, 80)] // Revisión Código Manual
-    [InlineData(StageKind.Agent, 40)]         // Desarrollador (se pidieron cambios y luego se hizo merge)
-    [InlineData(StageKind.System, 60)]        // Creador de PR
+    [InlineData(StageKind.HUMAN_APPROVAL, 70)] // Aprobación Producto
+    [InlineData(StageKind.HUMAN_APPROVAL, 80)] // Revisión Código Manual
+    [InlineData(StageKind.AGENT, 40)]         // Desarrollador (se pidieron cambios y luego se hizo merge)
+    [InlineData(StageKind.SYSTEM, 60)]        // Creador de PR
     public void ShouldMove_StageBeforeDestination_ReturnsTrue(StageKind Kind, int Order) =>
-        Assert.True(MergedPullRequestRule.ShouldMove(new Stage { Id = 1, Kind = Kind, Order = Order }, _PendingDeploy));
+        Assert.True(MergedPullRequestRule.ShouldMove(new Stage { ID = 1, Kind = Kind, Order = Order }, _PendingDeploy));
 
     [Fact]
     public void ShouldMove_AlreadyInDestination_ReturnsFalse() =>
@@ -24,10 +24,10 @@ public class MergedPullRequestRuleTests
     [Fact]
     public void ShouldMove_StageAfterDestination_ReturnsFalse() =>
         Assert.False(MergedPullRequestRule.ShouldMove(
-            new Stage { Id = 10, Name = "Pendiente Prueba", Kind = StageKind.Manual, Order = 100 }, _PendingDeploy));
+            new Stage { ID = 10, Name = "Pendiente Prueba", Kind = StageKind.MANUAL, Order = 100 }, _PendingDeploy));
 
     [Fact]
     public void ShouldMove_TerminalStageBeforeDestination_ReturnsFalse() =>
         Assert.False(MergedPullRequestRule.ShouldMove(
-            new Stage { Id = 2, Name = "Descartado", Kind = StageKind.Terminal, Order = 5 }, _PendingDeploy));
+            new Stage { ID = 2, Name = "Descartado", Kind = StageKind.TERMINAL, Order = 5 }, _PendingDeploy));
 }

@@ -12,14 +12,8 @@ public sealed class IndexModel(
     ProjectsRepository ProjectsRepository, WorkersRepository WorkersRepository, TasksRepository TasksRepository,
     WorkflowService WorkflowService, Clock ClockService) : PageModel
 {
-    [BindProperty(SupportsGet = true, Name = "project")] public int? ProjectFilter { get; set; }
-    [BindProperty(SupportsGet = true)] public string? Q { get; set; }
-    [BindProperty(SupportsGet = true, Name = "worker")] public string? WorkerFilter { get; set; }
-    [BindProperty(SupportsGet = true)] public bool Compact { get; set; }
-    [BindProperty(SupportsGet = true)] public bool HideEmpty { get; set; }
-    [BindProperty(SupportsGet = true)] public bool Archived { get; set; }
-    [BindProperty(SupportsGet = true)] public bool Waiting { get; set; }
-    [BindProperty(SupportsGet = true, Name = "task")] public int? OpenTask { get; set; }
+    /// <summary>Filtros de la URL; la vista los usa para marcar los chips activos y armar los enlaces.</summary>
+    public BoardFilterViewModel Filter { get; private set; } = new();
 
     public List<Project> Projects { get; private set; } = [];
     public List<WorkerNode> Workers { get; private set; } = [];
@@ -27,18 +21,24 @@ public sealed class IndexModel(
     public BoardViewModel Board { get; private set; } = new();
     public Clock Clock => ClockService;
 
-    public async Task OnGetAsync(CancellationToken CT)
+    public async Task OnGetAsync(BoardFilterViewModel Filter, CancellationToken CT)
     {
+        this.Filter = Filter;
         Projects = await ProjectsRepository.GetActiveAsync(CT);
         Workers = await WorkersRepository.GetEnabledAsync(CT);
         WaitingCount = await TasksRepository.CountWaitingAsync(CT);
-        Board = await LoadBoardAsync(CT);
+        Board = await TasksRepository.GetBoardAsync(
+            Filter: Filter,
+            CT: CT);
     }
 
     /// <summary>Fragmento HTML del tablero; el navegador lo pide cada pocos segundos.</summary>
-    public async Task<IActionResult> OnGetBoardAsync(CancellationToken CT)
+    public async Task<IActionResult> OnGetBoardAsync(BoardFilterViewModel Filter, CancellationToken CT)
     {
-        Board = await LoadBoardAsync(CT);
+        this.Filter = Filter;
+        Board = await TasksRepository.GetBoardAsync(
+            Filter: Filter,
+            CT: CT);
         return Partial("_Board", Board);
     }
 
@@ -61,32 +61,18 @@ public sealed class IndexModel(
         }
     }
 
-    private Task<BoardViewModel> LoadBoardAsync(CancellationToken CT) =>
-        TasksRepository.GetBoardAsync(
-            Filter: new BoardFilterViewModel
-            {
-                ProjectID = ProjectFilter,
-                WorkerName = WorkerFilter,
-                Query = Q,
-                Archived = Archived,
-                Waiting = Waiting,
-                Compact = Compact,
-                HideEmpty = HideEmpty,
-            },
-            CT: CT);
-
     public string FilterUrl(int? Project = null, string? Worker = null, bool? Waiting = null, bool? Compact = null,
         bool? HideEmpty = null, bool? Archived = null, bool ClearProject = false, bool ClearWorker = false)
     {
         var query = new Dictionary<string, string?>
         {
-            ["project"] = ClearProject ? null : (Project ?? ProjectFilter)?.ToString(),
-            ["worker"] = ClearWorker ? null : Worker ?? WorkerFilter,
-            ["waiting"] = (Waiting ?? this.Waiting) ? "true" : null,
-            ["compact"] = (Compact ?? this.Compact) ? "true" : null,
-            ["hideEmpty"] = (HideEmpty ?? this.HideEmpty) ? "true" : null,
-            ["archived"] = (Archived ?? this.Archived) ? "true" : null,
-            ["q"] = string.IsNullOrWhiteSpace(Q) ? null : Q,
+            ["project"] = ClearProject ? null : (Project ?? Filter.ProjectID)?.ToString(),
+            ["worker"] = ClearWorker ? null : Worker ?? Filter.WorkerName,
+            ["waiting"] = (Waiting ?? this.Filter.Waiting) ? "true" : null,
+            ["compact"] = (Compact ?? this.Filter.Compact) ? "true" : null,
+            ["hideEmpty"] = (HideEmpty ?? this.Filter.HideEmpty) ? "true" : null,
+            ["archived"] = (Archived ?? this.Filter.Archived) ? "true" : null,
+            ["q"] = string.IsNullOrWhiteSpace(Filter.Query) ? null : Filter.Query,
         };
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("/",
             query.Where(kv => kv.Value is not null).Select(kv => new KeyValuePair<string, string?>(kv.Key, kv.Value)));

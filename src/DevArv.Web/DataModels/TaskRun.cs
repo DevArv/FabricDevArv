@@ -6,19 +6,19 @@ namespace DevArv.Web.DataModels;
 /// <summary>Una ejecución de una etapa automática (agente o sistema) sobre una tarea.</summary>
 public class TaskRun
 {
-    public long Id { get; set; }
-    public int TaskId { get; set; }
+    public long ID { get; set; }
+    public int TaskID { get; set; }
     public TaskItem Task { get; set; } = null!;
-    public int StageId { get; set; }
+    public int StageID { get; set; }
     public string StageName { get; set; } = "";
     public StageKind RunnerKind { get; set; }
     public RunStatus Status { get; set; }
     public RunDecision Decision { get; set; }
 
-    public int? WorkerId { get; set; }
+    public int? WorkerID { get; set; }
     public WorkerNode? Worker { get; set; }
     /// <summary>Copia de TaskItem.PreferredWorkerId al encolar.</summary>
-    public int? PinnedWorkerId { get; set; }
+    public int? PinnedWorkerID { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? StartedAt { get; set; }
@@ -32,7 +32,7 @@ public class TaskRun
     public long CacheReadTokens { get; set; }
     public long CacheWriteTokens { get; set; }
     public int? NumTurns { get; set; }
-    public string? SessionId { get; set; }
+    public string? SessionID { get; set; }
 
     public string? PromptSnapshot { get; set; }
     public string? Summary { get; set; }

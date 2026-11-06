@@ -13,7 +13,7 @@ public sealed class ClaudeStreamParser
 
     public ClaudeResult? Result { get; private set; }
     public string? Model { get; private set; }
-    public string? SessionId { get; private set; }
+    public string? SessionID { get; private set; }
     public string? LastAssistantText { get; private set; }
 
     public IEnumerable<string> Parse(string Line)
@@ -44,7 +44,7 @@ public sealed class ClaudeStreamParser
     {
         if (Str(Root, "subtype") != "init") return [];
         Model = Str(Root, "model") ?? Model;
-        SessionId = Str(Root, "session_id") ?? SessionId;
+        SessionID = Str(Root, "session_id") ?? SessionID;
         return [$"⚙ Sesión de Claude iniciada · modelo {Model ?? "?"} · permisos {Str(Root, "permissionMode") ?? "?"}"];
     }
 
@@ -110,7 +110,7 @@ public sealed class ClaudeStreamParser
         var isError = Root.TryGetProperty("is_error", out var ie) && ie.ValueKind == JsonValueKind.True;
         var subtype = Str(Root, "subtype");
         int? turns = Root.TryGetProperty("num_turns", out var nt) && nt.TryGetInt32(out var n) ? n : null;
-        SessionId = Str(Root, "session_id") ?? SessionId;
+        SessionID = Str(Root, "session_id") ?? SessionID;
 
         Result = new ClaudeResult(
             IsError: isError || (subtype is not null && subtype != "success"),
@@ -122,7 +122,7 @@ public sealed class ClaudeStreamParser
             CacheReadTokens: cacheRead,
             CacheWriteTokens: cacheWrite,
             NumTurns: turns,
-            SessionId: SessionId);
+            SessionID: SessionID);
 
         return [$"🏁 Fin ({subtype ?? "?"}) · {turns?.ToString() ?? "?"} turnos · US$ {cost:0.0000} · " +
                 $"tokens in {input:N0} / out {output:N0} / caché {cacheRead + cacheWrite:N0}"];

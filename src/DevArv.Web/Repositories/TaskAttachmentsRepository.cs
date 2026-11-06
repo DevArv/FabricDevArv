@@ -15,7 +15,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
     public async Task<(TaskAttachment Attachment, string Path)?> GetFileAsync(int TaskID, long AttachmentID, CancellationToken CT)
     {
         var attachment = await Db.TaskAttachments.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == AttachmentID && x.TaskId == TaskID, CT);
+            .FirstOrDefaultAsync(x => x.ID == AttachmentID && x.TaskID == TaskID, CT);
         if (attachment is null) return null;
 
         var path = Storage.PathOf(attachment);
@@ -30,9 +30,9 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         long RunID, long AttachmentID, int WorkerID, CancellationToken CT)
     {
         var attachment = await Db.TaskRuns
-            .Where(r => r.Id == RunID && r.WorkerId == WorkerID && r.Status == RunStatus.Running)
+            .Where(r => r.ID == RunID && r.WorkerID == WorkerID && r.Status == RunStatus.RUNNING)
             .SelectMany(r => r.Task.Attachments)
-            .FirstOrDefaultAsync(a => a.Id == AttachmentID, CT);
+            .FirstOrDefaultAsync(a => a.ID == AttachmentID, CT);
         if (attachment is null) return null;
 
         var path = Storage.PathOf(attachment);
@@ -48,7 +48,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         if (Files.Count == 0)
             throw new ValidationFailedException(nameof(Files), "Selecciona al menos un archivo.");
 
-        var existing = await Db.TaskAttachments.CountAsync(a => a.TaskId == TaskID, CT);
+        var existing = await Db.TaskAttachments.CountAsync(a => a.TaskID == TaskID, CT);
         List<TaskAttachment> saved;
         try
         {
@@ -66,7 +66,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         try
         {
             Db.TaskAttachments.AddRange(saved);
-            Db.TaskEvents.Add(new TaskEvent { TaskId = TaskID, Actor = Actor, Message = $"{Actor} adjuntó {Files.Count} archivo(s)" });
+            Db.TaskEvents.Add(new TaskEvent { TaskID = TaskID, Actor = Actor, Message = $"{Actor} adjuntó {Files.Count} archivo(s)" });
             await Db.SaveChangesAsync(CT);
         }
         catch
@@ -78,10 +78,10 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
 
     public async Task DeleteAsync(int TaskID, long AttachmentID, string Actor, CancellationToken CT)
     {
-        var attachment = await Db.TaskAttachments.FirstOrDefaultAsync(x => x.Id == AttachmentID && x.TaskId == TaskID, CT)
+        var attachment = await Db.TaskAttachments.FirstOrDefaultAsync(x => x.ID == AttachmentID && x.TaskID == TaskID, CT)
                          ?? throw new ValidationFailedException(nameof(AttachmentID), "El adjunto no existe.");
         Db.TaskAttachments.Remove(attachment);
-        Db.TaskEvents.Add(new TaskEvent { TaskId = TaskID, Actor = Actor, Message = $"{Actor} eliminó el adjunto «{attachment.FileName}»" });
+        Db.TaskEvents.Add(new TaskEvent { TaskID = TaskID, Actor = Actor, Message = $"{Actor} eliminó el adjunto «{attachment.FileName}»" });
         await Db.SaveChangesAsync(CT);
 
         // El registro ya no existe: un archivo que no se pueda borrar no debe mostrarse al usuario como error.
@@ -96,7 +96,7 @@ public class TaskAttachmentsRepository(AppDbContext Db, AttachmentStorage Storag
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId}.", Attachment.Id);
+            Logger.LogWarning(ex, "No se pudo borrar del disco el adjunto {AttachmentId}.", Attachment.ID);
         }
     }
 }

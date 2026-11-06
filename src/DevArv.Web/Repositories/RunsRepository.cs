@@ -13,7 +13,7 @@ public class RunsRepository(AppDbContext Db)
 
     /// <summary>Si la ejecución existe y fue tomada por esa PC.</summary>
     public Task<bool> IsAssignedToWorkerAsync(long RunID, int WorkerID, CancellationToken CT) =>
-        Db.TaskRuns.AnyAsync(r => r.Id == RunID && r.WorkerId == WorkerID, CT);
+        Db.TaskRuns.AnyAsync(r => r.ID == RunID && r.WorkerID == WorkerID, CT);
 
     /// <summary>
     /// Agrega texto al log de la ejecución (hasta <see cref="MAX_LOG_CHARS"/>) y marca actividad.
@@ -23,11 +23,11 @@ public class RunsRepository(AppDbContext Db)
     public async Task<LogChunkResponse?> AppendLogAsync(long RunID, int WorkerID, string? Text, CancellationToken CT)
     {
         var run = await Db.TaskRuns.AsNoTracking()
-            .Where(r => r.Id == RunID && r.WorkerId == WorkerID)
+            .Where(r => r.ID == RunID && r.WorkerID == WorkerID)
             .Select(r => new { r.Status, r.CancelRequested })
             .FirstOrDefaultAsync(CT);
         if (run is null) return null;
-        if (run.Status != RunStatus.Running) return new LogChunkResponse(CancelRequested: true);
+        if (run.Status != RunStatus.RUNNING) return new LogChunkResponse(CancelRequested: true);
 
         await WriteLogAsync(
             RunID: RunID,
@@ -48,7 +48,7 @@ public class RunsRepository(AppDbContext Db)
         if (Text.Length > 0)
         {
             await Db.TaskRuns
-                .Where(r => r.Id == RunID && r.Log.Length < MAX_LOG_CHARS)
+                .Where(r => r.ID == RunID && r.Log.Length < MAX_LOG_CHARS)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(r => r.Log, r => r.Log + Text)
                     .SetProperty(r => r.LastActivityAt, now), CT);
@@ -56,7 +56,7 @@ public class RunsRepository(AppDbContext Db)
         else
         {
             await Db.TaskRuns
-                .Where(r => r.Id == RunID)
+                .Where(r => r.ID == RunID)
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.LastActivityAt, now), CT);
         }
     }

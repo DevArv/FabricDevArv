@@ -14,9 +14,10 @@ public sealed class DetailsModel(
     TasksRepository TasksRepository, TaskAttachmentsRepository AttachmentsRepository, WorkflowService WorkflowService,
     Clock ClockService) : PageModel
 {
-    [BindProperty(SupportsGet = true)] public int Id { get; set; }
-    [BindProperty(SupportsGet = true)] public bool Modal { get; set; }
-    [BindProperty(SupportsGet = true, Name = "run")] public long? RunId { get; set; }
+    // Estado que usan la vista y los enlaces; cada handler lo asigna con los valores que recibe de la URL.
+    public int ID { get; private set; }
+    public bool Modal { get; private set; }
+    public long? RunID { get; private set; }
 
     public TaskDetailsViewModel Details { get; private set; } = null!;
     public TaskItem Item => Details.Item;
@@ -27,21 +28,24 @@ public sealed class DetailsModel(
     public Clock Clock => ClockService;
     public string? Error => TempData["Error"] as string;
     public string? Notice => TempData["Notice"] as string;
-    public bool IsLive => Item.Status is WorkStatus.Queued or WorkStatus.Running;
+    public bool IsLive => Item.Status is WorkStatus.QUEUED or WorkStatus.RUNNING;
     public int MaxFiles => AttachmentsRepository.Limits.MaxFilesPerTask;
 
     public string SelfUrl(long? OverrideRunID = null)
     {
-        var url = $"/Tasks/Details/{Id}?modal={(Modal ? "true" : "false")}";
-        var run = OverrideRunID ?? RunId;
+        var url = $"/Tasks/Details/{ID}?modal={(Modal ? "true" : "false")}";
+        var run = OverrideRunID ?? RunID;
         return run is null ? url : $"{url}&run={run}";
     }
 
-    public async Task<IActionResult> OnGetAsync(CancellationToken CT)
+    public async Task<IActionResult> OnGetAsync(int ID, bool Modal, [FromQuery(Name = "run")] long? RunID, CancellationToken CT)
     {
+        this.ID = ID;
+        this.Modal = Modal;
+        this.RunID = RunID;
         var details = await TasksRepository.GetDetailsViewAsync(
-            ID: Id,
-            RunID: RunId,
+            ID: ID,
+            RunID: RunID,
             CT: CT);
         if (details is null) return NotFound();
         Details = details;
@@ -50,25 +54,28 @@ public sealed class DetailsModel(
     }
 
     /// <summary>Muestra un adjunto. El HTML siempre se descarga y con CSP sandbox para que nunca se ejecute en este dominio.</summary>
-    public async Task<IActionResult> OnGetAttachmentAsync(long AttachmentID, CancellationToken CT)
+    public async Task<IActionResult> OnGetAttachmentAsync(int ID, long AttachmentID, CancellationToken CT)
     {
+        this.ID = ID;
         var file = await AttachmentsRepository.GetFileAsync(
-            TaskID: Id,
+            TaskID: ID,
             AttachmentID: AttachmentID,
             CT: CT);
         if (file is null) return NotFound();
         var (attachment, path) = file.Value;
 
         Response.Headers.XContentTypeOptions = "nosniff";
-        if (attachment.Kind != AttachmentKind.Pdf)
+        if (attachment.Kind != AttachmentKind.PDF)
             Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
-        if (attachment.Kind == AttachmentKind.Html)
+        if (attachment.Kind == AttachmentKind.HTML)
             return new PhysicalFileResult(path, "application/octet-stream") { FileDownloadName = attachment.FileName };
         return new PhysicalFileResult(path, attachment.ContentType) { EnableRangeProcessing = true };
     }
 
-    public Task<IActionResult> OnPostApproveAsync(CancellationToken CT) =>
+    public Task<IActionResult> OnPostApproveAsync(int ID, bool Modal, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.ApproveAsync(
                 Item: item,
                 Actor: Actor,
@@ -76,8 +83,10 @@ public sealed class DetailsModel(
             Notice: "Aprobado.",
             CT: CT);
 
-    public Task<IActionResult> OnPostRequestChangesAsync(string Feedback, CancellationToken CT) =>
+    public Task<IActionResult> OnPostRequestChangesAsync(int ID, bool Modal, string Feedback, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.RequestChangesAsync(
                 Item: item,
                 Actor: Actor,
@@ -86,8 +95,10 @@ public sealed class DetailsModel(
             Notice: "Cambios solicitados.",
             CT: CT);
 
-    public Task<IActionResult> OnPostCommentAsync(string Body, bool AsFeedback, CancellationToken CT) =>
+    public Task<IActionResult> OnPostCommentAsync(int ID, bool Modal, string Body, bool AsFeedback, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.AddCommentAsync(
                 Item: item,
                 Actor: Actor,
@@ -97,8 +108,10 @@ public sealed class DetailsModel(
             Notice: "Comentario agregado.",
             CT: CT);
 
-    public Task<IActionResult> OnPostRetryAsync(CancellationToken CT) =>
+    public Task<IActionResult> OnPostRetryAsync(int ID, bool Modal, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.RetryAsync(
                 Item: item,
                 Actor: Actor,
@@ -106,8 +119,10 @@ public sealed class DetailsModel(
             Notice: "Ejecución encolada de nuevo.",
             CT: CT);
 
-    public Task<IActionResult> OnPostCancelAsync(CancellationToken CT) =>
+    public Task<IActionResult> OnPostCancelAsync(int ID, bool Modal, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.CancelAsync(
                 Item: item,
                 Actor: Actor,
@@ -115,8 +130,10 @@ public sealed class DetailsModel(
             Notice: "Cancelación solicitada.",
             CT: CT);
 
-    public Task<IActionResult> OnPostMoveAsync(int StageID, CancellationToken CT) =>
+    public Task<IActionResult> OnPostMoveAsync(int ID, bool Modal, int StageID, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.MoveAsync(
                 Item: item,
                 StageID: StageID,
@@ -125,8 +142,10 @@ public sealed class DetailsModel(
             Notice: "Tarea movida.",
             CT: CT);
 
-    public Task<IActionResult> OnPostArchiveAsync(bool Archived, CancellationToken CT) =>
+    public Task<IActionResult> OnPostArchiveAsync(int ID, bool Modal, bool Archived, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => WorkflowService.SetArchivedAsync(
                 Item: item,
                 Archived: Archived,
@@ -136,10 +155,12 @@ public sealed class DetailsModel(
             CT: CT);
 
     /// <summary>Elimina la tarea. Si se pudo, vuelve al tablero (sin abrir la tarea); si no, muestra el error en la tarea.</summary>
-    public async Task<IActionResult> OnPostDeleteAsync(CancellationToken CT)
+    public async Task<IActionResult> OnPostDeleteAsync(int ID, bool Modal, CancellationToken CT)
     {
+        this.ID = ID;
+        this.Modal = Modal;
         var task = await WorkflowService.LoadTaskAsync(
-            TaskID: Id,
+            TaskID: ID,
             CT: CT);
         if (task is null) return NotFound();
         try
@@ -152,13 +173,15 @@ public sealed class DetailsModel(
         catch (WorkflowException ex)
         {
             TempData["Error"] = ex.Message;
-            return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{Id}");
+            return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{ID}");
         }
         return Redirect(Modal ? $"/{BoardQuery(OpenTask: false)}" : "/");
     }
 
-    public Task<IActionResult> OnPostUpdateAsync(TaskUpdateViewModel Input, CancellationToken CT) =>
+    public Task<IActionResult> OnPostUpdateAsync(int ID, bool Modal, TaskUpdateViewModel Input, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => TasksRepository.UpdateAsync(
                 Item: item,
                 Record: Input,
@@ -167,20 +190,24 @@ public sealed class DetailsModel(
             Notice: "Cambios guardados.",
             CT: CT);
 
-    public Task<IActionResult> OnPostUploadAsync(List<IFormFile> Files, CancellationToken CT) =>
+    public Task<IActionResult> OnPostUploadAsync(int ID, bool Modal, List<IFormFile> Files, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => AttachmentsRepository.AddAsync(
-                TaskID: item.Id,
+                TaskID: item.ID,
                 Files: Files,
                 Actor: Actor,
                 CT: CT),
             Notice: "Archivos adjuntados.",
             CT: CT);
 
-    public Task<IActionResult> OnPostDeleteAttachmentAsync(long AttachmentID, CancellationToken CT) =>
+    public Task<IActionResult> OnPostDeleteAttachmentAsync(int ID, bool Modal, long AttachmentID, CancellationToken CT) =>
         ActAsync(
+            ID: ID,
+            Modal: Modal,
             Action: item => AttachmentsRepository.DeleteAsync(
-                TaskID: item.Id,
+                TaskID: item.ID,
                 AttachmentID: AttachmentID,
                 Actor: Actor,
                 CT: CT),
@@ -189,18 +216,21 @@ public sealed class DetailsModel(
 
     private string Actor => User.Identity?.Name ?? "?";
 
-    private async Task<IActionResult> ActAsync(Func<TaskItem, Task> Action, string Notice, CancellationToken CT)
+    private async Task<IActionResult> ActAsync(int ID, bool Modal, Func<TaskItem, Task> Action, string Notice, CancellationToken CT)
     {
+        this.ID = ID;
+        this.Modal = Modal;
+
         // Un valor que el formulario no pudo convertir (p. ej. una prioridad inexistente) llega como el valor por
         // defecto del tipo: si se ejecutara la acción se sobrescribiría el dato guardado sin avisar.
         if (!ModelState.IsValid)
         {
             TempData["Error"] = "Alguno de los datos enviados no es válido.";
-            return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{Id}");
+            return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{ID}");
         }
 
         var task = await WorkflowService.LoadTaskAsync(
-            TaskID: Id,
+            TaskID: ID,
             CT: CT);
         if (task is null) return NotFound();
         try
@@ -221,7 +251,7 @@ public sealed class DetailsModel(
             TempData["Error"] = ex.Message;
         }
         // Desde el modal se vuelve al tablero con la tarea abierta; desde la página, a la página.
-        return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{Id}");
+        return Redirect(Modal ? $"/{BoardQuery()}" : $"/Tasks/Details/{ID}");
     }
 
     private string BoardQuery(bool OpenTask = true)
@@ -231,13 +261,13 @@ public sealed class DetailsModel(
         var keep = query
             .Where(kv => kv.Key is "project" or "worker" or "waiting" or "compact" or "hideEmpty" or "archived" or "q")
             .ToDictionary(kv => kv.Key, kv => (string?)kv.Value.ToString());
-        if (OpenTask) keep["task"] = Id.ToString();
+        if (OpenTask) keep["task"] = ID.ToString();
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString("", keep);
     }
 
-    public string HandlerUrl(string Handler) => $"/Tasks/Details/{Id}?handler={Handler}&modal={(Modal ? "true" : "false")}";
+    public string HandlerUrl(string Handler) => $"/Tasks/Details/{ID}?handler={Handler}&modal={(Modal ? "true" : "false")}";
 
-    public string AttachmentUrl(long AttachmentID) => $"/Tasks/Details/{Id}?handler=Attachment&attachmentId={AttachmentID}";
+    public string AttachmentUrl(long AttachmentID) => $"/Tasks/Details/{ID}?handler=Attachment&attachmentId={AttachmentID}";
 
-    public string StageName(int? ID) => Stages.FirstOrDefault(s => s.Id == ID)?.Name ?? "—";
+    public string StageName(int? ID) => Stages.FirstOrDefault(s => s.ID == ID)?.Name ?? "—";
 }

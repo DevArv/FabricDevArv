@@ -11,94 +11,94 @@ public static class Labels
 {
     public static string Of(WorkStatus Status) => Status switch
     {
-        WorkStatus.Idle => "No iniciado",
-        WorkStatus.Queued => "En cola",
-        WorkStatus.Running => "En ejecución",
-        WorkStatus.WaitingApproval => "Esperando aprobación",
-        WorkStatus.Failed => "Error",
-        WorkStatus.Done => "Finalizado",
+        WorkStatus.IDLE => "No iniciado",
+        WorkStatus.QUEUED => "En cola",
+        WorkStatus.RUNNING => "En ejecución",
+        WorkStatus.WAITING_APPROVAL => "Esperando aprobación",
+        WorkStatus.FAILED => "Error",
+        WorkStatus.DONE => "Finalizado",
         _ => Status.ToString(),
     };
 
     public static string Of(Priority Priority) => Priority switch
     {
-        Priority.Low => "Baja",
-        Priority.Medium => "Media",
-        Priority.High => "Alta",
-        Priority.Critical => "Crítica",
+        Priority.LOW => "Baja",
+        Priority.MEDIUM => "Media",
+        Priority.HIGH => "Alta",
+        Priority.CRITICAL => "Crítica",
         _ => Priority.ToString(),
     };
 
     public static string Of(Complexity Complexity) => Complexity switch
     {
-        Complexity.Unclassified => "Sin clasificar",
-        Complexity.Low => "Baja",
-        Complexity.Medium => "Media",
-        Complexity.High => "Alta",
+        Complexity.UNCLASSIFIED => "Sin clasificar",
+        Complexity.LOW => "Baja",
+        Complexity.MEDIUM => "Media",
+        Complexity.HIGH => "Alta",
         _ => Complexity.ToString(),
     };
 
     public static string Of(RunStatus Status) => Status switch
     {
-        RunStatus.Queued => "En cola",
-        RunStatus.Running => "En ejecución",
-        RunStatus.Succeeded => "Completado",
-        RunStatus.Failed => "Falló",
-        RunStatus.Cancelled => "Cancelado",
+        RunStatus.QUEUED => "En cola",
+        RunStatus.RUNNING => "En ejecución",
+        RunStatus.SUCCEEDED => "Completado",
+        RunStatus.FAILED => "Falló",
+        RunStatus.CANCELLED => "Cancelado",
         _ => Status.ToString(),
     };
 
     public static string Of(StageKind Kind) => Kind switch
     {
-        StageKind.Manual => "Manual",
-        StageKind.HumanApproval => "Aprobación humana",
-        StageKind.Agent => "Agente Claude",
-        StageKind.System => "Automática (sistema)",
-        StageKind.Terminal => "Final",
+        StageKind.MANUAL => "Manual",
+        StageKind.HUMAN_APPROVAL => "Aprobación humana",
+        StageKind.AGENT => "Agente Claude",
+        StageKind.SYSTEM => "Automática (sistema)",
+        StageKind.TERMINAL => "Final",
         _ => Kind.ToString(),
     };
 
     public static string Of(SystemAction a) => a switch
     {
-        SystemAction.None => "Ninguna",
-        SystemAction.CreatePullRequest => "Crear pull request",
-        SystemAction.MergePullRequest => "Hacer merge del pull request",
+        SystemAction.NONE => "Ninguna",
+        SystemAction.CREATE_PULL_REQUEST => "Crear pull request",
+        SystemAction.MERGE_PULL_REQUEST => "Hacer merge del pull request",
         _ => a.ToString(),
     };
 
     public static string Of(CommentKind Kind) => Kind switch
     {
-        CommentKind.Comment => "Comentario",
-        CommentKind.Feedback => "Cambios solicitados",
-        CommentKind.ReviewerNote => "Hallazgos del revisor",
+        CommentKind.COMMENT => "Comentario",
+        CommentKind.FEEDBACK => "Cambios solicitados",
+        CommentKind.REVIEWER_NOTE => "Hallazgos del revisor",
         _ => Kind.ToString(),
     };
 
     public static string StatusIcon(WorkStatus Status) => Status switch
     {
-        WorkStatus.Queued => "⏳",
-        WorkStatus.Running => "●",
-        WorkStatus.WaitingApproval => "⏸",
-        WorkStatus.Failed => "✖",
-        WorkStatus.Done => "✔",
+        WorkStatus.QUEUED => "⏳",
+        WorkStatus.RUNNING => "●",
+        WorkStatus.WAITING_APPROVAL => "⏸",
+        WorkStatus.FAILED => "✖",
+        WorkStatus.DONE => "✔",
         _ => "○",
     };
 
     public static string StatusCss(WorkStatus Status) => Status switch
     {
-        WorkStatus.Queued => "st-queued",
-        WorkStatus.Running => "st-running",
-        WorkStatus.WaitingApproval => "st-waiting",
-        WorkStatus.Failed => "st-failed",
-        WorkStatus.Done => "st-done",
+        WorkStatus.QUEUED => "st-queued",
+        WorkStatus.RUNNING => "st-running",
+        WorkStatus.WAITING_APPROVAL => "st-waiting",
+        WorkStatus.FAILED => "st-failed",
+        WorkStatus.DONE => "st-done",
         _ => "st-idle",
     };
 
     public static string PriorityCss(Priority Priority) => Priority switch
     {
-        Priority.Low => "pr-low",
-        Priority.High => "pr-high",
-        Priority.Critical => "pr-critical",
+        Priority.LOW => "pr-low",
+        Priority.HIGH => "pr-high",
+        Priority.CRITICAL => "pr-critical",
         _ => "pr-medium",
     };
 

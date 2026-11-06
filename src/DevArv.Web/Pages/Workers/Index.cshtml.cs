@@ -11,7 +11,8 @@ public sealed class IndexModel(WorkersRepository WorkersRepository) : PageModel
     public List<WorkerNode> Workers { get; private set; } = [];
     public Dictionary<int, string> CurrentRuns { get; private set; } = [];
 
-    [BindProperty] public WorkerCreateViewModel Input { get; set; } = new();
+    // Estado para la vista; el handler de alta lo asigna con lo que recibe del formulario.
+    public WorkerCreateViewModel Input { get; private set; } = new();
 
     [TempData] public string? NewKey { get; set; }
     [TempData] public string? NewKeyWorker { get; set; }
@@ -19,8 +20,9 @@ public sealed class IndexModel(WorkersRepository WorkersRepository) : PageModel
 
     public async Task OnGetAsync(CancellationToken CT) => await LoadAsync(CT);
 
-    public async Task<IActionResult> OnPostCreateAsync(CancellationToken CT)
+    public async Task<IActionResult> OnPostCreateAsync(WorkerCreateViewModel Input, CancellationToken CT)
     {
+        this.Input = Input;
         if (!ModelState.IsValid)
         {
             await LoadAsync(CT);

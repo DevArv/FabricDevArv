@@ -24,13 +24,13 @@ public sealed class SystemActionExecutor(AppDbContext Db, GitHubService GitHub, 
 
     public async Task<RunCompletion> ExecuteAsync(TaskRun Run, CancellationToken CT)
     {
-        var stage = await Db.Stages.FindAsync([Run.StageId], CT)
+        var stage = await Db.Stages.FindAsync([Run.StageID], CT)
                     ?? throw new InvalidOperationException("La columna de la ejecución ya no existe.");
         var task = Run.Task;
         return stage.SystemAction switch
         {
-            SystemAction.CreatePullRequest => await CreatePullRequestAsync(task, CT),
-            SystemAction.MergePullRequest => await MergePullRequestAsync(task, CT),
+            SystemAction.CREATE_PULL_REQUEST => await CreatePullRequestAsync(task, CT),
+            SystemAction.MERGE_PULL_REQUEST => await MergePullRequestAsync(task, CT),
             _ => Success("Columna de sistema sin acción configurada; se avanza."),
         };
     }
@@ -100,7 +100,7 @@ public sealed class SystemActionExecutor(AppDbContext Db, GitHubService GitHub, 
             Owner: project.RepoOwner,
             Repo: project.RepoName,
             Number: number,
-            CommitTitle: $"#{Item.Id} {Item.Title}",
+            CommitTitle: $"#{Item.ID} {Item.Title}",
             CT: CT);
         Item.PullRequestMergedAt = DateTimeOffset.UtcNow;
         return Success($"Merge (squash) del pull request #{number} realizado.");
@@ -109,17 +109,17 @@ public sealed class SystemActionExecutor(AppDbContext Db, GitHubService GitHub, 
     private async Task<string> BuildBodyAsync(TaskItem Item, CancellationToken CT)
     {
         var lastDevSummary = await Db.TaskRuns
-            .Where(r => r.TaskId == Item.Id && r.Status == RunStatus.Succeeded && r.RunnerKind == StageKind.Agent
-                        && Db.Stages.Any(s => s.Id == r.StageId && s.PushChanges))
-            .OrderByDescending(r => r.Id)
+            .Where(r => r.TaskID == Item.ID && r.Status == RunStatus.SUCCEEDED && r.RunnerKind == StageKind.AGENT
+                        && Db.Stages.Any(s => s.ID == r.StageID && s.PushChanges))
+            .OrderByDescending(r => r.ID)
             .Select(r => r.Summary)
             .FirstOrDefaultAsync(CT);
 
         var publicUrl = AppOptionsAccessor.Value.PublicUrl.Trim().TrimEnd('/');
-        var link = string.IsNullOrEmpty(publicUrl) ? "" : $"\n\n[Ver tarea en DevArv]({publicUrl}/?task={Item.Id})";
+        var link = string.IsNullOrEmpty(publicUrl) ? "" : $"\n\n[Ver tarea en DevArv]({publicUrl}/?task={Item.ID})";
 
         var body = $"""
-            ## Tarea #{Item.Id}: {Item.Title}
+            ## Tarea #{Item.ID}: {Item.Title}
 
             {Item.Description}
 

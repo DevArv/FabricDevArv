@@ -10,11 +10,11 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
     {
         using var jobCts = CancellationTokenSource.CreateLinkedTokenSource(StoppingToken);
         jobCts.CancelAfter(TimeSpan.FromMinutes(Math.Max(1, Job.TimeoutMinutes)));
-        var shipper = new LogShipper(Server, Job.RunId, jobCts, Logger);
+        var shipper = new LogShipper(Server, Job.RunID, jobCts, Logger);
         RunCompletion completion;
 
-        Logger.LogInformation("Tarea #{TaskId} · {Stage} · ejecución {RunId}", Job.TaskId, Job.StageName, Job.RunId);
-        shipper.Write($"▶ {Job.StageName} · tarea #{Job.TaskId} «{Job.TaskTitle}» · {Job.Repo.Owner}/{Job.Repo.Name} · rama {Job.WorkBranch}");
+        Logger.LogInformation("Tarea #{TaskId} · {Stage} · ejecución {RunId}", Job.TaskID, Job.StageName, Job.RunID);
+        shipper.Write($"▶ {Job.StageName} · tarea #{Job.TaskID} «{Job.TaskTitle}» · {Job.Repo.Owner}/{Job.Repo.Name} · rama {Job.WorkBranch}");
         shipper.Write($"PC: {Environment.MachineName}");
 
         ClaudeOutcome? outcome = null;
@@ -29,8 +29,8 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
             {
                 var target = Path.Combine(ws.AttachmentsPath, a.LocalFileName);
                 await Server.DownloadAttachmentAsync(
-                    RunID: Job.RunId,
-                    AttachmentID: a.Id,
+                    RunID: Job.RunID,
+                    AttachmentID: a.ID,
                     TargetPath: target,
                     CT: jobCts.Token);
             }
@@ -87,7 +87,7 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error ejecutando la tarea #{TaskId}", Job.TaskId);
+            Logger.LogError(ex, "Error ejecutando la tarea #{TaskId}", Job.TaskID);
             shipper.Write("✖ " + ex.Message);
             completion = Failure(
                 Message: ex.Message,
@@ -96,7 +96,7 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
         }
 
         await shipper.DisposeAsync();
-        await ReportAsync(Job.RunId, completion);
+        await ReportAsync(Job.RunID, completion);
     }
 
     private async Task ReportAsync(long RunID, RunCompletion Completion)
@@ -149,7 +149,7 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
         CacheReadTokens: Outcome.Result?.CacheReadTokens ?? 0,
         CacheWriteTokens: Outcome.Result?.CacheWriteTokens ?? 0,
         NumTurns: Outcome.Result?.NumTurns,
-        SessionId: Outcome.Result?.SessionId,
+        SessionID: Outcome.Result?.SessionID,
         Model: Outcome.Model,
         HeadCommit: string.IsNullOrEmpty(Push.HeadCommit) ? null : Push.HeadCommit,
         Pushed: Push.Pushed,
@@ -166,7 +166,7 @@ public sealed class JobRunner(ServerClient Server, GitWorkspace Git, ClaudeRunne
         CacheReadTokens: Outcome?.Result?.CacheReadTokens ?? 0,
         CacheWriteTokens: Outcome?.Result?.CacheWriteTokens ?? 0,
         NumTurns: Outcome?.Result?.NumTurns,
-        SessionId: Outcome?.Result?.SessionId,
+        SessionID: Outcome?.Result?.SessionID,
         Model: Outcome?.Model,
         HeadCommit: Head,
         Pushed: false,

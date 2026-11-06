@@ -27,10 +27,10 @@
 
             <div class="grid-2">
                 <label>Proyecto
-                    <select asp-for="Input.ProjectId" data-branch-source>
+                    <select asp-for="Input.ProjectID" data-branch-source>
                         @foreach (var p in Model.Projects)
                         {
-                            <option value="@p.Id" data-default-branch="@p.DefaultBranch" selected="@(p.Id == Model.Input.ProjectId)">@p.Name (@p.RepoFullName)</option>
+                            <option value="@p.ID" data-default-branch="@p.DefaultBranch" selected="@(p.ID == Model.Input.ProjectID)">@p.Name (@p.RepoFullName)</option>
                         }
                     </select>
                     <small>La tarea se desarrolla en el repositorio de este proyecto.</small>
@@ -93,11 +93,11 @@
                     <small>Alias (opus, sonnet, haiku) o nombre completo del modelo.</small>
                 </label>
                 <label>Ejecutar sólo en esta PC
-                    <select asp-for="Input.PreferredWorkerId">
+                    <select asp-for="Input.PreferredWorkerID">
                         <option value="">Cualquier PC disponible</option>
                         @foreach (var w in Model.Workers)
                         {
-                            <option value="@w.Id" selected="@(w.Id == Model.Input.PreferredWorkerId)">@w.Name</option>
+                            <option value="@w.ID" selected="@(w.ID == Model.Input.PreferredWorkerID)">@w.Name</option>
                         }
                     </select>
                 </label>

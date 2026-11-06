@@ -64,9 +64,11 @@ public static class ProcessRunner
     {
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        var code = await RunStreamingAsync(Spec,
-            line => { lock (stdout) stdout.AppendLine(line); },
-            line => { lock (stderr) stderr.AppendLine(line); }, CT);
+        var code = await RunStreamingAsync(
+            Spec: Spec,
+            OnStdout: line => { lock (stdout) stdout.AppendLine(line); },
+            OnStderr: line => { lock (stderr) stderr.AppendLine(line); },
+            CT: CT);
         return new ProcessResult(code, stdout.ToString(), stderr.ToString());
     }
 

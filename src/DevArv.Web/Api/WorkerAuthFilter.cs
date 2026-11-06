@@ -13,7 +13,7 @@ public sealed class WorkerAuthFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext Context, EndpointFilterDelegate Next)
     {
         var http = Context.HttpContext;
-        var key = http.Request.Headers[WorkerHeaders.ApiKey].ToString();
+        var key = http.Request.Headers[WorkerHeaders.API_KEY].ToString();
         if (string.IsNullOrWhiteSpace(key)) return Results.Unauthorized();
 
         var workers = http.RequestServices.GetRequiredService<WorkersRepository>();

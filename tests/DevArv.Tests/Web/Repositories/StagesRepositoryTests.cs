@@ -19,14 +19,14 @@ public sealed class StagesRepositoryTests
     private static StageEditViewModel ValidRecord(string Name = "Nueva") => new()
     {
         Name = Name,
-        Kind = StageKind.Manual,
+        Kind = StageKind.MANUAL,
         PermissionMode = "acceptEdits",
     };
 
     private async Task<Stage> SeedStageAsync(string Name, int Order, Action<Stage>? Configure = null)
     {
         await using var db = CreateDbContext();
-        var stage = new Stage { Name = Name, Order = Order, Kind = StageKind.Manual };
+        var stage = new Stage { Name = Name, Order = Order, Kind = StageKind.MANUAL };
         Configure?.Invoke(stage);
         db.Stages.Add(stage);
         await db.SaveChangesAsync();
@@ -55,7 +55,7 @@ public sealed class StagesRepositoryTests
 
         await using var db = CreateDbContext();
         var result = await new StagesRepository(db).GetOthersAsync(
-            ExcludedID: first.Id,
+            ExcludedID: first.ID,
             CT: CancellationToken.None);
 
         Assert.Equal(["B"], result.Select(s => s.Name));
@@ -82,39 +82,42 @@ public sealed class StagesRepositoryTests
         await SeedStageAsync("B", 20);
         await using (var db = CreateDbContext())
         {
-            db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
             db.Tasks.AddRange(
-                new TaskItem { Title = "1", ProjectId = 1, StageId = first.Id },
-                new TaskItem { Title = "2", ProjectId = 1, StageId = first.Id });
+                new TaskItem { Title = "1", ProjectID = 1, StageID = first.ID },
+                new TaskItem { Title = "2", ProjectID = 1, StageID = first.ID });
             await db.SaveChangesAsync();
         }
 
         await using var check = CreateDbContext();
         var counts = await new StagesRepository(check).GetTaskCountsAsync(CancellationToken.None);
 
-        Assert.Equal(2, counts[first.Id]);
+        Assert.Equal(2, counts[first.ID]);
         Assert.Single(counts);
     }
 
     [Fact]
     public async Task GetEditAsync_ExistingStage_MapsItsFields()
     {
-        var stage = await SeedStageAsync("Dev", 10, s =>
-        {
-            s.Kind = StageKind.Agent;
-            s.Skill = "revision";
-            s.PushChanges = true;
-            s.TimeoutMinutes = 90;
-        });
+        var stage = await SeedStageAsync(
+            Name: "Dev",
+            Order: 10,
+            Configure: s =>
+            {
+                s.Kind = StageKind.AGENT;
+                s.Skill = "revision";
+                s.PushChanges = true;
+                s.TimeoutMinutes = 90;
+            });
 
         await using var db = CreateDbContext();
         var record = await new StagesRepository(db).GetEditAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             CT: CancellationToken.None);
 
         Assert.NotNull(record);
         Assert.Equal("Dev", record.Name);
-        Assert.Equal(StageKind.Agent, record.Kind);
+        Assert.Equal(StageKind.AGENT, record.Kind);
         Assert.Equal("revision", record.Skill);
         Assert.True(record.PushChanges);
         Assert.Equal(90, record.TimeoutMinutes);
@@ -164,11 +167,11 @@ public sealed class StagesRepositoryTests
         await using var db = CreateDbContext();
         var record = ValidRecord();
         record.PermissionMode = "inventado";
-        record.SuccessStageId = 99;
-        record.RejectStageId = null;
+        record.SuccessStageID = 99;
+        record.RejectStageID = null;
         record.RequiresDecision = true;
-        record.Kind = StageKind.System;
-        record.SystemAction = SystemAction.None;
+        record.Kind = StageKind.SYSTEM;
+        record.SystemAction = SystemAction.NONE;
         record.ExtraArgs = "--model opus";
 
         var errors = await new StagesRepository(db).GetValidationErrorsAsync(
@@ -190,10 +193,10 @@ public sealed class StagesRepositoryTests
         var stage = await SeedStageAsync("A", 10);
         await using var db = CreateDbContext();
         var record = ValidRecord("A");
-        record.SuccessStageId = stage.Id;
+        record.SuccessStageID = stage.ID;
 
         var errors = await new StagesRepository(db).GetValidationErrorsAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             Record: record,
             CT: CancellationToken.None);
 
@@ -287,7 +290,7 @@ public sealed class StagesRepositoryTests
         record.Icon = "";
 
         var saved = await new StagesRepository(db).SaveAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             Record: record,
             CT: CancellationToken.None);
 
@@ -305,12 +308,12 @@ public sealed class StagesRepositoryTests
         var reject = await SeedStageAsync("Rechazo", 10);
         await using var db = CreateDbContext();
         var record = ValidRecord();
-        record.Kind = StageKind.Manual;
+        record.Kind = StageKind.MANUAL;
         record.Skill = "revision";
         record.PushChanges = true;
         record.RequiresDecision = true;
-        record.RejectStageId = reject.Id;
-        record.SystemAction = SystemAction.CreatePullRequest;
+        record.RejectStageID = reject.ID;
+        record.SystemAction = SystemAction.CREATE_PULL_REQUEST;
 
         await new StagesRepository(db).SaveAsync(
             ID: null,
@@ -322,7 +325,7 @@ public sealed class StagesRepositoryTests
         Assert.Null(stage.Skill);
         Assert.False(stage.PushChanges);
         Assert.False(stage.RequiresDecision);
-        Assert.Equal(SystemAction.None, stage.SystemAction);
+        Assert.Equal(SystemAction.NONE, stage.SystemAction);
     }
 
     [Fact]
@@ -331,11 +334,11 @@ public sealed class StagesRepositoryTests
         var reject = await SeedStageAsync("Rechazo", 10);
         await using var db = CreateDbContext();
         var record = ValidRecord("Revisor");
-        record.Kind = StageKind.Agent;
+        record.Kind = StageKind.AGENT;
         record.Skill = " /revision ";
         record.PushChanges = true;
         record.RequiresDecision = true;
-        record.RejectStageId = reject.Id;
+        record.RejectStageID = reject.ID;
 
         await new StagesRepository(db).SaveAsync(
             ID: null,
@@ -354,8 +357,8 @@ public sealed class StagesRepositoryTests
     {
         await using var db = CreateDbContext();
         var record = ValidRecord("PR");
-        record.Kind = StageKind.System;
-        record.SystemAction = SystemAction.CreatePullRequest;
+        record.Kind = StageKind.SYSTEM;
+        record.SystemAction = SystemAction.CREATE_PULL_REQUEST;
 
         await new StagesRepository(db).SaveAsync(
             ID: null,
@@ -363,13 +366,16 @@ public sealed class StagesRepositoryTests
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        Assert.Equal(SystemAction.CreatePullRequest, (await check.Stages.SingleAsync()).SystemAction);
+        Assert.Equal(SystemAction.CREATE_PULL_REQUEST, (await check.Stages.SingleAsync()).SystemAction);
     }
 
     [Fact]
     public async Task SaveAsync_MarkedAsInitial_UnmarksThePreviousInitialStage()
     {
-        await SeedStageAsync("Anterior", 10, s => s.IsInitial = true);
+        await SeedStageAsync(
+            Name: "Anterior",
+            Order: 10,
+            Configure: s => s.IsInitial = true);
         await using var db = CreateDbContext();
         var record = ValidRecord("Nueva inicial");
         record.IsInitial = true;
@@ -386,13 +392,16 @@ public sealed class StagesRepositoryTests
     [Fact]
     public async Task SaveAsync_UnmarkingInitial_ClearsTheFlag()
     {
-        var stage = await SeedStageAsync("Inicial", 10, s => s.IsInitial = true);
+        var stage = await SeedStageAsync(
+            Name: "Inicial",
+            Order: 10,
+            Configure: s => s.IsInitial = true);
         await using var db = CreateDbContext();
         var record = ValidRecord("Inicial");
         record.IsInitial = false;
 
         await new StagesRepository(db).SaveAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             Record: record,
             CT: CancellationToken.None);
 
@@ -403,7 +412,10 @@ public sealed class StagesRepositoryTests
     [Fact]
     public async Task SaveAsync_MarkedAsMergeDestination_UnmarksThePreviousOne()
     {
-        await SeedStageAsync("Deploy", 10, s => s.IsMergeDestination = true);
+        await SeedStageAsync(
+            Name: "Deploy",
+            Order: 10,
+            Configure: s => s.IsMergeDestination = true);
         await using var db = CreateDbContext();
         var record = ValidRecord("Otra");
         record.IsMergeDestination = true;
@@ -428,7 +440,7 @@ public sealed class StagesRepositoryTests
 
         await using var db = CreateDbContext();
         await new StagesRepository(db).MoveAsync(
-            ID: a.Id,
+            ID: a.ID,
             Direction: 1,
             CT: CancellationToken.None);
 
@@ -446,7 +458,7 @@ public sealed class StagesRepositoryTests
 
         await using var db = CreateDbContext();
         await new StagesRepository(db).MoveAsync(
-            ID: b.Id,
+            ID: b.ID,
             Direction: -1,
             CT: CancellationToken.None);
 
@@ -464,7 +476,7 @@ public sealed class StagesRepositoryTests
 
         await using var db = CreateDbContext();
         await new StagesRepository(db).MoveAsync(
-            ID: Direction < 0 ? first.Id : last.Id,
+            ID: Direction < 0 ? first.ID : last.ID,
             Direction: Direction,
             CT: CancellationToken.None);
 
@@ -493,14 +505,14 @@ public sealed class StagesRepositoryTests
         var stage = await SeedStageAsync("A", 10);
         await using (var db = CreateDbContext())
         {
-            db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
-            db.Tasks.Add(new TaskItem { Title = "T", ProjectId = 1, StageId = stage.Id });
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Tasks.Add(new TaskItem { Title = "T", ProjectID = 1, StageID = stage.ID });
             await db.SaveChangesAsync();
         }
 
         await using var check = CreateDbContext();
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => new StagesRepository(check).DeleteAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             CT: CancellationToken.None));
 
         Assert.Contains("tiene tareas", ex.Message);
@@ -513,20 +525,20 @@ public sealed class StagesRepositoryTests
         var stage = await SeedStageAsync("A", 10);
         await using (var db = CreateDbContext())
         {
-            db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
             var otherStage = new Stage { Name = "Otra", Order = 20 };
             db.Stages.Add(otherStage);
             await db.SaveChangesAsync();
-            var task = new TaskItem { Title = "T", ProjectId = 1, StageId = otherStage.Id };
+            var task = new TaskItem { Title = "T", ProjectID = 1, StageID = otherStage.ID };
             db.Tasks.Add(task);
             await db.SaveChangesAsync();
-            db.TaskRuns.Add(new TaskRun { TaskId = task.Id, StageId = stage.Id, Status = RunStatus.Succeeded });
+            db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = stage.ID, Status = RunStatus.SUCCEEDED });
             await db.SaveChangesAsync();
         }
 
         await using var check = CreateDbContext();
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => new StagesRepository(check).DeleteAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             CT: CancellationToken.None));
 
         Assert.Contains("historial", ex.Message);
@@ -539,7 +551,7 @@ public sealed class StagesRepositoryTests
         await using var db = CreateDbContext();
 
         await new StagesRepository(db).DeleteAsync(
-            ID: stage.Id,
+            ID: stage.ID,
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();

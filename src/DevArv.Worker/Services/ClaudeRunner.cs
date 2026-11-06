@@ -18,12 +18,16 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> Options, ILogger<Claude
 
         var env = BuildEnvironment(_Options.Claude, Job);
 
-        var prompt = Job.Prompt.Replace(PromptTokens.AttachmentsDir, Workspace.AttachmentsPath);
+        var prompt = Job.Prompt.Replace(PromptTokens.ATTACHMENTS_DIR, Workspace.AttachmentsPath);
         var parser = new ClaudeStreamParser();
         var stderrTail = new Queue<string>();
 
-        Log($"$ claude {string.Join(' ', BuildArguments(Job, Workspace, ForDisplay: true))}");
-        Logger.LogInformation("Ejecutando Claude para la tarea #{TaskId} ({Stage})", Job.TaskId, Job.StageName);
+        var displayArguments = BuildArguments(
+            Job: Job,
+            Workspace: Workspace,
+            ForDisplay: true);
+        Log($"$ claude {string.Join(' ', displayArguments)}");
+        Logger.LogInformation("Ejecutando Claude para la tarea #{TaskId} ({Stage})", Job.TaskID, Job.StageName);
 
         var spec = new ProcessSpec(command.FileName, args, Workspace.WorktreePath)
         {
@@ -32,7 +36,8 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> Options, ILogger<Claude
             StandardInput = prompt,
         };
 
-        var exit = await ProcessRunner.RunStreamingAsync(spec,
+        var exit = await ProcessRunner.RunStreamingAsync(
+            Spec: spec,
             OnStdout: line =>
             {
                 foreach (var text in parser.Parse(line)) Log(text);
@@ -47,7 +52,7 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> Options, ILogger<Claude
                 }
                 Log("stderr: " + line);
             },
-            CT);
+            CT: CT);
 
         string tail;
         lock (stderrTail) tail = string.Join("\n", stderrTail);
@@ -64,8 +69,8 @@ public sealed class ClaudeRunner(IOptions<WorkerOptions> Options, ILogger<Claude
             .Where(e => !RequiredSettings.ClaudeCredentialVariables.Contains(e.Key, StringComparer.OrdinalIgnoreCase))
             .ToDictionary(e => e.Key, e => e.Value);
         env["DISABLE_AUTOUPDATER"] = "1";
-        env["DEVARV_TASK_ID"] = Job.TaskId.ToString();
-        env["DEVARV_RUN_ID"] = Job.RunId.ToString();
+        env["DEVARV_TASK_ID"] = Job.TaskID.ToString();
+        env["DEVARV_RUN_ID"] = Job.RunID.ToString();
         if (!string.IsNullOrWhiteSpace(Options.AnthropicApiKey))
             env["ANTHROPIC_API_KEY"] = Options.AnthropicApiKey.Trim();
         if (!string.IsNullOrWhiteSpace(Options.OAuthToken))

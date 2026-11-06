@@ -3,13 +3,13 @@
 @{
     var t = Model.Item;
 }
-<article class="card @Labels.StatusCss(t.Status)" draggable="true" data-task-id="@t.Id"
+<article class="card @Labels.StatusCss(t.Status)" draggable="true" data-task-id="@t.ID"
          style="--project:@t.Project.Color" title="@t.Project.Name">
     <div class="card-top">
         <span class="pc-chip">🖥 @(t.LastWorkerName ?? "Sin PC")</span>
         <span class="user-chip small" title="@t.CreatedByName">@Labels.Initials(t.CreatedByName)</span>
     </div>
-    @if (t.Status != WorkStatus.Idle)
+    @if (t.Status != WorkStatus.IDLE)
     {
         <div class="status-pill @Labels.StatusCss(t.Status)">@Labels.StatusIcon(t.Status) @Labels.Of(t.Status)</div>
     }
@@ -18,7 +18,7 @@
         <span class="dev-timer" title="Tiempo que lleva el desarrollador implementando la tarea"
               data-elapsed="@((long)elapsed.TotalSeconds)">⏱ <span data-timer-text>@Labels.Stopwatch(elapsed)</span></span>
     }
-    <h3><span class="task-id">#@t.Id</span> @t.Title</h3>
+    <h3><span class="task-id">#@t.ID</span> @t.Title</h3>
     <p class="excerpt">@Labels.Excerpt(t.Description)</p>
     <div class="meta">
         <span class="prio @Labels.PriorityCss(t.Priority)">● @Labels.Of(t.Priority)</span>
@@ -40,7 +40,7 @@
         <a href="@t.PullRequestUrl" target="_blank" rel="noopener noreferrer" class="pr-link" draggable="false"
            title="Abrir el pull request en GitHub (pestaña nueva)">🔗 Ver pull request #@t.PullRequestNumber</a>
     }
-    @if (t.Status == WorkStatus.Failed && t.LastError is not null)
+    @if (t.Status == WorkStatus.FAILED && t.LastError is not null)
     {
         <p class="error-line">@Labels.Excerpt(t.LastError, 120)</p>
     }

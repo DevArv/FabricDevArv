@@ -6,20 +6,20 @@
     {
         if (Model.HideEmpty && col.Tasks.Count == 0) { continue; }
         var s = col.Stage;
-        <section class="column kind-@s.Kind.ToString().ToLowerInvariant()" data-stage-id="@s.Id">
+        <section class="column kind-@s.Kind.ToString().ToLowerInvariant()" data-stage-id="@s.ID">
             <header class="column-head">
                 <span class="avatar">@s.Icon</span>
                 <div class="column-title">
                     <strong>@s.Name</strong>
-                    @if (s.Kind == StageKind.Agent)
+                    @if (s.Kind == StageKind.AGENT)
                     {
                         <span class="agent-line">✦ Claude · @(s.Model ?? "por defecto")@(s.RequiresDecision ? " · revisor" : "")</span>
                     }
-                    else if (s.Kind == StageKind.System)
+                    else if (s.Kind == StageKind.SYSTEM)
                     {
                         <span class="agent-line system">⚙ @Labels.Of(s.SystemAction)</span>
                     }
-                    else if (s.Kind == StageKind.HumanApproval)
+                    else if (s.Kind == StageKind.HUMAN_APPROVAL)
                     {
                         <span class="agent-line human">👤 Aprobación humana</span>
                     }

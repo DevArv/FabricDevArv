@@ -12,7 +12,7 @@ public static class MergedPullRequestRule
     /// reabre una descartada.
     /// </summary>
     public static bool ShouldMove(Stage Current, Stage Destination) =>
-        Current.Id != Destination.Id
-        && Current.Kind != StageKind.Terminal
+        Current.ID != Destination.ID
+        && Current.Kind != StageKind.TERMINAL
         && Current.Order < Destination.Order;
 }

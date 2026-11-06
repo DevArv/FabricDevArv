@@ -30,14 +30,14 @@ public sealed class WorkersRepositoryTests
         await using var db = CreateDbContext();
         if (!await db.Projects.AnyAsync())
         {
-            db.Projects.Add(new Project { Id = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
-            db.Stages.Add(new Stage { Id = 1, Name = "S" });
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Stages.Add(new Stage { ID = 1, Name = "S" });
             await db.SaveChangesAsync();
         }
-        var task = new TaskItem { Title = "T", ProjectId = 1, StageId = 1 };
+        var task = new TaskItem { Title = "T", ProjectID = 1, StageID = 1 };
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
-        db.TaskRuns.Add(new TaskRun { TaskId = task.Id, StageId = 1, StageName = StageName, Status = Status, WorkerId = WorkerID });
+        db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = 1, StageName = StageName, Status = Status, WorkerID = WorkerID });
         await db.SaveChangesAsync();
     }
 
@@ -83,7 +83,7 @@ public sealed class WorkersRepositoryTests
         await using var db = CreateDbContext();
 
         var result = await new WorkersRepository(db).RegenerateKeyAsync(
-            ID: worker.Id,
+            ID: worker.ID,
             CT: CancellationToken.None);
 
         Assert.NotNull(result);
@@ -113,13 +113,13 @@ public sealed class WorkersRepositoryTests
         var repository = new WorkersRepository(db);
 
         Assert.True(await repository.ToggleEnabledAsync(
-            ID: worker.Id,
+            ID: worker.ID,
             CT: CancellationToken.None));
         await using (var check = CreateDbContext())
             Assert.False((await check.Workers.SingleAsync()).IsEnabled);
 
         await repository.ToggleEnabledAsync(
-            ID: worker.Id,
+            ID: worker.ID,
             CT: CancellationToken.None);
         await using var checkAgain = CreateDbContext();
         Assert.True((await checkAgain.Workers.SingleAsync()).IsEnabled);
@@ -143,11 +143,11 @@ public sealed class WorkersRepositoryTests
     public async Task DeleteAsync_WithRunningRun_Throws()
     {
         var worker = await SeedWorkerAsync("PC-1");
-        await SeedRunAsync(worker.Id, RunStatus.Running);
+        await SeedRunAsync(worker.ID, RunStatus.RUNNING);
         await using var db = CreateDbContext();
 
         var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => new WorkersRepository(db).DeleteAsync(
-            ID: worker.Id,
+            ID: worker.ID,
             CT: CancellationToken.None));
 
         Assert.Contains("ejecución en curso", ex.Message);
@@ -159,11 +159,11 @@ public sealed class WorkersRepositoryTests
     public async Task DeleteAsync_WithFinishedRuns_RemovesTheWorker()
     {
         var worker = await SeedWorkerAsync("PC-1");
-        await SeedRunAsync(worker.Id, RunStatus.Succeeded);
+        await SeedRunAsync(worker.ID, RunStatus.SUCCEEDED);
         await using var db = CreateDbContext();
 
         await new WorkersRepository(db).DeleteAsync(
-            ID: worker.Id,
+            ID: worker.ID,
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
@@ -187,7 +187,10 @@ public sealed class WorkersRepositoryTests
     {
         await SeedWorkerAsync("B", "k1");
         await SeedWorkerAsync("A", "k2");
-        await SeedWorkerAsync("C", "k3", IsEnabled: false);
+        await SeedWorkerAsync(
+            Name: "C",
+            Key: "k3",
+            IsEnabled: false);
         await using var db = CreateDbContext();
 
         var result = await new WorkersRepository(db).GetEnabledAsync(CancellationToken.None);
@@ -200,16 +203,22 @@ public sealed class WorkersRepositoryTests
     {
         var busy = await SeedWorkerAsync("PC-1", "k1");
         var idle = await SeedWorkerAsync("PC-2", "k2");
-        await SeedRunAsync(busy.Id, RunStatus.Running, "Desarrollador");
-        await SeedRunAsync(busy.Id, RunStatus.Succeeded, "Revisor");
+        await SeedRunAsync(
+            WorkerID: busy.ID,
+            Status: RunStatus.RUNNING,
+            StageName: "Desarrollador");
+        await SeedRunAsync(
+            WorkerID: busy.ID,
+            Status: RunStatus.SUCCEEDED,
+            StageName: "Revisor");
         await using var db = CreateDbContext();
 
         var result = await new WorkersRepository(db).GetCurrentRunsAsync(CancellationToken.None);
 
         Assert.Single(result);
-        Assert.Contains("Desarrollador", result[busy.Id]);
-        Assert.DoesNotContain("Revisor", result[busy.Id]);
-        Assert.False(result.ContainsKey(idle.Id));
+        Assert.Contains("Desarrollador", result[busy.ID]);
+        Assert.DoesNotContain("Revisor", result[busy.ID]);
+        Assert.False(result.ContainsKey(idle.ID));
     }
 
     // ------------------------------------------------------------------ API del worker
@@ -245,7 +254,10 @@ public sealed class WorkersRepositoryTests
     [Fact]
     public async Task AuthenticateAsync_DisabledWorker_ReturnsNullAndDoesNotRecordAConnection()
     {
-        await SeedWorkerAsync("PC-1", "dvw_correcta", IsEnabled: false);
+        await SeedWorkerAsync(
+            Name: "PC-1",
+            Key: "dvw_correcta",
+            IsEnabled: false);
         await using var db = CreateDbContext();
 
         var worker = await new WorkersRepository(db).AuthenticateAsync(
@@ -303,5 +315,7 @@ public sealed class WorkersRepositoryTests
     [InlineData("abcde", 5, "abcde")]
     [InlineData("abcdef", 5, "abcde")]
     public void Limit_CutsTheValueToTheMaximum(string? Value, int Max, string? Expected) =>
-        Assert.Equal(Expected, WorkersRepository.Limit(Value, Max));
+        Assert.Equal(Expected, WorkersRepository.Limit(
+        Value: Value,
+        Max: Max));
 }

@@ -16,11 +16,11 @@ public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
     {
         var projects = await Db.Projects.AsNoTracking().OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ToListAsync(CT);
         var stats = await Db.Tasks.AsNoTracking()
-            .GroupBy(t => t.ProjectId)
+            .GroupBy(t => t.ProjectID)
             .Select(g => new { g.Key, Open = g.Count(t => t.ArchivedAt == null), Cost = g.Sum(t => t.TotalCostUsd) })
             .ToDictionaryAsync(x => x.Key, CT);
         return projects
-            .Select(p => stats.TryGetValue(p.Id, out var stat)
+            .Select(p => stats.TryGetValue(p.ID, out var stat)
                 ? new ProjectsRowViewModel(p, stat.Open, stat.Cost)
                 : new ProjectsRowViewModel(p, 0, 0))
             .ToList();
@@ -28,7 +28,7 @@ public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
 
     public async Task<ProjectEditViewModel?> GetEditAsync(int ID, CancellationToken CT)
     {
-        var project = await Db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.Id == ID, CT);
+        var project = await Db.Projects.AsNoTracking().FirstOrDefaultAsync(x => x.ID == ID, CT);
         return project is null
             ? null
             : new ProjectEditViewModel
@@ -44,7 +44,10 @@ public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
     /// </summary>
     public async Task<ProjectConnectionTestViewModel> TestConnectionAsync(ProjectEditViewModel Record, CancellationToken CT)
     {
-        if (!GitHubRepositoryParser.TryParse(Record.Repository, out var owner, out var repo))
+        if (!GitHubRepositoryParser.TryParse(
+                Input: Record.Repository,
+                Owner: out var owner,
+                Repo: out var repo))
             return new ProjectConnectionTestViewModel(
                 "Formato de repositorio inválido. Usa owner/repo o https://github.com/owner/repo.", true);
         try
@@ -72,7 +75,10 @@ public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
 
     public void Validate(ProjectEditViewModel Record)
     {
-        if (!GitHubRepositoryParser.TryParse(Record.Repository, out _, out _))
+        if (!GitHubRepositoryParser.TryParse(
+                Input: Record.Repository,
+                Owner: out _,
+                Repo: out _))
             throw new ValidationFailedException("Input.Repository",
                 "Formato de repositorio inválido. Usa owner/repo o la URL de GitHub.");
     }
@@ -81,7 +87,10 @@ public class ProjectsRepository(AppDbContext Db, GitHubService GitHub)
     public async Task<bool> SaveAsync(int? ID, ProjectEditViewModel Record, CancellationToken CT)
     {
         Validate(Record);
-        GitHubRepositoryParser.TryParse(Record.Repository, out var owner, out var repo);
+        GitHubRepositoryParser.TryParse(
+            Input: Record.Repository,
+            Owner: out var owner,
+            Repo: out var repo);
 
         var project = ID is null ? new Project() : await Db.Projects.FindAsync([ID.Value], CT);
         if (project is null) return false;

@@ -10,7 +10,7 @@ public class FileSignatureTests
     private static readonly byte[] _Pdf = Encoding.ASCII.GetBytes("%PDF-1.7\n%âãÏÓ");
 
     [Fact]
-    public void Png_IsAccepted() => Assert.Equal(AttachmentKind.Image, FileSignature.Detect(_Png, "captura.PNG")?.Kind);
+    public void Png_IsAccepted() => Assert.Equal(AttachmentKind.IMAGE, FileSignature.Detect(_Png, "captura.PNG")?.Kind);
 
     [Fact]
     public void Pdf_IsAccepted() => Assert.Equal("application/pdf", FileSignature.Detect(_Pdf, "spec.pdf")?.ContentType);
@@ -20,7 +20,7 @@ public class FileSignatureTests
     [InlineData("\n  <html lang=\"es\"><head></head></html>")]
     [InlineData("<!-- generado por Claude --><!doctype html><html></html>")]
     public void Html_IsAccepted(string Content) =>
-        Assert.Equal(AttachmentKind.Html, FileSignature.Detect(Encoding.UTF8.GetBytes(Content), "artifact.html")?.Kind);
+        Assert.Equal(AttachmentKind.HTML, FileSignature.Detect(Encoding.UTF8.GetBytes(Content), "artifact.html")?.Kind);
 
     [Fact]
     public void Html_WithBom_IsAccepted()

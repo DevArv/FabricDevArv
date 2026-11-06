@@ -6,14 +6,14 @@ namespace DevArv.Tests.Web.Helpers;
 public class DecisionParserTests
 {
     [Theory]
-    [InlineData("Todo bien.\nVEREDICTO: APROBADO", RunDecision.Approved)]
-    [InlineData("Hallazgos:\n- bug en X\n\nVEREDICTO: RECHAZADO", RunDecision.Rejected)]
-    [InlineData("**Veredicto:** **aprobado**", RunDecision.Approved)]
-    [InlineData("Veredicto: **APROBADO**", RunDecision.Approved)]
-    [InlineData("Si fuera grave diría VEREDICTO: RECHAZADO, pero no.\nVEREDICTO: APROBADO", RunDecision.Approved)]
-    [InlineData("VERDICT: REJECTED", RunDecision.Rejected)]
-    [InlineData("sin veredicto", RunDecision.None)]
-    [InlineData(null, RunDecision.None)]
+    [InlineData("Todo bien.\nVEREDICTO: APROBADO", RunDecision.APPROVED)]
+    [InlineData("Hallazgos:\n- bug en X\n\nVEREDICTO: RECHAZADO", RunDecision.REJECTED)]
+    [InlineData("**Veredicto:** **aprobado**", RunDecision.APPROVED)]
+    [InlineData("Veredicto: **APROBADO**", RunDecision.APPROVED)]
+    [InlineData("Si fuera grave diría VEREDICTO: RECHAZADO, pero no.\nVEREDICTO: APROBADO", RunDecision.APPROVED)]
+    [InlineData("VERDICT: REJECTED", RunDecision.REJECTED)]
+    [InlineData("sin veredicto", RunDecision.NONE)]
+    [InlineData(null, RunDecision.NONE)]
     public void Parse_UsesLastVerdict(string? Text, RunDecision Expected) =>
         Assert.Equal(Expected, DecisionParser.Parse(Text));
 }
