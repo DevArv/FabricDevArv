@@ -8,63 +8,63 @@ namespace DevArv.Worker.Services;
 /// <summary>Cliente HTTP de la API /api/worker del servidor DevArv.</summary>
 public sealed class ServerClient
 {
-    private readonly HttpClient _http;
+    private readonly HttpClient _Http;
 
-    public ServerClient(HttpClient http, EnvironmentData environmentData)
+    public ServerClient(HttpClient Http, EnvironmentData EnvironmentData)
     {
-        _http = http;
-        _http.BaseAddress = environmentData.GetBaseAddress();
-        _http.DefaultRequestHeaders.Remove(WorkerHeaders.ApiKey);
-        _http.DefaultRequestHeaders.Add(WorkerHeaders.ApiKey, environmentData.ApiKey);
-        _http.Timeout = TimeSpan.FromSeconds(100);
+        _Http = Http;
+        _Http.BaseAddress = EnvironmentData.GetBaseAddress();
+        _Http.DefaultRequestHeaders.Remove(WorkerHeaders.ApiKey);
+        _Http.DefaultRequestHeaders.Add(WorkerHeaders.ApiKey, EnvironmentData.ApiKey);
+        _Http.Timeout = TimeSpan.FromSeconds(100);
     }
 
-    public async Task<HeartbeatResponse?> HeartbeatAsync(HeartbeatRequest request, CancellationToken ct)
+    public async Task<HeartbeatResponse?> HeartbeatAsync(HeartbeatRequest Request, CancellationToken CT)
     {
-        using var response = await _http.PostAsJsonAsync("api/worker/heartbeat", request, ct);
-        await EnsureSuccessAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<HeartbeatResponse>(ct);
+        using var response = await _Http.PostAsJsonAsync("api/worker/heartbeat", Request, CT);
+        await EnsureSuccessAsync(response, CT);
+        return await response.Content.ReadFromJsonAsync<HeartbeatResponse>(CT);
     }
 
-    public async Task<AgentJob?> ClaimAsync(CancellationToken ct)
+    public async Task<AgentJob?> ClaimAsync(CancellationToken CT)
     {
-        using var response = await _http.PostAsJsonAsync("api/worker/claim", new ClaimRequest(Environment.MachineName), ct);
+        using var response = await _Http.PostAsJsonAsync("api/worker/claim", new ClaimRequest(Environment.MachineName), CT);
         if (response.StatusCode == HttpStatusCode.NoContent) return null;
-        await EnsureSuccessAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<AgentJob>(ct);
+        await EnsureSuccessAsync(response, CT);
+        return await response.Content.ReadFromJsonAsync<AgentJob>(CT);
     }
 
-    public async Task<LogChunkResponse> AppendLogAsync(long runId, string text, CancellationToken ct)
+    public async Task<LogChunkResponse> AppendLogAsync(long RunID, string Text, CancellationToken CT)
     {
-        using var response = await _http.PostAsJsonAsync($"api/worker/runs/{runId}/log", new LogChunk(text), ct);
+        using var response = await _Http.PostAsJsonAsync($"api/worker/runs/{RunID}/log", new LogChunk(Text), CT);
         if (response.StatusCode == HttpStatusCode.NotFound) return new LogChunkResponse(CancelRequested: true);
-        await EnsureSuccessAsync(response, ct);
-        return await response.Content.ReadFromJsonAsync<LogChunkResponse>(ct) ?? new LogChunkResponse(false);
+        await EnsureSuccessAsync(response, CT);
+        return await response.Content.ReadFromJsonAsync<LogChunkResponse>(CT) ?? new LogChunkResponse(false);
     }
 
-    public async Task CompleteAsync(long runId, RunCompletion completion, CancellationToken ct)
+    public async Task CompleteAsync(long RunID, RunCompletion Completion, CancellationToken CT)
     {
-        using var response = await _http.PostAsJsonAsync($"api/worker/runs/{runId}/complete", completion, ct);
-        await EnsureSuccessAsync(response, ct);
+        using var response = await _Http.PostAsJsonAsync($"api/worker/runs/{RunID}/complete", Completion, CT);
+        await EnsureSuccessAsync(response, CT);
     }
 
-    public async Task DownloadAttachmentAsync(long runId, long attachmentId, string targetPath, CancellationToken ct)
+    public async Task DownloadAttachmentAsync(long RunID, long AttachmentID, string TargetPath, CancellationToken CT)
     {
-        using var response = await _http.GetAsync($"api/worker/runs/{runId}/attachments/{attachmentId}",
-            HttpCompletionOption.ResponseHeadersRead, ct);
-        await EnsureSuccessAsync(response, ct);
-        await using var target = File.Create(targetPath);
-        await response.Content.CopyToAsync(target, ct);
+        using var response = await _Http.GetAsync($"api/worker/runs/{RunID}/attachments/{AttachmentID}",
+            HttpCompletionOption.ResponseHeadersRead, CT);
+        await EnsureSuccessAsync(response, CT);
+        await using var target = File.Create(TargetPath);
+        await response.Content.CopyToAsync(target, CT);
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task EnsureSuccessAsync(HttpResponseMessage Response, CancellationToken CT)
     {
-        if (response.IsSuccessStatusCode) return;
-        var body = await response.Content.ReadAsStringAsync(ct);
+        if (Response.IsSuccessStatusCode) return;
+        var body = await Response.Content.ReadAsStringAsync(CT);
         if (body.Length > 500) body = body[..500];
-        var hint = response.StatusCode == HttpStatusCode.Unauthorized
+        var hint = Response.StatusCode == HttpStatusCode.Unauthorized
             ? " (revisa EnvironmentData:ApiKey y que la PC esté habilitada en «Mis PCs»)"
             : "";
-        throw new HttpRequestException($"Servidor respondió {(int)response.StatusCode}{hint}: {body}", null, response.StatusCode);
+        throw new HttpRequestException($"Servidor respondió {(int)Response.StatusCode}{hint}: {body}", null, Response.StatusCode);
     }
 }

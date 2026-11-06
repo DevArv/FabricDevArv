@@ -11,68 +11,68 @@ namespace DevArv.Web.EnvironmentConfig;
 /// </summary>
 public static class EnvironmentTools
 {
-    public const string SectionName = "EnvironmentData";
-    public const string LocalFile = "appsettings.Local.json";
+    public const string SECTION_NAME = "EnvironmentData";
+    public const string LOCAL_FILE = "appsettings.Local.json";
 
-    private static readonly string[] HostPrefixes = ["ASPNETCORE_", "DOTNET_"];
+    private static readonly string[] _HostPrefixes = ["ASPNETCORE_", "DOTNET_"];
 
     // Configuración cargada una sola vez al iniciar la aplicación, sin recargas por cambio de archivo.
-    private static readonly IConfigurationRoot Root = Build(ResolveBasePath(), GetEnvironmentName());
+    private static readonly IConfigurationRoot _Root = Build(ResolveBasePath(), GetEnvironmentName());
 
     /// <summary>Configuración cargada desde los appsettings.</summary>
-    public static IConfiguration Configuration => Root;
+    public static IConfiguration Configuration => _Root;
 
     /// <summary>Retorna los datos de conexión a la base de datos (sección EnvironmentData).</summary>
-    public static EnvironmentData GetData() => GetSectionData(Root, SectionName);
+    public static EnvironmentData GetData() => GetSectionData(_Root, SECTION_NAME);
 
     /// <summary>
     /// Deja la configuración de EnvironmentTools como fuente de la configuración del host (Options, logging, etc.).
     /// Sólo se conservan las variables del host ASPNETCORE_/DOTNET_ (entorno, URLs, IIS), que van antes y no pisan
     /// ninguna clave definida en los appsettings.
     /// </summary>
-    public static void UseAsConfigurationSource(IConfigurationBuilder builder) => ReplaceSources(builder, Root);
+    public static void UseAsConfigurationSource(IConfigurationBuilder Builder) => ReplaceSources(Builder, _Root);
 
-    internal static void ReplaceSources(IConfigurationBuilder builder, IConfiguration configuration)
+    internal static void ReplaceSources(IConfigurationBuilder Builder, IConfiguration Settings)
     {
-        var sources = builder.Sources;
+        var sources = Builder.Sources;
         for (var i = sources.Count - 1; i >= 0; i--)
         {
             if (IsReplaced(sources[i])) sources.RemoveAt(i);
         }
-        builder.AddConfiguration(configuration, shouldDisposeConfiguration: false);
+        Builder.AddConfiguration(Settings, shouldDisposeConfiguration: false);
     }
 
-    internal static IConfigurationRoot Build(string basePath, string environmentName) => new ConfigurationBuilder()
-        .SetBasePath(basePath)
+    internal static IConfigurationRoot Build(string BasePath, string EnvironmentName) => new ConfigurationBuilder()
+        .SetBasePath(BasePath)
         .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-        .AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: false)
-        .AddJsonFile(LocalFile, optional: true, reloadOnChange: false)
+        .AddJsonFile($"appsettings.{EnvironmentName}.json", optional: true, reloadOnChange: false)
+        .AddJsonFile(LOCAL_FILE, optional: true, reloadOnChange: false)
         .Build();
 
     // Lee y valida la sección de datos de entorno.
-    internal static EnvironmentData GetSectionData(IConfiguration configuration, string sectionName)
+    internal static EnvironmentData GetSectionData(IConfiguration Settings, string SectionName)
     {
-        var section = configuration.GetSection(sectionName);
+        var section = Settings.GetSection(SectionName);
 
         // GetSection() nunca retorna null: retorna una sección vacía si la clave no existe.
         if (!section.Exists())
-            throw new ArgumentException($"La sección de configuración '{sectionName}' no existe en appsettings.");
+            throw new ArgumentException($"La sección de configuración '{SectionName}' no existe en appsettings.");
 
         if (string.IsNullOrWhiteSpace(section["Host"]))
-            throw new ArgumentException($"{sectionName}:Host no puede estar vacío.");
+            throw new ArgumentException($"{SectionName}:Host no puede estar vacío.");
 
         // El puerto debe ser un entero positivo en el rango válido de TCP (1–65535).
         if (!int.TryParse(section["Port"], out var port) || port < 1 || port > 65535)
-            throw new ArgumentException($"{sectionName}:Port debe ser un número entero entre 1 y 65535.");
+            throw new ArgumentException($"{SectionName}:Port debe ser un número entero entre 1 y 65535.");
 
         if (string.IsNullOrWhiteSpace(section["Database"]))
-            throw new ArgumentException($"{sectionName}:Database no puede estar vacío.");
+            throw new ArgumentException($"{SectionName}:Database no puede estar vacío.");
 
         if (string.IsNullOrWhiteSpace(section["Username"]))
-            throw new ArgumentException($"{sectionName}:Username no puede estar vacío.");
+            throw new ArgumentException($"{SectionName}:Username no puede estar vacío.");
 
         if (string.IsNullOrWhiteSpace(section["Password"]))
-            throw new ArgumentException($"{sectionName}:Password no puede estar vacío.");
+            throw new ArgumentException($"{SectionName}:Password no puede estar vacío.");
 
         return new EnvironmentData
         {
@@ -100,11 +100,11 @@ public static class EnvironmentTools
 
     // Se quitan los JSON del host (incluido secrets.json de user-secrets), la línea de comandos y las variables
     // de entorno de la app; los appsettings llegan desde EnvironmentTools.
-    private static bool IsReplaced(IConfigurationSource source) => source switch
+    private static bool IsReplaced(IConfigurationSource Source) => Source switch
     {
         JsonConfigurationSource => true,
         CommandLineConfigurationSource => true,
-        EnvironmentVariablesConfigurationSource env => !HostPrefixes.Contains(env.Prefix),
+        EnvironmentVariablesConfigurationSource env => !_HostPrefixes.Contains(env.Prefix),
         _ => false,
     };
 }

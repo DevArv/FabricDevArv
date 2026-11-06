@@ -14,6 +14,6 @@ public class DecisionParserTests
     [InlineData("VERDICT: REJECTED", RunDecision.Rejected)]
     [InlineData("sin veredicto", RunDecision.None)]
     [InlineData(null, RunDecision.None)]
-    public void Parse_UsesLastVerdict(string? text, RunDecision expected) =>
-        Assert.Equal(expected, DecisionParser.Parse(text));
+    public void Parse_UsesLastVerdict(string? Text, RunDecision Expected) =>
+        Assert.Equal(Expected, DecisionParser.Parse(Text));
 }

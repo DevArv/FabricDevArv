@@ -29,7 +29,7 @@ public sealed class TaskCreateViewModel
     public string Description { get; set; } = "";
 
     [MaxLength(100)]
-    [RegularExpression(@"^[A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
+    [RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
     public string? ModelOverride { get; set; }
 
     public int? PreferredWorkerId { get; set; }

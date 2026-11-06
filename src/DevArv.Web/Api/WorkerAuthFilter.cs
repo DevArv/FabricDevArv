@@ -1,31 +1,30 @@
 using DevArv.Contracts.Models;
 using DevArv.Web.DataModels;
-using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Helpers;
-using Microsoft.EntityFrameworkCore;
+using DevArv.Web.Repositories;
 
 namespace DevArv.Web.Api;
 
 /// <summary>Autentica al worker con la cabecera X-DevArv-Key y lo deja en HttpContext.Items.</summary>
 public sealed class WorkerAuthFilter : IEndpointFilter
 {
-    public const string ItemKey = "devarv.worker";
+    public const string ITEM_KEY = "devarv.worker";
 
-    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext Context, EndpointFilterDelegate Next)
     {
-        var http = context.HttpContext;
+        var http = Context.HttpContext;
         var key = http.Request.Headers[WorkerHeaders.ApiKey].ToString();
         if (string.IsNullOrWhiteSpace(key)) return Results.Unauthorized();
 
-        var db = http.RequestServices.GetRequiredService<AppDbContext>();
-        var hash = ApiKeys.Hash(key);
-        var worker = await db.Workers.FirstOrDefaultAsync(w => w.KeyHash == hash && w.IsEnabled, http.RequestAborted);
+        var workers = http.RequestServices.GetRequiredService<WorkersRepository>();
+        var worker = await workers.AuthenticateAsync(
+            KeyHash: ApiKeys.Hash(key),
+            CT: http.RequestAborted);
         if (worker is null) return Results.Unauthorized();
 
-        worker.LastSeenAt = DateTimeOffset.UtcNow;
-        http.Items[ItemKey] = worker;
-        return await next(context);
+        http.Items[ITEM_KEY] = worker;
+        return await Next(Context);
     }
 
-    public static WorkerNode Current(HttpContext http) => (WorkerNode)http.Items[ItemKey]!;
+    public static WorkerNode Current(HttpContext Http) => (WorkerNode)Http.Items[ITEM_KEY]!;
 }

@@ -9,11 +9,11 @@ public static partial class PullRequestTitle
     /// El título del PR es el nombre de la rama con cada grupo de caracteres no alfanuméricos
     /// (<c>/</c>, <c>_</c>, <c>-</c>, espacios…) reemplazado por un solo guion: "fd_/1-prueba-pr" → "fd-1-prueba-pr".
     /// </summary>
-    public static string FromBranch(string branch)
+    public static string FromBranch(string Branch)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(branch);
-        var title = Separators().Replace(branch.Trim(), "-").Trim('-');
-        return title.Length == 0 ? branch.Trim() : title;
+        ArgumentException.ThrowIfNullOrWhiteSpace(Branch);
+        var title = Separators().Replace(Branch.Trim(), "-").Trim('-');
+        return title.Length == 0 ? Branch.Trim() : title;
     }
 
     [GeneratedRegex("[^A-Za-z0-9]+")]

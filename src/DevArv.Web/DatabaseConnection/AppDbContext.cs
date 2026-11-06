@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DevArv.Web.DatabaseConnection;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<IdentityUser>(options)
+public class AppDbContext(DbContextOptions<AppDbContext> Options) : IdentityDbContext<IdentityUser>(Options)
 {
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<Stage> Stages => Set<Stage>();
@@ -19,26 +19,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<TaskEvent> TaskEvents => Set<TaskEvent>();
     public DbSet<WorkerNode> Workers => Set<WorkerNode>();
 
-    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    protected override void ConfigureConventions(ModelConfigurationBuilder ConfigurationBuilder)
     {
         // Enums legibles en la base de datos.
-        configurationBuilder.Properties<StageKind>().HaveConversion<string>().HaveMaxLength(32);
-        configurationBuilder.Properties<SystemAction>().HaveConversion<string>().HaveMaxLength(32);
-        configurationBuilder.Properties<WorkStatus>().HaveConversion<string>().HaveMaxLength(32);
-        configurationBuilder.Properties<Priority>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<Complexity>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<RunStatus>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<RunDecision>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<CommentKind>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<AttachmentKind>().HaveConversion<string>().HaveMaxLength(16);
-        configurationBuilder.Properties<decimal>().HavePrecision(14, 6);
+        ConfigurationBuilder.Properties<StageKind>().HaveConversion<string>().HaveMaxLength(32);
+        ConfigurationBuilder.Properties<SystemAction>().HaveConversion<string>().HaveMaxLength(32);
+        ConfigurationBuilder.Properties<WorkStatus>().HaveConversion<string>().HaveMaxLength(32);
+        ConfigurationBuilder.Properties<Priority>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<Complexity>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<RunStatus>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<RunDecision>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<CommentKind>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<AttachmentKind>().HaveConversion<string>().HaveMaxLength(16);
+        ConfigurationBuilder.Properties<decimal>().HavePrecision(14, 6);
     }
 
-    protected override void OnModelCreating(ModelBuilder builder)
+    protected override void OnModelCreating(ModelBuilder Builder)
     {
-        base.OnModelCreating(builder);
+        base.OnModelCreating(Builder);
 
-        builder.Entity<Project>(b =>
+        Builder.Entity<Project>(b =>
         {
             b.Property(p => p.Name).HasMaxLength(120).IsRequired();
             b.Property(p => p.Color).HasMaxLength(16);
@@ -49,7 +49,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.Ignore(p => p.RepoFullName);
         });
 
-        builder.Entity<Stage>(b =>
+        Builder.Entity<Stage>(b =>
         {
             b.Property(s => s.Name).HasMaxLength(80).IsRequired();
             b.Property(s => s.Icon).HasMaxLength(16);
@@ -62,7 +62,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.Ignore(s => s.RunsAutomatically);
         });
 
-        builder.Entity<TaskItem>(b =>
+        Builder.Entity<TaskItem>(b =>
         {
             b.Property(t => t.Title).HasMaxLength(200).IsRequired();
             b.Property(t => t.BaseBranch).HasMaxLength(200);
@@ -78,7 +78,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.HasIndex(t => t.StageId);
         });
 
-        builder.Entity<TaskAttachment>(b =>
+        Builder.Entity<TaskAttachment>(b =>
         {
             b.Property(a => a.FileName).HasMaxLength(255);
             b.Property(a => a.ContentType).HasMaxLength(100);
@@ -86,7 +86,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.HasOne(a => a.Task).WithMany(t => t.Attachments).HasForeignKey(a => a.TaskId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        builder.Entity<TaskRun>(b =>
+        Builder.Entity<TaskRun>(b =>
         {
             b.Property(r => r.StageName).HasMaxLength(80);
             b.Property(r => r.Model).HasMaxLength(100);
@@ -99,20 +99,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             b.Ignore(r => r.Duration);
         });
 
-        builder.Entity<TaskComment>(b =>
+        Builder.Entity<TaskComment>(b =>
         {
             b.Property(c => c.Author).HasMaxLength(256);
             b.HasOne(c => c.Task).WithMany(t => t.Comments).HasForeignKey(c => c.TaskId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        builder.Entity<TaskEvent>(b =>
+        Builder.Entity<TaskEvent>(b =>
         {
             b.Property(e => e.Actor).HasMaxLength(256);
             b.Property(e => e.Message).HasMaxLength(1000);
             b.HasOne(e => e.Task).WithMany(t => t.Events).HasForeignKey(e => e.TaskId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        builder.Entity<WorkerNode>(b =>
+        Builder.Entity<WorkerNode>(b =>
         {
             b.Property(w => w.Name).HasMaxLength(100).IsRequired();
             b.Property(w => w.KeyHash).HasMaxLength(64).IsRequired();

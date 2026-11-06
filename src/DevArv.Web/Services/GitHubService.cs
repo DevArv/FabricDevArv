@@ -9,48 +9,48 @@ namespace DevArv.Web.Services;
 /// <summary>Cliente mínimo de la API REST de GitHub (repos, ramas y pull requests).</summary>
 public sealed class GitHubService
 {
-    private readonly HttpClient _http;
-    private readonly GitHubOptions _options;
+    private readonly HttpClient _Http;
+    private readonly GitHubOptions _Options;
 
-    public GitHubService(HttpClient http, IOptions<GitHubOptions> options)
+    public GitHubService(HttpClient Http, IOptions<GitHubOptions> OptionsAccessor)
     {
-        _http = http;
-        _options = options.Value;
-        _http.BaseAddress = new Uri(_options.ApiBaseUrl.TrimEnd('/') + "/");
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("DevArv/0.1");
-        _http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
-        _http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-        if (!string.IsNullOrWhiteSpace(_options.Token))
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _options.Token.Trim());
+        _Http = Http;
+        _Options = OptionsAccessor.Value;
+        _Http.BaseAddress = new Uri(_Options.ApiBaseUrl.TrimEnd('/') + "/");
+        _Http.DefaultRequestHeaders.UserAgent.ParseAdd("DevArv/0.1");
+        _Http.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+        _Http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        if (!string.IsNullOrWhiteSpace(_Options.Token))
+            _Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _Options.Token.Trim());
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.Token);
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_Options.Token);
 
-    public string CloneUrl(string owner, string repo) => $"{_options.WebBaseUrl.TrimEnd('/')}/{owner}/{repo}.git";
+    public string CloneUrl(string Owner, string Repo) => $"{_Options.WebBaseUrl.TrimEnd('/')}/{Owner}/{Repo}.git";
 
-    public async Task<RepoDetails> GetRepositoryAsync(string owner, string repo, CancellationToken ct)
+    public async Task<RepoDetails> GetRepositoryAsync(string Owner, string Repo, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}", null, ct);
-        var r = doc.RootElement;
+        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}", null, CT);
+        var root = doc.RootElement;
         return new RepoDetails(
-            r.GetProperty("full_name").GetString()!,
-            r.GetProperty("default_branch").GetString()!,
-            r.GetProperty("private").GetBoolean(),
-            r.GetProperty("html_url").GetString()!);
+            root.GetProperty("full_name").GetString()!,
+            root.GetProperty("default_branch").GetString()!,
+            root.GetProperty("private").GetBoolean(),
+            root.GetProperty("html_url").GetString()!);
     }
 
-    public async Task<IReadOnlyList<string>> ListBranchesAsync(string owner, string repo, CancellationToken ct)
+    public async Task<IReadOnlyList<string>> ListBranchesAsync(string Owner, string Repo, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}/branches?per_page=100", null, ct);
+        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/branches?per_page=100", null, CT);
         return doc.RootElement.EnumerateArray().Select(b => b.GetProperty("name").GetString()!).ToList();
     }
 
-    public async Task<bool> BranchExistsAsync(string owner, string repo, string branch, CancellationToken ct)
+    public async Task<bool> BranchExistsAsync(string Owner, string Repo, string Branch, CancellationToken CT)
     {
         try
         {
-            var path = string.Join("/", branch.Split('/').Select(Uri.EscapeDataString));
-            using var _ = await SendAsync(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}/branches/{path}", null, ct);
+            var path = string.Join("/", Branch.Split('/').Select(Uri.EscapeDataString));
+            using var _ = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/branches/{path}", null, CT);
             return true;
         }
         catch (GitHubException ex) when (ex.Status == HttpStatusCode.NotFound)
@@ -60,49 +60,49 @@ public sealed class GitHubService
     }
 
     public async Task<PullRequestInfo> CreatePullRequestAsync(
-        string owner, string repo, string head, string @base, string title, string body, CancellationToken ct)
+        string Owner, string Repo, string Head, string Base, string Title, string Body, CancellationToken CT)
     {
-        var payload = new { title, head, @base, body, maintainer_can_modify = true };
-        using var doc = await SendAsync(HttpMethod.Post, $"repos/{E(owner)}/{E(repo)}/pulls", payload, ct);
+        var payload = new { title = Title, head = Head, @base = Base, body = Body, maintainer_can_modify = true };
+        using var doc = await SendAsync(HttpMethod.Post, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls", payload, CT);
         return ToPullRequest(doc.RootElement);
     }
 
-    public async Task<PullRequestInfo?> FindOpenPullRequestAsync(string owner, string repo, string head, CancellationToken ct)
+    public async Task<PullRequestInfo?> FindOpenPullRequestAsync(string Owner, string Repo, string Head, CancellationToken CT)
     {
-        var query = $"repos/{E(owner)}/{E(repo)}/pulls?state=open&head={E(owner + ":" + head)}";
-        using var doc = await SendAsync(HttpMethod.Get, query, null, ct);
+        var query = $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls?state=open&head={Escape(Owner + ":" + Head)}";
+        using var doc = await SendAsync(HttpMethod.Get, query, null, CT);
         var first = doc.RootElement.EnumerateArray().FirstOrDefault();
         return first.ValueKind == JsonValueKind.Object ? ToPullRequest(first) : null;
     }
 
-    public async Task<PullRequestInfo> GetPullRequestAsync(string owner, string repo, int number, CancellationToken ct)
+    public async Task<PullRequestInfo> GetPullRequestAsync(string Owner, string Repo, int Number, CancellationToken CT)
     {
-        using var doc = await SendAsync(HttpMethod.Get, $"repos/{E(owner)}/{E(repo)}/pulls/{number}", null, ct);
+        using var doc = await SendAsync(HttpMethod.Get, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}", null, CT);
         return ToPullRequest(doc.RootElement);
     }
 
-    public async Task MergePullRequestAsync(string owner, string repo, int number, string commitTitle, CancellationToken ct)
+    public async Task MergePullRequestAsync(string Owner, string Repo, int Number, string CommitTitle, CancellationToken CT)
     {
-        var payload = new { merge_method = "squash", commit_title = commitTitle };
-        using var _ = await SendAsync(HttpMethod.Put, $"repos/{E(owner)}/{E(repo)}/pulls/{number}/merge", payload, ct);
+        var payload = new { merge_method = "squash", commit_title = CommitTitle };
+        using var _ = await SendAsync(HttpMethod.Put, $"repos/{Escape(Owner)}/{Escape(Repo)}/pulls/{Number}/merge", payload, CT);
     }
 
-    private static PullRequestInfo ToPullRequest(JsonElement pr) => new(
-        pr.GetProperty("number").GetInt32(),
-        pr.GetProperty("html_url").GetString()!,
-        pr.GetProperty("state").GetString()!,
-        pr.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True);
+    private static PullRequestInfo ToPullRequest(JsonElement PullRequest) => new(
+        PullRequest.GetProperty("number").GetInt32(),
+        PullRequest.GetProperty("html_url").GetString()!,
+        PullRequest.GetProperty("state").GetString()!,
+        PullRequest.TryGetProperty("merged", out var merged) && merged.ValueKind == JsonValueKind.True);
 
-    private async Task<JsonDocument> SendAsync(HttpMethod method, string url, object? payload, CancellationToken ct)
+    private async Task<JsonDocument> SendAsync(HttpMethod Method, string Url, object? Payload, CancellationToken CT)
     {
         if (!IsConfigured)
             throw new GitHubException(HttpStatusCode.Unauthorized,
                 "Falta configurar GitHub:Token en el appsettings del servidor (appsettings.Local.json).");
 
-        using var request = new HttpRequestMessage(method, url);
-        if (payload is not null) request.Content = JsonContent.Create(payload);
-        using var response = await _http.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
+        using var request = new HttpRequestMessage(Method, Url);
+        if (Payload is not null) request.Content = JsonContent.Create(Payload);
+        using var response = await _Http.SendAsync(request, CT);
+        var body = await response.Content.ReadAsStringAsync(CT);
 
         if (!response.IsSuccessStatusCode)
             throw new GitHubException(response.StatusCode, $"GitHub {(int)response.StatusCode}: {ExtractError(body)}");
@@ -110,11 +110,11 @@ public sealed class GitHubService
         return JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body);
     }
 
-    private static string ExtractError(string body)
+    private static string ExtractError(string Body)
     {
         try
         {
-            using var doc = JsonDocument.Parse(body);
+            using var doc = JsonDocument.Parse(Body);
             var root = doc.RootElement;
             var message = root.TryGetProperty("message", out var m) ? m.GetString() : null;
             if (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array)
@@ -126,13 +126,13 @@ public sealed class GitHubService
                     .Where(s => !string.IsNullOrWhiteSpace(s));
                 message = $"{message} ({string.Join("; ", details)})";
             }
-            return message ?? body;
+            return message ?? Body;
         }
         catch (JsonException)
         {
-            return body.Length > 300 ? body[..300] : body;
+            return Body.Length > 300 ? Body[..300] : Body;
         }
     }
 
-    private static string E(string value) => Uri.EscapeDataString(value);
+    private static string Escape(string Value) => Uri.EscapeDataString(Value);
 }

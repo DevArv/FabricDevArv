@@ -8,8 +8,8 @@ public class SlugTests
     [InlineData("Requerimientos de mejora para Fabric", "requerimientos-de-mejora-para-fabric")]
     [InlineData("  Añadir validación  ¡ya!  ", "anadir-validacion-ya")]
     [InlineData("###", "tarea")]
-    public void Create_ProducesGitSafeSlug(string input, string expected) =>
-        Assert.Equal(expected, Slug.Create(input));
+    public void Create_ProducesGitSafeSlug(string Input, string Expected) =>
+        Assert.Equal(Expected, Slug.Create(Input));
 
     [Fact]
     public void Create_RespectsMaxLength() =>

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using DevArv.Contracts.Models;
 using DevArv.Web.Constants;
 using DevArv.Web.DataModels;
@@ -8,47 +9,48 @@ using DevArv.Web.Helpers;
 namespace DevArv.Web.Services;
 
 /// <summary>Arma el prompt final de una etapa de agente a partir de la plantilla y los datos de la tarea.</summary>
-public sealed class PromptBuilder(Clock clock)
+public sealed partial class PromptBuilder(Clock Clock)
 {
-    private const int MaxFeedbackItems = 6;
+    private const int MAX_FEEDBACK_ITEMS = 6;
 
-    /// <param name="task">Tarea con Project, Attachments y Comments cargados.</param>
-    public string Build(TaskItem task, Stage stage)
+    /// <param name="Item">Tarea con Project, Attachments y Comments cargados.</param>
+    /// <param name="Stage">Columna de agente cuya plantilla se usa.</param>
+    public string Build(TaskItem Item, Stage Stage)
     {
-        var template = string.IsNullOrWhiteSpace(stage.PromptTemplate)
-            ? (stage.RequiresDecision ? DefaultPrompts.Reviewer : DefaultPrompts.Developer)
-            : stage.PromptTemplate;
+        var template = string.IsNullOrWhiteSpace(Stage.PromptTemplate)
+            ? (Stage.RequiresDecision ? DefaultPrompts.REVIEWER : DefaultPrompts.DEVELOPER)
+            : Stage.PromptTemplate;
 
         var values = new Dictionary<string, string>
         {
-            ["task.id"] = task.Id.ToString(),
-            ["task.title"] = task.Title,
-            ["task.description"] = string.IsNullOrWhiteSpace(task.Description) ? "_(sin descripción)_" : task.Description,
-            ["task.priority"] = Labels.Of(task.Priority),
-            ["task.complexity"] = Labels.Of(task.Complexity),
-            ["task.labels"] = string.IsNullOrWhiteSpace(task.Labels) ? "ninguna" : task.Labels,
-            ["project.name"] = task.Project.Name,
-            ["repo"] = task.Project.RepoFullName,
-            ["baseBranch"] = task.BaseBranch,
-            ["workBranch"] = task.WorkBranch ?? "",
-            ["attachments"] = BuildAttachments(task),
-            ["feedback"] = BuildFeedback(task),
-            ["skill"] = BuildSkill(stage),
+            ["task.id"] = Item.Id.ToString(),
+            ["task.title"] = Item.Title,
+            ["task.description"] = string.IsNullOrWhiteSpace(Item.Description) ? "_(sin descripción)_" : Item.Description,
+            ["task.priority"] = Labels.Of(Item.Priority),
+            ["task.complexity"] = Labels.Of(Item.Complexity),
+            ["task.labels"] = string.IsNullOrWhiteSpace(Item.Labels) ? "ninguna" : Item.Labels,
+            ["project.name"] = Item.Project.Name,
+            ["repo"] = Item.Project.RepoFullName,
+            ["baseBranch"] = Item.BaseBranch,
+            ["workBranch"] = Item.WorkBranch ?? "",
+            ["attachments"] = BuildAttachments(Item),
+            ["feedback"] = BuildFeedback(Item),
+            ["skill"] = BuildSkill(Stage),
         };
 
         // Las plantillas anteriores a {{skill}} (ya guardadas en la base) reciben el bloque al final.
         if (!template.Contains("{{skill}}") && values["skill"].Length > 0)
             template = template.TrimEnd() + "\n\n{{skill}}";
 
-        var sb = new StringBuilder(template);
-        foreach (var (key, value) in values)
-            sb.Replace("{{" + key + "}}", value);
-        return CollapseBlankLines(sb.ToString()).Trim();
+        // Una sola pasada: un «{{x}}» escrito dentro de la descripción o de un comentario no se vuelve a expandir.
+        var filled = Placeholder().Replace(template, match =>
+            values.TryGetValue(match.Groups["key"].Value, out var value) ? value : match.Value);
+        return CollapseBlankLines(filled).Trim();
     }
 
-    public static string? BuildSystemAppend(TaskItem task, Stage stage)
+    public static string? BuildSystemAppend(TaskItem Item, Stage Stage)
     {
-        var parts = new[] { task.Project.AgentInstructions, stage.AppendSystemPrompt }
+        var parts = new[] { Item.Project.AgentInstructions, Stage.AppendSystemPrompt }
             .Where(p => !string.IsNullOrWhiteSpace(p))
             .Select(p => p!.Trim())
             .ToList();
@@ -59,82 +61,82 @@ public sealed class PromptBuilder(Clock clock)
     /// Herramientas permitidas de la etapa (una por línea en la columna). Si la etapa usa un skill, agrega
     /// <c>Skill(nombre)</c> para que el agente pueda invocarlo sin pedir permiso en modo no interactivo.
     /// </summary>
-    public static List<string> BuildAllowedTools(Stage stage)
+    public static List<string> BuildAllowedTools(Stage Stage)
     {
-        var tools = (stage.AllowedTools ?? "")
+        var tools = (Stage.AllowedTools ?? "")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
-        if (string.IsNullOrWhiteSpace(stage.Skill)) return tools;
+        if (string.IsNullOrWhiteSpace(Stage.Skill)) return tools;
 
-        var skillTool = $"Skill({stage.Skill.Trim()})";
+        var skillTool = $"Skill({Stage.Skill.Trim()})";
         if (!tools.Contains("Skill") && !tools.Contains(skillTool)) tools.Add(skillTool);
         return tools;
     }
 
-    private static string BuildSkill(Stage stage)
+    private static string BuildSkill(Stage Stage)
     {
-        if (string.IsNullOrWhiteSpace(stage.Skill)) return "";
-        var name = stage.Skill.Trim();
-        var sb = new StringBuilder();
-        sb.AppendLine($"## Skill `{name}`");
-        sb.AppendLine($"Aplica esta etapa con el skill `{name}` del repositorio: antes de empezar, invócalo con la herramienta "
-                      + $"Skill (equivale a `/{name}`) y sigue sus pautas y su checklist.");
-        sb.AppendLine("Si el skill no está disponible en este repositorio, dilo en tu respuesta y continúa con las pautas de este prompt.");
-        sb.AppendLine("Si el skill pide otro formato de respuesta, el formato de este prompt tiene prioridad "
-                      + "(en especial la línea final de VEREDICTO, si se pide).");
-        return sb.ToString();
+        if (string.IsNullOrWhiteSpace(Stage.Skill)) return "";
+        var name = Stage.Skill.Trim();
+        var builder = new StringBuilder();
+        builder.AppendLine($"## Skill `{name}`");
+        builder.AppendLine($"Aplica esta etapa con el skill `{name}` del repositorio: antes de empezar, invócalo con la herramienta "
+                           + $"Skill (equivale a `/{name}`) y sigue sus pautas y su checklist.");
+        builder.AppendLine("Si el skill no está disponible en este repositorio, dilo en tu respuesta y continúa con las pautas de este prompt.");
+        builder.AppendLine("Si el skill pide otro formato de respuesta, el formato de este prompt tiene prioridad "
+                           + "(en especial la línea final de VEREDICTO, si se pide).");
+        return builder.ToString();
     }
 
-    private static string BuildAttachments(TaskItem task)
+    private static string BuildAttachments(TaskItem Item)
     {
-        if (task.Attachments.Count == 0) return "";
-        var sb = new StringBuilder();
-        sb.AppendLine("## Archivos adjuntos");
-        sb.AppendLine($"Están en `{PromptTokens.AttachmentsDir}`. Ábrelos con la herramienta Read (soporta imágenes y PDF) antes de empezar:");
-        foreach (var a in task.Attachments.OrderBy(a => a.Id))
+        if (Item.Attachments.Count == 0) return "";
+        var builder = new StringBuilder();
+        builder.AppendLine("## Archivos adjuntos");
+        builder.AppendLine($"Están en `{PromptTokens.AttachmentsDir}`. Ábrelos con la herramienta Read (soporta imágenes y PDF) antes de empezar:");
+        foreach (var attachment in Item.Attachments.OrderBy(a => a.Id))
         {
-            var info = new AttachmentInfo(a.Id, a.FileName, a.ContentType, a.Size);
-            sb.AppendLine($"- `{info.LocalFileName}` ({KindLabel(a)})");
+            var info = new AttachmentInfo(attachment.Id, attachment.FileName, attachment.ContentType, attachment.Size);
+            builder.AppendLine($"- `{info.LocalFileName}` ({KindLabel(attachment)})");
         }
-        return sb.ToString();
+        return builder.ToString();
     }
 
-    private static string KindLabel(TaskAttachment a) => a.Kind switch
+    private static string KindLabel(TaskAttachment Attachment) => Attachment.Kind switch
     {
         AttachmentKind.Image => "imagen",
         AttachmentKind.Pdf => "PDF",
         AttachmentKind.Html => "HTML de referencia",
-        _ => a.ContentType,
+        _ => Attachment.ContentType,
     };
 
-    private string BuildFeedback(TaskItem task)
+    private string BuildFeedback(TaskItem Item)
     {
-        var items = task.Comments
+        var items = Item.Comments
             .Where(c => c.Kind is CommentKind.Feedback or CommentKind.ReviewerNote)
             .OrderByDescending(c => c.CreatedAt)
-            .Take(MaxFeedbackItems)
+            .Take(MAX_FEEDBACK_ITEMS)
             .Reverse()
             .ToList();
         if (items.Count == 0) return "";
 
-        var sb = new StringBuilder();
-        sb.AppendLine("## Retroalimentación y hallazgos previos (del más antiguo al más reciente)");
+        var builder = new StringBuilder();
+        builder.AppendLine("## Retroalimentación y hallazgos previos (del más antiguo al más reciente)");
         for (var i = 0; i < items.Count; i++)
         {
-            var c = items[i];
-            var who = c.Kind == CommentKind.ReviewerNote ? "Revisor automático" : c.Author;
+            var comment = items[i];
+            var who = comment.Kind == CommentKind.ReviewerNote ? "Revisor automático" : comment.Author;
             var latest = i == items.Count - 1 ? " — **el más reciente, prioritario**" : "";
-            sb.AppendLine($"### {Labels.Of(c.Kind)} · {who} · {clock.Format(c.CreatedAt)}{latest}");
-            sb.AppendLine(c.Body.Trim());
-            sb.AppendLine();
+            builder.AppendLine($"### {Labels.Of(comment.Kind)} · {who} · {Clock.Format(comment.CreatedAt)}{latest}");
+            builder.AppendLine(comment.Body.Trim());
+            builder.AppendLine();
         }
-        return sb.ToString();
+        return builder.ToString();
     }
 
-    private static string CollapseBlankLines(string text)
+    private static string CollapseBlankLines(string Text)
     {
-        var lines = text.Replace("\r\n", "\n").Split('\n');
-        var sb = new StringBuilder();
+        var lines = Text.Replace("\r\n", "\n").Split('\n');
+        var builder = new StringBuilder();
         var blank = 0;
         foreach (var line in lines)
         {
@@ -143,8 +145,11 @@ public sealed class PromptBuilder(Clock clock)
                 if (++blank > 1) continue;
             }
             else blank = 0;
-            sb.Append(line.TrimEnd()).Append('\n');
+            builder.Append(line.TrimEnd()).Append('\n');
         }
-        return sb.ToString();
+        return builder.ToString();
     }
+
+    [GeneratedRegex(@"\{\{(?<key>[A-Za-z0-9.]+)\}\}")]
+    private static partial Regex Placeholder();
 }

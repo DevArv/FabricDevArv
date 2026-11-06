@@ -7,12 +7,12 @@ namespace DevArv.Web.Helpers;
 public static class MergedPullRequestRule
 {
     /// <summary>
-    /// Sólo se mueven las tareas que están en una columna anterior a <paramref name="destination"/> en el tablero
+    /// Sólo se mueven las tareas que están en una columna anterior a <paramref name="Destination"/> en el tablero
     /// y que no están finalizadas: así no se regresa una tarea que ya avanzó (p. ej. «Pendiente Prueba») ni se
     /// reabre una descartada.
     /// </summary>
-    public static bool ShouldMove(Stage current, Stage destination) =>
-        current.Id != destination.Id
-        && current.Kind != StageKind.Terminal
-        && current.Order < destination.Order;
+    public static bool ShouldMove(Stage Current, Stage Destination) =>
+        Current.Id != Destination.Id
+        && Current.Kind != StageKind.Terminal
+        && Current.Order < Destination.Order;
 }

@@ -10,7 +10,7 @@ namespace DevArv.Web.Helpers;
 /// </summary>
 public static class FileSignature
 {
-    private static readonly Dictionary<string, string[]> ExtensionsByType = new()
+    private static readonly Dictionary<string, string[]> _ExtensionsByType = new()
     {
         ["image/png"] = [".png"],
         ["image/jpeg"] = [".jpg", ".jpeg"],
@@ -22,45 +22,45 @@ public static class FileSignature
 
     public static readonly string AcceptAttribute = ".png,.jpg,.jpeg,.gif,.webp,.pdf,.html,.htm";
 
-    public static DetectedFile? Detect(ReadOnlySpan<byte> head, string fileName)
+    public static DetectedFile? Detect(ReadOnlySpan<byte> Head, string FileName)
     {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        var detected = DetectByContent(head);
+        var ext = Path.GetExtension(FileName).ToLowerInvariant();
+        var detected = DetectByContent(Head);
         if (detected is null) return null;
         // La extensión declarada debe corresponder al contenido real.
-        return ExtensionsByType.TryGetValue(detected.ContentType, out var exts) && exts.Contains(ext)
+        return _ExtensionsByType.TryGetValue(detected.ContentType, out var exts) && exts.Contains(ext)
             ? detected with { Extension = ext }
             : null;
     }
 
-    private static DetectedFile? DetectByContent(ReadOnlySpan<byte> h)
+    private static DetectedFile? DetectByContent(ReadOnlySpan<byte> Head)
     {
-        if (StartsWith(h, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
+        if (StartsWith(Head, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))
             return new(AttachmentKind.Image, "image/png", ".png");
-        if (StartsWith(h, [0xFF, 0xD8, 0xFF]))
+        if (StartsWith(Head, [0xFF, 0xD8, 0xFF]))
             return new(AttachmentKind.Image, "image/jpeg", ".jpg");
-        if (StartsWith(h, "GIF87a"u8) || StartsWith(h, "GIF89a"u8))
+        if (StartsWith(Head, "GIF87a"u8) || StartsWith(Head, "GIF89a"u8))
             return new(AttachmentKind.Image, "image/gif", ".gif");
-        if (h.Length >= 12 && StartsWith(h, "RIFF"u8) && h.Slice(8, 4).SequenceEqual("WEBP"u8))
+        if (Head.Length >= 12 && StartsWith(Head, "RIFF"u8) && Head.Slice(8, 4).SequenceEqual("WEBP"u8))
             return new(AttachmentKind.Image, "image/webp", ".webp");
-        if (StartsWith(h, "%PDF-"u8))
+        if (StartsWith(Head, "%PDF-"u8))
             return new(AttachmentKind.Pdf, "application/pdf", ".pdf");
-        if (LooksLikeHtml(h))
+        if (LooksLikeHtml(Head))
             return new(AttachmentKind.Html, "text/html", ".html");
         return null;
     }
 
     /// <summary>HTML no tiene firma binaria: se exige texto UTF-8 válido, sin bytes nulos, que empiece como documento HTML.</summary>
-    private static bool LooksLikeHtml(ReadOnlySpan<byte> h)
+    private static bool LooksLikeHtml(ReadOnlySpan<byte> Head)
     {
-        if (h.IsEmpty || h.Contains((byte)0)) return false;
-        if (StartsWith(h, [0xEF, 0xBB, 0xBF])) h = h[3..];
+        if (Head.IsEmpty || Head.Contains((byte)0)) return false;
+        if (StartsWith(Head, [0xEF, 0xBB, 0xBF])) Head = Head[3..];
         string text;
         try
         {
             // El encabezado puede cortar un carácter multibyte al final; se toleran hasta 3 bytes truncados.
             var decoder = new UTF8Encoding(false, throwOnInvalidBytes: true);
-            var safe = h.Length > 3 ? h[..TrimIncompleteUtf8(h)] : h;
+            var safe = Head.Length > 3 ? Head[..TrimIncompleteUtf8(Head)] : Head;
             text = decoder.GetString(safe);
         }
         catch (DecoderFallbackException)
@@ -78,12 +78,12 @@ public static class FileSignature
         return start.StartsWith("<!doctype html") || start.StartsWith("<html");
     }
 
-    private static int TrimIncompleteUtf8(ReadOnlySpan<byte> h)
+    private static int TrimIncompleteUtf8(ReadOnlySpan<byte> Head)
     {
-        var len = h.Length;
+        var len = Head.Length;
         for (var i = 1; i <= 3 && i <= len; i++)
         {
-            var b = h[len - i];
+            var b = Head[len - i];
             if ((b & 0xC0) == 0x80) continue; // byte de continuación
             if ((b & 0x80) == 0) return len; // ASCII: completo
             var needed = (b & 0xE0) == 0xC0 ? 2 : (b & 0xF0) == 0xE0 ? 3 : (b & 0xF8) == 0xF0 ? 4 : 1;
@@ -92,6 +92,6 @@ public static class FileSignature
         return len;
     }
 
-    private static bool StartsWith(ReadOnlySpan<byte> data, ReadOnlySpan<byte> prefix) =>
-        data.Length >= prefix.Length && data[..prefix.Length].SequenceEqual(prefix);
+    private static bool StartsWith(ReadOnlySpan<byte> Data, ReadOnlySpan<byte> Prefix) =>
+        Data.Length >= Prefix.Length && Data[..Prefix.Length].SequenceEqual(Prefix);
 }

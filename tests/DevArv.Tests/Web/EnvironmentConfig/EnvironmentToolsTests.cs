@@ -8,18 +8,18 @@ namespace DevArv.Tests.Web.EnvironmentConfig;
 
 public sealed class EnvironmentToolsTests : IDisposable
 {
-    private readonly string _dir = Directory.CreateTempSubdirectory("devarv-env-").FullName;
+    private readonly string _Dir = Directory.CreateTempSubdirectory("devarv-env-").FullName;
 
     public EnvironmentToolsTests()
     {
-        File.WriteAllText(Path.Combine(_dir, "appsettings.json"), """{"EnvironmentData":{"Host":"","Port":"","Database":"","Username":"","Password":""},"GitHub":{"Token":""},"App":{"Name":"base"}}""");
-        File.WriteAllText(Path.Combine(_dir, "appsettings.Development.json"), """{"App":{"Name":"dev"}}""");
-        File.WriteAllText(Path.Combine(_dir, EnvironmentTools.LocalFile), """{"EnvironmentData":{"Host":"db.local","Port":"5432","Database":"devarv","Username":"devarv","Password":"p;a=ss"},"GitHub":{"Token":"desde-local"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "appsettings.json"), """{"EnvironmentData":{"Host":"","Port":"","Database":"","Username":"","Password":""},"GitHub":{"Token":""},"App":{"Name":"base"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "appsettings.Development.json"), """{"App":{"Name":"dev"}}""");
+        File.WriteAllText(Path.Combine(_Dir, EnvironmentTools.LOCAL_FILE), """{"EnvironmentData":{"Host":"db.local","Port":"5432","Database":"devarv","Username":"devarv","Password":"p;a=ss"},"GitHub":{"Token":"desde-local"}}""");
     }
 
-    public void Dispose() => Directory.Delete(_dir, recursive: true);
+    public void Dispose() => Directory.Delete(_Dir, recursive: true);
 
-    private IConfigurationRoot BuildFromFiles(string environmentName) => EnvironmentTools.Build(_dir, environmentName);
+    private IConfigurationRoot BuildFromFiles(string EnvironmentName) => EnvironmentTools.Build(_Dir, EnvironmentName);
 
     [Fact]
     public void LayersAppSettingsByEnvironmentAndLocalFile()
@@ -36,7 +36,7 @@ public sealed class EnvironmentToolsTests : IDisposable
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
 
-        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SectionName));
+        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SECTION_NAME));
 
         Assert.Contains("EnvironmentData", ex.Message);
     }
@@ -65,9 +65,9 @@ public sealed class EnvironmentToolsTests : IDisposable
     public void HostSourcesAreReplacedByTheAppSettings()
     {
         // Mismo orden de fuentes que arma el host por defecto.
-        File.WriteAllText(Path.Combine(_dir, "secrets.json"), """{"GitHub":{"Token":"desde-user-secrets"},"Solo":{"Secreto":"x"}}""");
+        File.WriteAllText(Path.Combine(_Dir, "secrets.json"), """{"GitHub":{"Token":"desde-user-secrets"},"Solo":{"Secreto":"x"}}""");
         var host = new ConfigurationManager();
-        host.SetBasePath(_dir);
+        host.SetBasePath(_Dir);
         host.AddEnvironmentVariables(prefix: "DOTNET_");
         host.AddJsonFile("appsettings.json", optional: true);
         host.AddJsonFile("secrets.json", optional: true);
@@ -89,7 +89,7 @@ public sealed class EnvironmentToolsTests : IDisposable
     [Fact]
     public void ReadsDatabaseDataAndBuildsAnEscapedConnectionString()
     {
-        var data = EnvironmentTools.GetSectionData(BuildFromFiles("Development"), EnvironmentTools.SectionName);
+        var data = EnvironmentTools.GetSectionData(BuildFromFiles("Development"), EnvironmentTools.SECTION_NAME);
 
         Assert.Equal("db.local", data.Host);
         var parsed = new Npgsql.NpgsqlConnectionStringBuilder(data.GetConnectionString());
@@ -106,18 +106,18 @@ public sealed class EnvironmentToolsTests : IDisposable
     [InlineData("Database", " ", "EnvironmentData:Database")]
     [InlineData("Username", "", "EnvironmentData:Username")]
     [InlineData("Password", "", "EnvironmentData:Password")]
-    public void InvalidDatabaseDataThrowsWithTheKeyName(string key, string value, string expected)
+    public void InvalidDatabaseDataThrowsWithTheKeyName(string Key, string Value, string Expected)
     {
         var values = new Dictionary<string, string?>
         {
             ["EnvironmentData:Host"] = "h", ["EnvironmentData:Port"] = "5432", ["EnvironmentData:Database"] = "d",
             ["EnvironmentData:Username"] = "u", ["EnvironmentData:Password"] = "p",
         };
-        values[$"EnvironmentData:{key}"] = value;
+        values[$"EnvironmentData:{Key}"] = Value;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
 
-        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SectionName));
+        var ex = Assert.Throws<ArgumentException>(() => EnvironmentTools.GetSectionData(configuration, EnvironmentTools.SECTION_NAME));
 
-        Assert.StartsWith(expected, ex.Message);
+        Assert.StartsWith(Expected, ex.Message);
     }
 }

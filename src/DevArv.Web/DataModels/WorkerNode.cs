@@ -16,5 +16,5 @@ public class WorkerNode
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastSeenAt { get; set; }
 
-    public bool IsOnline(DateTimeOffset now) => LastSeenAt is { } seen && now - seen < TimeSpan.FromMinutes(2);
+    public bool IsOnline(DateTimeOffset Now) => LastSeenAt is { } seen && Now - seen < TimeSpan.FromMinutes(2);
 }

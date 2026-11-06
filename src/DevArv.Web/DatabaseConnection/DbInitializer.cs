@@ -1,50 +1,50 @@
 using DevArv.Web.Constants;
 using DevArv.Web.DataModels;
 using DevArv.Web.Enums.Workflow;
+using DevArv.Web.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace DevArv.Web.DatabaseConnection;
 
 public static class DbInitializer
 {
-    public static async Task InitializeAsync(IServiceProvider services, CancellationToken ct = default)
+    public static async Task InitializeAsync(IServiceProvider Services, CancellationToken CT = default)
     {
-        var db = services.GetRequiredService<AppDbContext>();
-        var config = services.GetRequiredService<IConfiguration>();
-        var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("DbInitializer");
+        var db = Services.GetRequiredService<AppDbContext>();
+        var admin = Services.GetRequiredService<IOptions<AdminOptions>>().Value;
+        var logger = Services.GetRequiredService<ILoggerFactory>().CreateLogger("DbInitializer");
 
         // Si existen migraciones (dotnet ef migrations add ...) se aplican; si no, se crea el esquema directo.
         if (db.Database.GetMigrations().Any())
         {
-            await db.Database.MigrateAsync(ct);
+            await db.Database.MigrateAsync(CT);
         }
         else
         {
             logger.LogWarning("No hay migraciones de EF Core; creando el esquema con EnsureCreated. " +
                               "Ejecuta 'dotnet ef migrations add Initial' antes de pasar a producción.");
-            await db.Database.EnsureCreatedAsync(ct);
+            await db.Database.EnsureCreatedAsync(CT);
         }
 
-        await AddStageSkillColumnAsync(db, ct);
-        await AddMergeColumnsAsync(db, ct);
+        await AddStageSkillColumnAsync(db, CT);
+        await AddMergeColumnsAsync(db, CT);
 
-        if (!await db.Stages.AnyAsync(ct))
+        if (!await db.Stages.AnyAsync(CT))
         {
-            await SeedDefaultWorkflowAsync(db, ct);
+            await SeedDefaultWorkflowAsync(db, CT);
             logger.LogInformation("Flujo por defecto creado.");
         }
 
-        var userManager = services.GetRequiredService<UserManager<IdentityUser>>();
-        var adminEmail = config["Admin:Email"];
-        var adminPassword = config["Admin:Password"];
-        if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword)
-            && !await userManager.Users.AnyAsync(ct))
+        var userManager = Services.GetRequiredService<UserManager<IdentityUser>>();
+        if (!string.IsNullOrWhiteSpace(admin.Email) && !string.IsNullOrWhiteSpace(admin.Password)
+            && !await userManager.Users.AnyAsync(CT))
         {
-            var admin = new IdentityUser { UserName = adminEmail, Email = adminEmail, EmailConfirmed = true };
-            var result = await userManager.CreateAsync(admin, adminPassword);
+            var user = new IdentityUser { UserName = admin.Email, Email = admin.Email, EmailConfirmed = true };
+            var result = await userManager.CreateAsync(user, admin.Password);
             if (result.Succeeded)
-                logger.LogInformation("Usuario administrador {Email} creado.", adminEmail);
+                logger.LogInformation("Usuario administrador {Email} creado.", admin.Email);
             else
                 logger.LogError("No se pudo crear el administrador: {Errors}",
                     string.Join("; ", result.Errors.Select(e => e.Description)));
@@ -56,17 +56,17 @@ public static class DbInitializer
     /// agrega la columna y, sólo esa vez, asigna el skill de revisión a las etapas de agente con veredicto.
     /// No hace nada si la columna ya existe.
     /// </summary>
-    private static Task AddStageSkillColumnAsync(AppDbContext db, CancellationToken ct) =>
-        db.Database.ExecuteSqlRawAsync(AddStageSkillColumnSql, ct);
+    private static Task AddStageSkillColumnAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ADD_STAGE_SKILL_COLUMN_SQL, CT);
 
     // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
-    private const string AddStageSkillColumnSql = $"""
+    private const string ADD_STAGE_SKILL_COLUMN_SQL = $"""
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                            WHERE table_schema = current_schema() AND table_name = 'Stages' AND column_name = 'Skill') THEN
                 ALTER TABLE "Stages" ADD COLUMN "Skill" character varying(100) NULL;
-                UPDATE "Stages" SET "Skill" = '{DefaultPrompts.ReviewerSkill}'
+                UPDATE "Stages" SET "Skill" = '{DefaultPrompts.REVIEWER_SKILL}'
                 WHERE "Kind" = 'Agent' AND "RequiresDecision";
             END IF;
         END $$;
@@ -77,18 +77,18 @@ public static class DbInitializer
     /// (y, sólo esa vez, la marca en la columna «Pendiente Deploy» si existe) y <see cref="TaskItem.PullRequestMergedAt"/>.
     /// No hace nada si las columnas ya existen.
     /// </summary>
-    private static Task AddMergeColumnsAsync(AppDbContext db, CancellationToken ct) =>
-        db.Database.ExecuteSqlRawAsync(AddMergeColumnsSql, ct);
+    private static Task AddMergeColumnsAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ADD_MERGE_COLUMNS_SQL, CT);
 
     // Sin llaves en el SQL final: EF Core lo pasa por string.Format.
-    private const string AddMergeColumnsSql = $"""
+    private const string ADD_MERGE_COLUMNS_SQL = $"""
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                            WHERE table_schema = current_schema() AND table_name = 'Stages' AND column_name = 'IsMergeDestination') THEN
                 ALTER TABLE "Stages" ADD COLUMN "IsMergeDestination" boolean NOT NULL DEFAULT FALSE;
                 UPDATE "Stages" SET "IsMergeDestination" = TRUE
-                WHERE "Id" = (SELECT "Id" FROM "Stages" WHERE "Name" = '{PendingDeployStageName}' ORDER BY "Order" LIMIT 1);
+                WHERE "Id" = (SELECT "Id" FROM "Stages" WHERE "Name" = '{PENDING_DEPLOY_STAGE_NAME}' ORDER BY "Order" LIMIT 1);
             END IF;
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                            WHERE table_schema = current_schema() AND table_name = 'Tasks' AND column_name = 'PullRequestMergedAt') THEN
@@ -97,9 +97,9 @@ public static class DbInitializer
         END $$;
         """;
 
-    private const string PendingDeployStageName = "Pendiente Deploy";
+    private const string PENDING_DEPLOY_STAGE_NAME = "Pendiente Deploy";
 
-    public static async Task SeedDefaultWorkflowAsync(AppDbContext db, CancellationToken ct)
+    public static async Task SeedDefaultWorkflowAsync(AppDbContext Db, CancellationToken CT)
     {
         var backlog = new Stage { Name = "Backlog", Icon = "📥", Kind = StageKind.Manual, IsInitial = true,
             Description = "Tareas nuevas. Muévela a «Aprobación Tarea» cuando esté lista." };
@@ -110,16 +110,16 @@ public static class DbInitializer
         var developer = new Stage
         {
             Name = "Desarrollador", Icon = "💻", Kind = StageKind.Agent, Model = "opus",
-            PermissionMode = "acceptEdits", AllowedTools = DefaultPrompts.DeveloperAllowedTools,
-            PromptTemplate = DefaultPrompts.Developer, PushChanges = true, TimeoutMinutes = 90,
+            PermissionMode = "acceptEdits", AllowedTools = DefaultPrompts.DEVELOPER_ALLOWED_TOOLS,
+            PromptTemplate = DefaultPrompts.DEVELOPER, PushChanges = true, TimeoutMinutes = 90,
             Description = "Claude implementa la tarea en una rama y hace push.",
         };
         var reviewer = new Stage
         {
             Name = "Revisor de Código", Icon = "🔍", Kind = StageKind.Agent, Model = "sonnet",
-            PermissionMode = "default", AllowedTools = DefaultPrompts.ReviewerAllowedTools,
-            DisallowedTools = DefaultPrompts.ReviewerDisallowedTools, PromptTemplate = DefaultPrompts.Reviewer,
-            Skill = DefaultPrompts.ReviewerSkill, RequiresDecision = true, TimeoutMinutes = 30,
+            PermissionMode = "default", AllowedTools = DefaultPrompts.REVIEWER_ALLOWED_TOOLS,
+            DisallowedTools = DefaultPrompts.REVIEWER_DISALLOWED_TOOLS, PromptTemplate = DefaultPrompts.REVIEWER,
+            Skill = DefaultPrompts.REVIEWER_SKILL, RequiresDecision = true, TimeoutMinutes = 30,
             Description = "Claude revisa el diff y aprueba o devuelve al desarrollador.",
         };
         var prCreator = new Stage { Name = "Creador de PR", Icon = "🔀", Kind = StageKind.System,
@@ -128,7 +128,7 @@ public static class DbInitializer
             Description = "Producto valida el resultado. «Pedir cambios» devuelve al desarrollador." };
         var manualReview = new Stage { Name = "Revisión Código Manual", Icon = "🧐", Kind = StageKind.HumanApproval,
             Description = "Un desarrollador revisa el PR en GitHub." };
-        var pendingDeploy = new Stage { Name = PendingDeployStageName, Icon = "🚀", Kind = StageKind.Manual,
+        var pendingDeploy = new Stage { Name = PENDING_DEPLOY_STAGE_NAME, Icon = "🚀", Kind = StageKind.Manual,
             IsMergeDestination = true, Description = "La tarea entra sola aquí cuando se hace merge de su pull request." };
         var pendingTest = new Stage { Name = "Pendiente Prueba", Icon = "🧪", Kind = StageKind.Manual };
         var done = new Stage { Name = "Terminado", Icon = "🏁", Kind = StageKind.Terminal };
@@ -138,8 +138,8 @@ public static class DbInitializer
             manualReview, pendingDeploy, pendingTest, done, discarded];
         for (var i = 0; i < all.Length; i++) all[i].Order = (i + 1) * 10;
 
-        db.Stages.AddRange(all);
-        await db.SaveChangesAsync(ct);
+        Db.Stages.AddRange(all);
+        await Db.SaveChangesAsync(CT);
 
         backlog.SuccessStageId = approveTask.Id;
         improve.SuccessStageId = approveTask.Id;
@@ -155,6 +155,6 @@ public static class DbInitializer
         manualReview.RejectStageId = developer.Id;
         pendingDeploy.SuccessStageId = pendingTest.Id;
         pendingTest.SuccessStageId = done.Id;
-        await db.SaveChangesAsync(ct);
+        await Db.SaveChangesAsync(CT);
     }
 }

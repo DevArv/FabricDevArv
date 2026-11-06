@@ -8,12 +8,12 @@ public static class ExecutableResolver
 {
     public sealed record Command(string FileName, IReadOnlyList<string> PrefixArgs);
 
-    public static Command Resolve(string executable)
+    public static Command Resolve(string Executable)
     {
-        if (!ProcessRunner.IsWindows) return new Command(executable, []);
+        if (!ProcessRunner.IsWindows) return new Command(Executable, []);
 
-        var path = FindOnPath(executable);
-        if (path is null) return new Command(executable, []);
+        var path = FindOnPath(Executable);
+        if (path is null) return new Command(Executable, []);
 
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext is ".cmd" or ".bat")
@@ -30,10 +30,10 @@ public static class ExecutableResolver
         return new Command(path, []);
     }
 
-    private static string? FindOnPath(string executable)
+    private static string? FindOnPath(string Executable)
     {
-        if (Path.IsPathRooted(executable)) return File.Exists(executable) ? executable : null;
-        var exts = Path.HasExtension(executable)
+        if (Path.IsPathRooted(Executable)) return File.Exists(Executable) ? Executable : null;
+        var exts = Path.HasExtension(Executable)
             ? new[] { "" }
             : (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';', StringSplitOptions.RemoveEmptyEntries);
         var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
@@ -41,7 +41,7 @@ public static class ExecutableResolver
         {
             foreach (var ext in exts)
             {
-                var candidate = Path.Combine(dir.Trim('"'), executable + ext);
+                var candidate = Path.Combine(dir.Trim('"'), Executable + ext);
                 if (File.Exists(candidate)) return candidate;
             }
         }

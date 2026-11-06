@@ -5,17 +5,15 @@ using DevArv.Web.Enums.Tasks;
 using DevArv.Web.Enums.Workflow;
 using DevArv.Web.Helpers;
 using DevArv.Web.Services;
-using Microsoft.Extensions.Configuration;
+using DevArv.Web.Models;
+using Microsoft.Extensions.Options;
 
 namespace DevArv.Tests.Web.Services;
 
 public class PromptBuilderTests
 {
     private static PromptBuilder Builder() =>
-        new(new Clock(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["App:TimeZone"] = "UTC",
-        }).Build()));
+        new(new Clock(Options.Create(new AppOptions { TimeZone = "UTC" })));
 
     [Fact]
     public void Build_FillsVariablesAttachmentsAndFeedback()
@@ -58,8 +56,8 @@ public class PromptBuilderTests
     {
         var stage = new Stage
         {
-            Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.Reviewer,
-            Skill = DefaultPrompts.ReviewerSkill,
+            Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER,
+            Skill = DefaultPrompts.REVIEWER_SKILL,
         };
 
         var prompt = Builder().Build(ReviewTask(), stage);
@@ -75,7 +73,7 @@ public class PromptBuilderTests
     [Fact]
     public void Build_WithoutSkill_LeavesNoSkillBlock()
     {
-        var stage = new Stage { Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.Reviewer };
+        var stage = new Stage { Kind = StageKind.Agent, RequiresDecision = true, PromptTemplate = DefaultPrompts.REVIEWER };
 
         var prompt = Builder().Build(ReviewTask(), stage);
 
@@ -107,5 +105,33 @@ public class PromptBuilderTests
         stage.Skill = null;
         stage.AllowedTools = "Read";
         Assert.Equal(new[] { "Read" }, PromptBuilder.BuildAllowedTools(stage));
+    }
+
+    [Fact]
+    public void Build_PlaceholdersTypedInsideTaskData_AreNotExpandedAgain()
+    {
+        var task = ReviewTask();
+        task.Description = "Mostrar {{feedback}} y {{project.name}} tal cual.";
+        task.Comments = [new TaskComment { Kind = CommentKind.Feedback, Author = "ana", Body = "SECRETO-DE-FEEDBACK", CreatedAt = DateTimeOffset.UtcNow }];
+        var stage = new Stage
+        {
+            Kind = StageKind.Agent,
+            PromptTemplate = "Descripción: {{task.description}}\nProyecto: {{project.name}}\n{{feedback}}",
+        };
+
+        var prompt = Builder().Build(task, stage);
+
+        Assert.Contains("Descripción: Mostrar {{feedback}} y {{project.name}} tal cual.", prompt);
+        Assert.Equal(1, prompt.Split("SECRETO-DE-FEEDBACK").Length - 1);
+    }
+
+    [Fact]
+    public void Build_UnknownPlaceholders_AreLeftUntouched()
+    {
+        var stage = new Stage { Kind = StageKind.Agent, PromptTemplate = "Hola {{no.existe}} de {{task.id}}" };
+
+        var prompt = Builder().Build(ReviewTask(), stage);
+
+        Assert.Equal("Hola {{no.existe}} de 4", prompt);
     }
 }

@@ -86,7 +86,7 @@
             </div>
             <label>Skill (opcional)
                 <input asp-for="Input.Skill" list="skills-w" placeholder="revision" class="mono" />
-                <datalist id="skills-w"><option value="@DefaultPrompts.ReviewerSkill"></option></datalist>
+                <datalist id="skills-w"><option value="@DefaultPrompts.REVIEWER_SKILL"></option></datalist>
                 <small>Skill de Claude Code del repositorio del proyecto (<code>.claude/skills/&lt;nombre&gt;/SKILL.md</code>) con el que
                     el agente aplica la etapa; p. ej. <code>revision</code> para el revisor. Se agrega
                     <code>Skill(&lt;nombre&gt;)</code> a las herramientas permitidas y las instrucciones van en <code>{{skill}}</code>

@@ -4,92 +4,124 @@ using DevArv.Web.DatabaseConnection;
 using DevArv.Web.Enums.Runs;
 using DevArv.Web.Enums.Workflow;
 using DevArv.Web.Helpers;
+using DevArv.Web.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace DevArv.Web.Services;
 
 /// <summary>Acciones automáticas del servidor sobre GitHub.</summary>
-public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, IConfiguration config)
+public sealed class SystemActionExecutor(AppDbContext Db, GitHubService GitHub, IOptions<AppOptions> AppOptionsAccessor)
 {
-    public static RunCompletion Failure(string message) =>
-        new(false, false, message, null, 0, 0, 0, 0, 0, null, null, null, null, false, []);
+    // Límite de GitHub para el cuerpo de un PR: 65 536 caracteres.
+    private const int MAX_PULL_REQUEST_BODY_CHARS = 60_000;
 
-    private static RunCompletion Success(string text) =>
-        new(true, false, null, text, 0, 0, 0, 0, 0, null, null, null, null, false, []);
+    public static RunCompletion Failure(string Message) =>
+        new(false, false, Message, null, 0, 0, 0, 0, 0, null, null, null, null, false, []);
 
-    public async Task<RunCompletion> ExecuteAsync(TaskRun run, CancellationToken ct)
+    private static RunCompletion Success(string Text) =>
+        new(true, false, null, Text, 0, 0, 0, 0, 0, null, null, null, null, false, []);
+
+    public async Task<RunCompletion> ExecuteAsync(TaskRun Run, CancellationToken CT)
     {
-        var stage = await db.Stages.FindAsync([run.StageId], ct)
+        var stage = await Db.Stages.FindAsync([Run.StageId], CT)
                     ?? throw new InvalidOperationException("La columna de la ejecución ya no existe.");
-        var task = run.Task;
+        var task = Run.Task;
         return stage.SystemAction switch
         {
-            SystemAction.CreatePullRequest => await CreatePullRequestAsync(task, ct),
-            SystemAction.MergePullRequest => await MergePullRequestAsync(task, ct),
+            SystemAction.CreatePullRequest => await CreatePullRequestAsync(task, CT),
+            SystemAction.MergePullRequest => await MergePullRequestAsync(task, CT),
             _ => Success("Columna de sistema sin acción configurada; se avanza."),
         };
     }
 
-    private async Task<RunCompletion> CreatePullRequestAsync(TaskItem task, CancellationToken ct)
+    private async Task<RunCompletion> CreatePullRequestAsync(TaskItem Item, CancellationToken CT)
     {
-        var p = task.Project;
-        if (string.IsNullOrEmpty(task.WorkBranch))
+        var project = Item.Project;
+        if (string.IsNullOrEmpty(Item.WorkBranch))
             return Failure("La tarea no tiene rama de trabajo; primero debe pasar por un agente desarrollador.");
 
-        if (task.PullRequestNumber is { } existingNumber)
+        if (Item.PullRequestNumber is { } existingNumber)
         {
-            var existing = await github.GetPullRequestAsync(p.RepoOwner, p.RepoName, existingNumber, ct);
+            var existing = await GitHub.GetPullRequestAsync(
+                Owner: project.RepoOwner,
+                Repo: project.RepoName,
+                Number: existingNumber,
+                CT: CT);
             if (existing.State == "open")
                 return Success($"El pull request ya existe y sigue abierto: {existing.HtmlUrl}");
         }
 
-        if (!await github.BranchExistsAsync(p.RepoOwner, p.RepoName, task.WorkBranch, ct))
-            return Failure($"La rama {task.WorkBranch} no existe en GitHub. ¿El desarrollador hizo push?");
+        var branchExists = await GitHub.BranchExistsAsync(
+            Owner: project.RepoOwner,
+            Repo: project.RepoName,
+            Branch: Item.WorkBranch,
+            CT: CT);
+        if (!branchExists)
+            return Failure($"La rama {Item.WorkBranch} no existe en GitHub. ¿El desarrollador hizo push?");
 
-        var open = await github.FindOpenPullRequestAsync(p.RepoOwner, p.RepoName, task.WorkBranch, ct);
-        var pr = open ?? await github.CreatePullRequestAsync(
-            p.RepoOwner, p.RepoName, task.WorkBranch, task.BaseBranch,
-            PullRequestTitle.FromBranch(task.WorkBranch), await BuildBodyAsync(task, ct), ct);
+        var open = await GitHub.FindOpenPullRequestAsync(
+            Owner: project.RepoOwner,
+            Repo: project.RepoName,
+            Head: Item.WorkBranch,
+            CT: CT);
+        var pr = open ?? await GitHub.CreatePullRequestAsync(
+            Owner: project.RepoOwner,
+            Repo: project.RepoName,
+            Head: Item.WorkBranch,
+            Base: Item.BaseBranch,
+            Title: PullRequestTitle.FromBranch(Item.WorkBranch),
+            Body: await BuildBodyAsync(Item, CT),
+            CT: CT);
 
-        task.PullRequestNumber = pr.Number;
-        task.PullRequestUrl = pr.HtmlUrl;
-        task.PullRequestMergedAt = null;
+        Item.PullRequestNumber = pr.Number;
+        Item.PullRequestUrl = pr.HtmlUrl;
+        Item.PullRequestMergedAt = null;
         return Success(open is null ? $"Pull request creado: {pr.HtmlUrl}" : $"Se reutilizó el pull request abierto: {pr.HtmlUrl}");
     }
 
-    private async Task<RunCompletion> MergePullRequestAsync(TaskItem task, CancellationToken ct)
+    private async Task<RunCompletion> MergePullRequestAsync(TaskItem Item, CancellationToken CT)
     {
-        if (task.PullRequestNumber is not { } number)
+        if (Item.PullRequestNumber is not { } number)
             return Failure("La tarea no tiene pull request para hacer merge.");
-        var p = task.Project;
-        var pr = await github.GetPullRequestAsync(p.RepoOwner, p.RepoName, number, ct);
+        var project = Item.Project;
+        var pr = await GitHub.GetPullRequestAsync(
+            Owner: project.RepoOwner,
+            Repo: project.RepoName,
+            Number: number,
+            CT: CT);
         // La columna de merge ya decide el destino (su ✓); se marca para que el orquestador no la mueva otra vez.
         if (pr.Merged)
         {
-            task.PullRequestMergedAt ??= DateTimeOffset.UtcNow;
+            Item.PullRequestMergedAt ??= DateTimeOffset.UtcNow;
             return Success($"El pull request #{number} ya estaba integrado.");
         }
-        await github.MergePullRequestAsync(p.RepoOwner, p.RepoName, number, $"#{task.Id} {task.Title}", ct);
-        task.PullRequestMergedAt = DateTimeOffset.UtcNow;
+        await GitHub.MergePullRequestAsync(
+            Owner: project.RepoOwner,
+            Repo: project.RepoName,
+            Number: number,
+            CommitTitle: $"#{Item.Id} {Item.Title}",
+            CT: CT);
+        Item.PullRequestMergedAt = DateTimeOffset.UtcNow;
         return Success($"Merge (squash) del pull request #{number} realizado.");
     }
 
-    private async Task<string> BuildBodyAsync(TaskItem task, CancellationToken ct)
+    private async Task<string> BuildBodyAsync(TaskItem Item, CancellationToken CT)
     {
-        var lastDevSummary = await db.TaskRuns
-            .Where(r => r.TaskId == task.Id && r.Status == RunStatus.Succeeded && r.RunnerKind == StageKind.Agent
-                        && db.Stages.Any(s => s.Id == r.StageId && s.PushChanges))
+        var lastDevSummary = await Db.TaskRuns
+            .Where(r => r.TaskId == Item.Id && r.Status == RunStatus.Succeeded && r.RunnerKind == StageKind.Agent
+                        && Db.Stages.Any(s => s.Id == r.StageId && s.PushChanges))
             .OrderByDescending(r => r.Id)
             .Select(r => r.Summary)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefaultAsync(CT);
 
-        var publicUrl = config["App:PublicUrl"]?.TrimEnd('/');
-        var link = string.IsNullOrEmpty(publicUrl) ? "" : $"\n\n[Ver tarea en DevArv]({publicUrl}/?task={task.Id})";
+        var publicUrl = AppOptionsAccessor.Value.PublicUrl.Trim().TrimEnd('/');
+        var link = string.IsNullOrEmpty(publicUrl) ? "" : $"\n\n[Ver tarea en DevArv]({publicUrl}/?task={Item.Id})";
 
         var body = $"""
-            ## Tarea #{task.Id}: {task.Title}
+            ## Tarea #{Item.Id}: {Item.Title}
 
-            {task.Description}
+            {Item.Description}
 
             ## Resumen del agente desarrollador
 
@@ -99,7 +131,6 @@ public sealed class SystemActionExecutor(AppDbContext db, GitHubService github, 
             ---
             _PR generado automáticamente por DevArv con Claude Code._
             """;
-        // Límite de GitHub para el cuerpo de un PR: 65 536 caracteres.
-        return body.Length > 60_000 ? body[..60_000] + "\n\n_(recortado)_" : body;
+        return body.Length > MAX_PULL_REQUEST_BODY_CHARS ? body[..MAX_PULL_REQUEST_BODY_CHARS] + "\n\n_(recortado)_" : body;
     }
 }

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages.Workers;
 
-public sealed class IndexModel(WorkersRepository workers) : PageModel
+public sealed class IndexModel(WorkersRepository WorkersRepository) : PageModel
 {
     public List<WorkerNode> Workers { get; private set; } = [];
     public Dictionary<int, string> CurrentRuns { get; private set; } = [];
@@ -17,18 +17,20 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
     [TempData] public string? NewKeyWorker { get; set; }
     [TempData] public string? Error { get; set; }
 
-    public async Task OnGetAsync(CancellationToken ct) => await LoadAsync(ct);
+    public async Task OnGetAsync(CancellationToken CT) => await LoadAsync(CT);
 
-    public async Task<IActionResult> OnPostCreateAsync(CancellationToken ct)
+    public async Task<IActionResult> OnPostCreateAsync(CancellationToken CT)
     {
         if (!ModelState.IsValid)
         {
-            await LoadAsync(ct);
+            await LoadAsync(CT);
             return Page();
         }
         try
         {
-            ShowKey(await workers.InsertAsync(Input, ct));
+            ShowKey(await WorkersRepository.InsertAsync(
+                Record: Input,
+                CT: CT));
         }
         catch (ValidationFailedException ex)
         {
@@ -37,25 +39,32 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostRegenerateAsync(int id, CancellationToken ct)
+    public async Task<IActionResult> OnPostRegenerateAsync(int ID, CancellationToken CT)
     {
-        var result = await workers.RegenerateKeyAsync(id, ct);
+        var result = await WorkersRepository.RegenerateKeyAsync(
+            ID: ID,
+            CT: CT);
         if (result is null) return NotFound();
         ShowKey(result);
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostToggleAsync(int id, CancellationToken ct)
+    public async Task<IActionResult> OnPostToggleAsync(int ID, CancellationToken CT)
     {
-        if (!await workers.ToggleEnabledAsync(id, ct)) return NotFound();
+        var found = await WorkersRepository.ToggleEnabledAsync(
+            ID: ID,
+            CT: CT);
+        if (!found) return NotFound();
         return RedirectToPage();
     }
 
-    public async Task<IActionResult> OnPostDeleteAsync(int id, CancellationToken ct)
+    public async Task<IActionResult> OnPostDeleteAsync(int ID, CancellationToken CT)
     {
         try
         {
-            await workers.DeleteAsync(id, ct);
+            await WorkersRepository.DeleteAsync(
+                ID: ID,
+                CT: CT);
         }
         catch (ValidationFailedException ex)
         {
@@ -64,15 +73,15 @@ public sealed class IndexModel(WorkersRepository workers) : PageModel
         return RedirectToPage();
     }
 
-    private void ShowKey(WorkerKeyViewModel result)
+    private void ShowKey(WorkerKeyViewModel Result)
     {
-        NewKeyWorker = result.WorkerName;
-        NewKey = result.Key;
+        NewKeyWorker = Result.WorkerName;
+        NewKey = Result.Key;
     }
 
-    private async Task LoadAsync(CancellationToken ct)
+    private async Task LoadAsync(CancellationToken CT)
     {
-        Workers = await workers.GetAllAsync(ct);
-        CurrentRuns = await workers.GetCurrentRunsAsync(ct);
+        Workers = await WorkersRepository.GetAllAsync(CT);
+        CurrentRuns = await WorkersRepository.GetCurrentRunsAsync(CT);
     }
 }

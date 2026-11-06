@@ -14,7 +14,7 @@ public sealed class StageEditViewModel
     public int? SuccessStageId { get; set; }
     public int? RejectStageId { get; set; }
 
-    [MaxLength(100), RegularExpression(@"^[A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
+    [MaxLength(100), RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
     public string? Model { get; set; }
     public string PermissionMode { get; set; } = "acceptEdits";
     public string? AllowedTools { get; set; }

@@ -6,12 +6,12 @@ namespace DevArv.Web.Helpers;
 /// <summary>Lee el veredicto que un agente revisor debe escribir al final: "VEREDICTO: APROBADO" o "VEREDICTO: RECHAZADO".</summary>
 public static partial class DecisionParser
 {
-    public static RunDecision Parse(string? resultText)
+    public static RunDecision Parse(string? ResultText)
     {
-        if (string.IsNullOrWhiteSpace(resultText)) return RunDecision.None;
+        if (string.IsNullOrWhiteSpace(ResultText)) return RunDecision.None;
 
         // Se toma la última coincidencia: el veredicto final manda sobre menciones previas.
-        var matches = Verdict().Matches(resultText);
+        var matches = Verdict().Matches(ResultText);
         if (matches.Count == 0) return RunDecision.None;
 
         var word = matches[^1].Groups["v"].Value.ToUpperInvariant();

@@ -9,21 +9,21 @@ namespace DevArv.Worker.Helpers;
 /// </summary>
 public sealed class ClaudeStreamParser
 {
-    private const int MaxToolDetail = 220;
+    private const int MAX_TOOL_DETAIL = 220;
 
     public ClaudeResult? Result { get; private set; }
     public string? Model { get; private set; }
     public string? SessionId { get; private set; }
     public string? LastAssistantText { get; private set; }
 
-    public IEnumerable<string> Parse(string line)
+    public IEnumerable<string> Parse(string Line)
     {
-        if (string.IsNullOrWhiteSpace(line)) return [];
-        if (!line.TrimStart().StartsWith('{')) return [line];
+        if (string.IsNullOrWhiteSpace(Line)) return [];
+        if (!Line.TrimStart().StartsWith('{')) return [Line];
 
         try
         {
-            using var doc = JsonDocument.Parse(line);
+            using var doc = JsonDocument.Parse(Line);
             var root = doc.RootElement;
             return Str(root, "type") switch
             {
@@ -36,22 +36,22 @@ public sealed class ClaudeStreamParser
         }
         catch (JsonException)
         {
-            return [line];
+            return [Line];
         }
     }
 
-    private List<string> ParseSystem(JsonElement root)
+    private List<string> ParseSystem(JsonElement Root)
     {
-        if (Str(root, "subtype") != "init") return [];
-        Model = Str(root, "model") ?? Model;
-        SessionId = Str(root, "session_id") ?? SessionId;
-        return [$"⚙ Sesión de Claude iniciada · modelo {Model ?? "?"} · permisos {Str(root, "permissionMode") ?? "?"}"];
+        if (Str(Root, "subtype") != "init") return [];
+        Model = Str(Root, "model") ?? Model;
+        SessionId = Str(Root, "session_id") ?? SessionId;
+        return [$"⚙ Sesión de Claude iniciada · modelo {Model ?? "?"} · permisos {Str(Root, "permissionMode") ?? "?"}"];
     }
 
-    private List<string> ParseAssistant(JsonElement root)
+    private List<string> ParseAssistant(JsonElement Root)
     {
         var lines = new List<string>();
-        if (!root.TryGetProperty("message", out var message)) return lines;
+        if (!Root.TryGetProperty("message", out var message)) return lines;
         if (Str(message, "model") is { } model) Model = model;
         if (!message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array) return lines;
 
@@ -75,10 +75,10 @@ public sealed class ClaudeStreamParser
         return lines;
     }
 
-    private static List<string> ParseUser(JsonElement root)
+    private static List<string> ParseUser(JsonElement Root)
     {
         var lines = new List<string>();
-        if (!root.TryGetProperty("message", out var message)
+        if (!Root.TryGetProperty("message", out var message)
             || !message.TryGetProperty("content", out var content)
             || content.ValueKind != JsonValueKind.Array) return lines;
 
@@ -95,10 +95,10 @@ public sealed class ClaudeStreamParser
         return lines;
     }
 
-    private List<string> ParseResult(JsonElement root)
+    private List<string> ParseResult(JsonElement Root)
     {
         long input = 0, output = 0, cacheRead = 0, cacheWrite = 0;
-        if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+        if (Root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
         {
             input = Long(usage, "input_tokens");
             output = Long(usage, "output_tokens");
@@ -106,16 +106,16 @@ public sealed class ClaudeStreamParser
             cacheWrite = Long(usage, "cache_creation_input_tokens");
         }
 
-        var cost = Dec(root, "total_cost_usd") ?? Dec(root, "cost_usd") ?? 0m;
-        var isError = root.TryGetProperty("is_error", out var ie) && ie.ValueKind == JsonValueKind.True;
-        var subtype = Str(root, "subtype");
-        int? turns = root.TryGetProperty("num_turns", out var nt) && nt.TryGetInt32(out var n) ? n : null;
-        SessionId = Str(root, "session_id") ?? SessionId;
+        var cost = Dec(Root, "total_cost_usd") ?? Dec(Root, "cost_usd") ?? 0m;
+        var isError = Root.TryGetProperty("is_error", out var ie) && ie.ValueKind == JsonValueKind.True;
+        var subtype = Str(Root, "subtype");
+        int? turns = Root.TryGetProperty("num_turns", out var nt) && nt.TryGetInt32(out var n) ? n : null;
+        SessionId = Str(Root, "session_id") ?? SessionId;
 
         Result = new ClaudeResult(
             IsError: isError || (subtype is not null && subtype != "success"),
             Subtype: subtype,
-            ResultText: Str(root, "result") ?? LastAssistantText,
+            ResultText: Str(Root, "result") ?? LastAssistantText,
             CostUsd: cost,
             InputTokens: input,
             OutputTokens: output,
@@ -128,20 +128,20 @@ public sealed class ClaudeStreamParser
                 $"tokens in {input:N0} / out {output:N0} / caché {cacheRead + cacheWrite:N0}"];
     }
 
-    private static string DescribeToolInput(JsonElement block)
+    private static string DescribeToolInput(JsonElement Block)
     {
-        if (!block.TryGetProperty("input", out var input) || input.ValueKind != JsonValueKind.Object) return "";
+        if (!Block.TryGetProperty("input", out var input) || input.ValueKind != JsonValueKind.Object) return "";
         foreach (var key in new[] { "command", "file_path", "path", "pattern", "url", "query", "description" })
         {
             if (Str(input, key) is { Length: > 0 } value)
-                return Truncate(value.ReplaceLineEndings(" ⏎ "), MaxToolDetail);
+                return Truncate(value.ReplaceLineEndings(" ⏎ "), MAX_TOOL_DETAIL);
         }
-        return Truncate(input.GetRawText(), MaxToolDetail);
+        return Truncate(input.GetRawText(), MAX_TOOL_DETAIL);
     }
 
-    private static string ToolResultText(JsonElement block)
+    private static string ToolResultText(JsonElement Block)
     {
-        if (!block.TryGetProperty("content", out var content)) return "";
+        if (!Block.TryGetProperty("content", out var content)) return "";
         if (content.ValueKind == JsonValueKind.String) return content.GetString() ?? "";
         if (content.ValueKind != JsonValueKind.Array) return "";
         return string.Join("\n", content.EnumerateArray()
@@ -149,18 +149,18 @@ public sealed class ClaudeStreamParser
             .Select(c => Str(c, "text") ?? ""));
     }
 
-    private static string? Str(JsonElement e, string name) =>
-        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+    private static string? Str(JsonElement Element, string Name) =>
+        Element.ValueKind == JsonValueKind.Object && Element.TryGetProperty(Name, out var v) && v.ValueKind == JsonValueKind.String
             ? v.GetString()
             : null;
 
-    private static long Long(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
+    private static long Long(JsonElement Element, string Name) =>
+        Element.TryGetProperty(Name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
 
-    private static decimal? Dec(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var d) ? d : null;
+    private static decimal? Dec(JsonElement Element, string Name) =>
+        Element.TryGetProperty(Name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDecimal(out var d) ? d : null;
 
-    private static int CountLines(string text) => text.Count(c => c == '\n') + 1;
+    private static int CountLines(string Text) => Text.Count(c => c == '\n') + 1;
 
-    private static string Truncate(string text, int max) => text.Length <= max ? text : text[..max] + "…";
+    private static string Truncate(string Text, int Max) => Text.Length <= Max ? Text : Text[..Max] + "…";
 }

@@ -10,8 +10,9 @@ using Microsoft.AspNetCore.Mvc;
 namespace DevArv.Web.Pages.Tasks;
 
 public sealed class CreateModel(
-    ProjectsRepository projects, WorkersRepository workers, TasksRepository tasks, TaskAttachmentsRepository attachments,
-    WorkflowService workflow, UserManager<IdentityUser> users) : PageModel
+    ProjectsRepository ProjectsRepository, WorkersRepository WorkersRepository, TasksRepository TasksRepository,
+    TaskAttachmentsRepository AttachmentsRepository, WorkflowService WorkflowService,
+    UserManager<IdentityUser> UserManager) : PageModel
 {
     [BindProperty] public TaskCreateViewModel Input { get; set; } = new();
     [BindProperty] public List<IFormFile> Files { get; set; } = [];
@@ -19,26 +20,33 @@ public sealed class CreateModel(
 
     public List<Project> Projects { get; private set; } = [];
     public List<WorkerNode> Workers { get; private set; } = [];
-    public AttachmentOptions AttachmentLimits => attachments.Limits;
+    public AttachmentOptions AttachmentLimits => AttachmentsRepository.Limits;
 
-    public async Task<IActionResult> OnGetAsync(int? projectId, CancellationToken ct)
+    public async Task<IActionResult> OnGetAsync(int? ProjectID, CancellationToken CT)
     {
-        var record = await tasks.NewCreateAsync(projectId, ct);
+        var record = await TasksRepository.NewCreateAsync(
+            ProjectID: ProjectID,
+            CT: CT);
         if (record is null) return Modal ? Content("<p class='empty'>Primero crea un proyecto en «Proyectos».</p>", "text/html") : RedirectToPage("/Projects/Edit");
 
-        await LoadListsAsync(ct);
+        await LoadListsAsync(CT);
         Input = record;
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(CancellationToken ct)
+    public async Task<IActionResult> OnPostAsync(CancellationToken CT)
     {
-        await LoadListsAsync(ct);
+        await LoadListsAsync(CT);
         if (!ModelState.IsValid) return Page();
 
         try
         {
-            var task = await workflow.CreateTaskAsync(Input, Files, User.Identity?.Name ?? "?", users.GetUserId(User), ct);
+            var task = await WorkflowService.CreateTaskAsync(
+                Record: Input,
+                Files: Files,
+                Actor: User.Identity?.Name ?? "?",
+                UserID: UserManager.GetUserId(User),
+                CT: CT);
             return Redirect($"/?task={task.Id}");
         }
         catch (ValidationFailedException ex)
@@ -48,9 +56,9 @@ public sealed class CreateModel(
         }
     }
 
-    private async Task LoadListsAsync(CancellationToken ct)
+    private async Task LoadListsAsync(CancellationToken CT)
     {
-        Projects = await projects.GetActiveAsync(ct);
-        Workers = await workers.GetEnabledAsync(ct);
+        Projects = await ProjectsRepository.GetActiveAsync(CT);
+        Workers = await WorkersRepository.GetEnabledAsync(CT);
     }
 }

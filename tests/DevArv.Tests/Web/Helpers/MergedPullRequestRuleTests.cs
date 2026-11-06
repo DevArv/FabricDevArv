@@ -6,7 +6,7 @@ namespace DevArv.Tests.Web.Helpers;
 
 public class MergedPullRequestRuleTests
 {
-    private static readonly Stage PendingDeploy =
+    private static readonly Stage _PendingDeploy =
         new() { Id = 9, Name = "Pendiente Deploy", Order = 90, Kind = StageKind.Manual, IsMergeDestination = true };
 
     [Theory]
@@ -14,20 +14,20 @@ public class MergedPullRequestRuleTests
     [InlineData(StageKind.HumanApproval, 80)] // Revisión Código Manual
     [InlineData(StageKind.Agent, 40)]         // Desarrollador (se pidieron cambios y luego se hizo merge)
     [InlineData(StageKind.System, 60)]        // Creador de PR
-    public void ShouldMove_StageBeforeDestination_ReturnsTrue(StageKind kind, int order) =>
-        Assert.True(MergedPullRequestRule.ShouldMove(new Stage { Id = 1, Kind = kind, Order = order }, PendingDeploy));
+    public void ShouldMove_StageBeforeDestination_ReturnsTrue(StageKind Kind, int Order) =>
+        Assert.True(MergedPullRequestRule.ShouldMove(new Stage { Id = 1, Kind = Kind, Order = Order }, _PendingDeploy));
 
     [Fact]
     public void ShouldMove_AlreadyInDestination_ReturnsFalse() =>
-        Assert.False(MergedPullRequestRule.ShouldMove(PendingDeploy, PendingDeploy));
+        Assert.False(MergedPullRequestRule.ShouldMove(_PendingDeploy, _PendingDeploy));
 
     [Fact]
     public void ShouldMove_StageAfterDestination_ReturnsFalse() =>
         Assert.False(MergedPullRequestRule.ShouldMove(
-            new Stage { Id = 10, Name = "Pendiente Prueba", Kind = StageKind.Manual, Order = 100 }, PendingDeploy));
+            new Stage { Id = 10, Name = "Pendiente Prueba", Kind = StageKind.Manual, Order = 100 }, _PendingDeploy));
 
     [Fact]
     public void ShouldMove_TerminalStageBeforeDestination_ReturnsFalse() =>
         Assert.False(MergedPullRequestRule.ShouldMove(
-            new Stage { Id = 2, Name = "Descartado", Kind = StageKind.Terminal, Order = 5 }, PendingDeploy));
+            new Stage { Id = 2, Name = "Descartado", Kind = StageKind.Terminal, Order = 5 }, _PendingDeploy));
 }

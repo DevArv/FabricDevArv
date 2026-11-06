@@ -6,35 +6,51 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace DevArv.Web.Pages.Workflow;
 
-public sealed class EditModel(StagesRepository stages) : PageModel
+public sealed class EditModel(StagesRepository StagesRepository) : PageModel
 {
     [BindProperty(SupportsGet = true)] public int? Id { get; set; }
     [BindProperty] public StageEditViewModel Input { get; set; } = new();
     public List<Stage> OtherStages { get; private set; } = [];
 
-    public async Task<IActionResult> OnGetAsync(CancellationToken ct)
+    public async Task<IActionResult> OnGetAsync(CancellationToken CT)
     {
-        OtherStages = await stages.GetOthersAsync(Id, ct);
+        OtherStages = await StagesRepository.GetOthersAsync(
+            ExcludedID: Id,
+            CT: CT);
         if (Id is null)
         {
-            Input = stages.NewEdit();
+            Input = StagesRepository.NewEdit();
             return Page();
         }
 
-        var record = await stages.GetEditAsync(Id.Value, ct);
+        var record = await StagesRepository.GetEditAsync(
+            ID: Id.Value,
+            CT: CT);
         if (record is null) return NotFound();
         Input = record;
         return Page();
     }
 
-    public async Task<IActionResult> OnPostAsync(CancellationToken ct)
+    public async Task<IActionResult> OnPostAsync(CancellationToken CT)
     {
-        OtherStages = await stages.GetOthersAsync(Id, ct);
-        foreach (var (field, message) in await stages.GetValidationErrorsAsync(Id, Input, ct))
-            ModelState.AddModelError(field, message);
+        OtherStages = await StagesRepository.GetOthersAsync(
+            ExcludedID: Id,
+            CT: CT);
         if (!ModelState.IsValid) return Page();
 
-        if (!await stages.SaveAsync(Id, Input, ct)) return NotFound();
+        try
+        {
+            var found = await StagesRepository.SaveAsync(
+                ID: Id,
+                Record: Input,
+                CT: CT);
+            if (!found) return NotFound();
+        }
+        catch (ValidationFailedException ex)
+        {
+            foreach (var (field, message) in ex.Errors) ModelState.AddModelError(field, message);
+            return Page();
+        }
         return RedirectToPage("/Workflow/Index");
     }
 }

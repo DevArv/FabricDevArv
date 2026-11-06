@@ -7,44 +7,44 @@ namespace DevArv.Worker.Helpers;
 
 public static class ProcessRunner
 {
-    private static readonly Encoding Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static readonly Encoding _Utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     /// <summary>Ejecuta un proceso y entrega cada línea de stdout/stderr a medida que llega.</summary>
     public static async Task<int> RunStreamingAsync(
-        ProcessSpec spec, Action<string> onStdout, Action<string> onStderr, CancellationToken ct)
+        ProcessSpec Spec, Action<string> OnStdout, Action<string> OnStderr, CancellationToken CT)
     {
         var psi = new ProcessStartInfo
         {
-            FileName = spec.FileName,
-            WorkingDirectory = spec.WorkingDirectory,
+            FileName = Spec.FileName,
+            WorkingDirectory = Spec.WorkingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             RedirectStandardInput = true,
-            StandardOutputEncoding = Utf8,
-            StandardErrorEncoding = Utf8,
-            StandardInputEncoding = Utf8,
+            StandardOutputEncoding = _Utf8,
+            StandardErrorEncoding = _Utf8,
+            StandardInputEncoding = _Utf8,
         };
-        if (spec.RawArguments is not null) psi.Arguments = spec.RawArguments;
-        else foreach (var arg in spec.Arguments) psi.ArgumentList.Add(arg);
-        foreach (var key in spec.RemovedEnvironment) psi.Environment.Remove(key);
-        foreach (var (key, value) in spec.Environment) psi.Environment[key] = value;
+        if (Spec.RawArguments is not null) psi.Arguments = Spec.RawArguments;
+        else foreach (var arg in Spec.Arguments) psi.ArgumentList.Add(arg);
+        foreach (var key in Spec.RemovedEnvironment) psi.Environment.Remove(key);
+        foreach (var (key, value) in Spec.Environment) psi.Environment[key] = value;
 
         using var process = new Process { StartInfo = psi };
-        process.OutputDataReceived += (_, e) => { if (e.Data is not null) onStdout(e.Data); };
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) onStderr(e.Data); };
+        process.OutputDataReceived += (_, e) => { if (e.Data is not null) OnStdout(e.Data); };
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) OnStderr(e.Data); };
 
-        if (!process.Start()) throw new InvalidOperationException($"No se pudo iniciar {spec.FileName}.");
+        if (!process.Start()) throw new InvalidOperationException($"No se pudo iniciar {Spec.FileName}.");
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
         try
         {
-            if (spec.StandardInput is not null)
-                await process.StandardInput.WriteAsync(spec.StandardInput.AsMemory(), ct);
+            if (Spec.StandardInput is not null)
+                await process.StandardInput.WriteAsync(Spec.StandardInput.AsMemory(), CT);
             process.StandardInput.Close();
-            await process.WaitForExitAsync(ct);
+            await process.WaitForExitAsync(CT);
         }
         catch (OperationCanceledException)
         {
@@ -60,22 +60,22 @@ public static class ProcessRunner
     }
 
     /// <summary>Ejecuta un proceso corto y devuelve su salida completa.</summary>
-    public static async Task<ProcessResult> RunAsync(ProcessSpec spec, CancellationToken ct)
+    public static async Task<ProcessResult> RunAsync(ProcessSpec Spec, CancellationToken CT)
     {
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
-        var code = await RunStreamingAsync(spec,
+        var code = await RunStreamingAsync(Spec,
             line => { lock (stdout) stdout.AppendLine(line); },
-            line => { lock (stderr) stderr.AppendLine(line); }, ct);
+            line => { lock (stderr) stderr.AppendLine(line); }, CT);
         return new ProcessResult(code, stdout.ToString(), stderr.ToString());
     }
 
-    private static void Kill(Process process)
+    private static void Kill(Process Process)
     {
         try
         {
-            if (!process.HasExited) process.Kill(entireProcessTree: true);
-            process.WaitForExit(10_000);
+            if (!Process.HasExited) Process.Kill(entireProcessTree: true);
+            Process.WaitForExit(10_000);
         }
         catch (Exception)
         {

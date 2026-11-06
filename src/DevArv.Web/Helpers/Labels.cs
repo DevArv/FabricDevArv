@@ -9,7 +9,7 @@ namespace DevArv.Web.Helpers;
 /// <summary>Etiquetas en español para la UI.</summary>
 public static class Labels
 {
-    public static string Of(WorkStatus s) => s switch
+    public static string Of(WorkStatus Status) => Status switch
     {
         WorkStatus.Idle => "No iniciado",
         WorkStatus.Queued => "En cola",
@@ -17,45 +17,45 @@ public static class Labels
         WorkStatus.WaitingApproval => "Esperando aprobación",
         WorkStatus.Failed => "Error",
         WorkStatus.Done => "Finalizado",
-        _ => s.ToString(),
+        _ => Status.ToString(),
     };
 
-    public static string Of(Priority p) => p switch
+    public static string Of(Priority Priority) => Priority switch
     {
         Priority.Low => "Baja",
         Priority.Medium => "Media",
         Priority.High => "Alta",
         Priority.Critical => "Crítica",
-        _ => p.ToString(),
+        _ => Priority.ToString(),
     };
 
-    public static string Of(Complexity c) => c switch
+    public static string Of(Complexity Complexity) => Complexity switch
     {
         Complexity.Unclassified => "Sin clasificar",
         Complexity.Low => "Baja",
         Complexity.Medium => "Media",
         Complexity.High => "Alta",
-        _ => c.ToString(),
+        _ => Complexity.ToString(),
     };
 
-    public static string Of(RunStatus s) => s switch
+    public static string Of(RunStatus Status) => Status switch
     {
         RunStatus.Queued => "En cola",
         RunStatus.Running => "En ejecución",
         RunStatus.Succeeded => "Completado",
         RunStatus.Failed => "Falló",
         RunStatus.Cancelled => "Cancelado",
-        _ => s.ToString(),
+        _ => Status.ToString(),
     };
 
-    public static string Of(StageKind k) => k switch
+    public static string Of(StageKind Kind) => Kind switch
     {
         StageKind.Manual => "Manual",
         StageKind.HumanApproval => "Aprobación humana",
         StageKind.Agent => "Agente Claude",
         StageKind.System => "Automática (sistema)",
         StageKind.Terminal => "Final",
-        _ => k.ToString(),
+        _ => Kind.ToString(),
     };
 
     public static string Of(SystemAction a) => a switch
@@ -66,15 +66,15 @@ public static class Labels
         _ => a.ToString(),
     };
 
-    public static string Of(CommentKind k) => k switch
+    public static string Of(CommentKind Kind) => Kind switch
     {
         CommentKind.Comment => "Comentario",
         CommentKind.Feedback => "Cambios solicitados",
         CommentKind.ReviewerNote => "Hallazgos del revisor",
-        _ => k.ToString(),
+        _ => Kind.ToString(),
     };
 
-    public static string StatusIcon(WorkStatus s) => s switch
+    public static string StatusIcon(WorkStatus Status) => Status switch
     {
         WorkStatus.Queued => "⏳",
         WorkStatus.Running => "●",
@@ -84,7 +84,7 @@ public static class Labels
         _ => "○",
     };
 
-    public static string StatusCss(WorkStatus s) => s switch
+    public static string StatusCss(WorkStatus Status) => Status switch
     {
         WorkStatus.Queued => "st-queued",
         WorkStatus.Running => "st-running",
@@ -94,7 +94,7 @@ public static class Labels
         _ => "st-idle",
     };
 
-    public static string PriorityCss(Priority p) => p switch
+    public static string PriorityCss(Priority Priority) => Priority switch
     {
         Priority.Low => "pr-low",
         Priority.High => "pr-high",
@@ -102,14 +102,14 @@ public static class Labels
         _ => "pr-medium",
     };
 
-    public static string Tokens(long tokens) => tokens switch
+    public static string Tokens(long Tokens) => Tokens switch
     {
-        >= 1_000_000 => (tokens / 1_000_000d).ToString("0.##", CultureInfo.GetCultureInfo("es-DO")) + " M",
-        >= 1_000 => (tokens / 1_000d).ToString("0.#", CultureInfo.GetCultureInfo("es-DO")) + " k",
-        _ => tokens.ToString(CultureInfo.InvariantCulture),
+        >= 1_000_000 => (Tokens / 1_000_000d).ToString("0.##", CultureInfo.GetCultureInfo("es-DO")) + " M",
+        >= 1_000 => (Tokens / 1_000d).ToString("0.#", CultureInfo.GetCultureInfo("es-DO")) + " k",
+        _ => Tokens.ToString(CultureInfo.InvariantCulture),
     };
 
-    public static string Usd(decimal amount) => "US$ " + amount.ToString("0.00", CultureInfo.InvariantCulture);
+    public static string Usd(decimal Amount) => "US$ " + Amount.ToString("0.00", CultureInfo.InvariantCulture);
 
     public static string Duration(TimeSpan? d)
     {
@@ -120,9 +120,9 @@ public static class Labels
     }
 
     /// <summary>Cronómetro para las tarjetas: "05:07" o, desde una hora, "1:05:07". Debe coincidir con site.js.</summary>
-    public static string Stopwatch(TimeSpan elapsed)
+    public static string Stopwatch(TimeSpan Elapsed)
     {
-        var total = Math.Max(0L, (long)elapsed.TotalSeconds);
+        var total = Math.Max(0L, (long)Elapsed.TotalSeconds);
         var hours = total / 3600;
         var minutes = total / 60 % 60;
         var seconds = total % 60;
@@ -131,10 +131,10 @@ public static class Labels
             : string.Create(CultureInfo.InvariantCulture, $"{minutes:00}:{seconds:00}");
     }
 
-    public static string Initials(string? nameOrEmail)
+    public static string Initials(string? NameOrEmail)
     {
-        if (string.IsNullOrWhiteSpace(nameOrEmail)) return "?";
-        var name = nameOrEmail.Split('@')[0];
+        if (string.IsNullOrWhiteSpace(NameOrEmail)) return "?";
+        var name = NameOrEmail.Split('@')[0];
         var parts = name.Split(['.', '_', '-', ' '], StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 2
             ? $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}"
@@ -142,11 +142,11 @@ public static class Labels
     }
 
     /// <summary>Texto plano corto a partir de Markdown, para las tarjetas.</summary>
-    public static string Excerpt(string? markdown, int max = 140)
+    public static string Excerpt(string? Markdown, int Max = 140)
     {
-        if (string.IsNullOrWhiteSpace(markdown)) return "";
-        var text = Regex.Replace(markdown, @"[#*_`>\[\]\(\)!-]+", " ");
+        if (string.IsNullOrWhiteSpace(Markdown)) return "";
+        var text = Regex.Replace(Markdown, @"[#*_`>\[\]\(\)!-]+", " ");
         text = Regex.Replace(text, @"\s+", " ").Trim();
-        return text.Length <= max ? text : text[..max].TrimEnd() + "…";
+        return text.Length <= Max ? text : text[..Max].TrimEnd() + "…";
     }
 }
