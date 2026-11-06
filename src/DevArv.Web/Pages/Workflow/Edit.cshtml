@@ -51,7 +51,7 @@
         <label class="check"><input asp-for="Input.IsMergeDestination" /> Al hacer merge del pull request en GitHub, la tarea entra aquí
             <small>(sólo si está en una columna anterior y no finalizada; se revisa cada minuto)</small></label>
 
-        <fieldset data-kind-show="System">
+        <fieldset data-kind-show="@StageKind.SYSTEM">
             <legend>Acción automática del servidor</legend>
             <select asp-for="Input.SystemAction">
                 @foreach (var a in Enum.GetValues<SystemAction>())
@@ -61,7 +61,7 @@
             </select>
         </fieldset>
 
-        <fieldset data-kind-show="Agent">
+        <fieldset data-kind-show="@StageKind.AGENT">
             <legend>Agente Claude Code</legend>
             <div class="grid-3">
                 <label>Modelo

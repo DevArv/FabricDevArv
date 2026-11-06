@@ -102,6 +102,34 @@ public static class Labels
         _ => "pr-medium",
     };
 
+    /// <summary>Clase CSS de una columna según su tipo. Explícita: no depende del nombre del miembro del enum.</summary>
+    public static string KindCss(StageKind Kind) => Kind switch
+    {
+        StageKind.AGENT => "kind-agent",
+        StageKind.SYSTEM => "kind-system",
+        StageKind.HUMAN_APPROVAL => "kind-humanapproval",
+        StageKind.TERMINAL => "kind-terminal",
+        _ => "kind-manual",
+    };
+
+    /// <summary>Clase CSS de un comentario según su tipo.</summary>
+    public static string KindCss(CommentKind Kind) => Kind switch
+    {
+        CommentKind.FEEDBACK => "kind-feedback",
+        CommentKind.REVIEWER_NOTE => "kind-reviewernote",
+        _ => "kind-comment",
+    };
+
+    /// <summary>Clase CSS del estado de una ejecución.</summary>
+    public static string StatusCss(RunStatus Status) => Status switch
+    {
+        RunStatus.RUNNING => "rs-running",
+        RunStatus.SUCCEEDED => "rs-succeeded",
+        RunStatus.FAILED => "rs-failed",
+        RunStatus.CANCELLED => "rs-cancelled",
+        _ => "rs-queued",
+    };
+
     public static string Tokens(long Tokens) => Tokens switch
     {
         >= 1_000_000 => (Tokens / 1_000_000d).ToString("0.##", CultureInfo.GetCultureInfo("es-DO")) + " M",

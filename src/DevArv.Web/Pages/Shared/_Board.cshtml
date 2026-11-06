@@ -6,7 +6,7 @@
     {
         if (Model.HideEmpty && col.Tasks.Count == 0) { continue; }
         var s = col.Stage;
-        <section class="column kind-@s.Kind.ToString().ToLowerInvariant()" data-stage-id="@s.ID">
+        <section class="column @Labels.KindCss(s.Kind)" data-stage-id="@s.ID">
             <header class="column-head">
                 <span class="avatar">@s.Icon</span>
                 <div class="column-title">

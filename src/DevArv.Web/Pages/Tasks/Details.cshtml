@@ -222,7 +222,7 @@
                 <a class="run-item @(r.ID == run?.ID ? "on" : "")" href="@Model.SelfUrl(r.ID)" data-modal-link>
                     <div class="run-head">
                         <strong>@r.StageName</strong>
-                        <span class="run-status rs-@r.Status.ToString().ToLowerInvariant()">@Labels.Of(r.Status)</span>
+                        <span class="run-status @Labels.StatusCss(r.Status)">@Labels.Of(r.Status)</span>
                     </div>
                     <small>
                         @Model.Clock.Format(r.StartedAt ?? r.CreatedAt) · 🖥 @(r.Worker?.Name ?? (r.RunnerKind == StageKind.SYSTEM ? "servidor" : "—"))
@@ -247,7 +247,7 @@
             {
                 <div class="run-detail-head">
                     <strong>@run.StageName</strong>
-                    <span class="run-status rs-@run.Status.ToString().ToLowerInvariant()">@Labels.Of(run.Status)</span>
+                    <span class="run-status @Labels.StatusCss(run.Status)">@Labels.Of(run.Status)</span>
                     @if (run.NumTurns is not null) { <span class="muted">@run.NumTurns turnos</span> }
                     @if (run.HeadCommit is not null) { <code title="Commit">@(run.HeadCommit[..Math.Min(10, run.HeadCommit.Length)])</code> }
                 </div>
@@ -303,7 +303,7 @@
             <h3>Comentarios y retroalimentación</h3>
             @foreach (var c in t.Comments.OrderBy(c => c.CreatedAt))
             {
-                <div class="comment kind-@c.Kind.ToString().ToLowerInvariant()">
+                <div class="comment @Labels.KindCss(c.Kind)">
                     <div class="comment-head">
                         <strong>@c.Author</strong> · <span class="muted">@Labels.Of(c.Kind) · @Model.Clock.Format(c.CreatedAt)</span>
                     </div>
