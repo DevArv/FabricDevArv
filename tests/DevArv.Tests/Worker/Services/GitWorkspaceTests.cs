@@ -40,6 +40,27 @@ public sealed class GitWorkspaceTests : IDisposable
     }
 
     [Fact]
+    public void ParseNulSeparated_KeepsNamesWithSpacesAndAccents()
+    {
+        Assert.Equal(["español.txt", "src/a b.cs"], GitWorkspace.ParseNulSeparated("español.txt\0src/a b.cs\0"));
+        Assert.Empty(GitWorkspace.ParseNulSeparated(""));
+    }
+
+    [Fact]
+    public async Task MergeBaseAsync_WithNonAsciiFileName_ReportsItUnquotedAndBlocksCommit()
+    {
+        var (git, job, ws) = await SetUpAsync(baseChange: ("español.txt", "main\n"), workChange: ("español.txt", "tarea\n"));
+
+        var conflicted = await git.MergeBaseAsync(job, ws, _ => { }, CancellationToken.None);
+
+        Assert.Equal(["español.txt"], conflicted);
+        var ex = await Assert.ThrowsAsync<GitException>(() =>
+            git.CommitAndPushAsync(job, ws, _ => { }, CancellationToken.None, conflicted));
+        Assert.Contains("marcadores de conflicto", ex.Message);
+        Assert.Contains("español.txt:", ex.Message);
+    }
+
+    [Fact]
     public async Task MergeBaseAsync_WithConflicts_LeavesThemAndBlocksCommitWhileMarkersRemain()
     {
         var (git, job, ws) = await SetUpAsync(baseChange: ("a.txt", "uno\nmain\n"), workChange: ("a.txt", "uno\ntarea\n"));

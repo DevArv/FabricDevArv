@@ -118,9 +118,15 @@ public sealed partial class GitWorkspace(IOptions<WorkerOptions> options)
 
     private async Task<List<string>> ConflictedFilesAsync(string wt, CancellationToken ct)
     {
-        var r = await GitAsync(wt, ct, null, "diff", "--name-only", "--diff-filter=U");
-        return r.StdOut.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        // -z separa con NUL y no entrecomilla ni escapa nombres con caracteres no ASCII (español.txt), igual que
+        // las rutas que imprime «git diff --check», con las que luego se comparan.
+        var r = await GitAsync(wt, ct, null, "diff", "--name-only", "-z", "--diff-filter=U");
+        return ParseNulSeparated(r.StdOut);
     }
+
+    /// <summary>Nombres separados por NUL. Git añade un «\n» suelto tras las rutas sin fusionar: se descarta.</summary>
+    internal static List<string> ParseNulSeparated(string output) =>
+        output.Split('\0', StringSplitOptions.RemoveEmptyEntries).Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
 
     /// <summary>Commit de lo pendiente y push de la rama de trabajo.</summary>
     /// <param name="conflictedFiles">
