@@ -108,6 +108,38 @@ public class DbInitializerTests
         Assert.DoesNotContain("}", sql);
     }
 
+    [Fact]
+    public void AllowNullLegacyStoredNameSql_DropsNotNullOnlyWhenTheColumnExistsAndIsRequired()
+    {
+        // Mientras la migración de adjuntos conserve StoredName (faltan archivos), el modelo no la llena: si siguiera
+        // siendo NOT NULL, guardar un adjunto nuevo fallaría con «null value in column "StoredName"» (#18).
+        var sql = DbInitializer.ALLOW_NULL_LEGACY_STORED_NAME_SQL;
+
+        Assert.Matches(
+            $@"table_name = '{TableNames.TASK_ATTACHMENTS}'\s+AND column_name = 'StoredName' AND is_nullable = 'NO'",
+            sql);
+        Assert.Contains($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" ALTER COLUMN \"StoredName\" DROP NOT NULL;", sql);
+        Assert.DoesNotContain("table_name = 'TaskAttachments'", sql);
+        Assert.StartsWith("DO $$", sql);
+        Assert.EndsWith("END $$;", sql);
+        Assert.DoesNotContain("{", sql);
+        Assert.DoesNotContain("}", sql);
+    }
+
+    [Fact]
+    public void Model_DoesNotMapTheLegacyStoredNameColumn()
+    {
+        // La columna antigua sólo se toca con SQL escrito a mano; el modelo nunca debe volver a exigirla.
+        using var db = TestDatabase.CreateContext(Guid.NewGuid().ToString("N"));
+
+        var columns = db.Model.GetEntityTypes()
+            .Where(e => e.GetTableName() == TableNames.TASK_ATTACHMENTS)
+            .SelectMany(e => e.GetProperties())
+            .Select(p => p.GetColumnName());
+
+        Assert.DoesNotContain(DbInitializer.LEGACY_STORED_NAME_COLUMN, columns);
+    }
+
     // ------------------------------------------------------------------ ResolveLegacyPath (migración de adjuntos antiguos)
 
     private static string CreateTempFolder()
@@ -137,9 +169,10 @@ public class DbInitializerTests
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
     [InlineData("no-existe.png")]
-    public void ResolveLegacyPath_EmptyNameOrMissingFile_ReturnsNull(string StoredName)
+    public void ResolveLegacyPath_EmptyNameOrMissingFile_ReturnsNull(string? StoredName)
     {
         var folder = CreateTempFolder();
         try

@@ -36,6 +36,7 @@ public static class DbInitializer
         // Estas usan el nombre nuevo de la tabla, así que van después del renombrado (también aplican a bases ya renombradas).
         await AddCaptureColumnAsync(db, CT);
         await AddAttachmentContentColumnAsync(db, CT);
+        await AllowNullLegacyStoredNameAsync(db, CT);
         await MoveLegacyAttachmentsToDatabaseAsync(
             Db: db,
             Folder: Path.Combine(
@@ -229,6 +230,31 @@ public static class DbInitializer
         """;
 
     /// <summary>
+    /// Bases creadas cuando los adjuntos se guardaban en disco: la columna <c>StoredName</c> era NOT NULL y el modelo ya no
+    /// la llena, así que mientras se conserve (ver <see cref="MoveLegacyAttachmentsToDatabaseAsync"/>) cualquier adjunto
+    /// nuevo fallaría con «null value in column "StoredName"». Le quita la restricción NOT NULL; las filas antiguas
+    /// conservan su valor. No hace nada si la tabla o la columna no existen o si ya admite nulos.
+    /// Debe correr después de <see cref="RenameTablesToModuleNamesAsync"/>.
+    /// </summary>
+    private static Task AllowNullLegacyStoredNameAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ALLOW_NULL_LEGACY_STORED_NAME_SQL, CT);
+
+    // Sin llaves en el SQL: EF Core lo pasa por string.Format.
+    internal static readonly string ALLOW_NULL_LEGACY_STORED_NAME_SQL = $"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}'
+                         AND column_name = '{LEGACY_STORED_NAME_COLUMN}' AND is_nullable = 'NO') THEN
+                ALTER TABLE "{TableNames.TASK_ATTACHMENTS}" ALTER COLUMN "{LEGACY_STORED_NAME_COLUMN}" DROP NOT NULL;
+            END IF;
+        END $$;
+        """;
+
+    /// <summary>Columna de las bases antiguas con el nombre en disco de cada adjunto; ya no está en el modelo.</summary>
+    internal const string LEGACY_STORED_NAME_COLUMN = "StoredName";
+
+    /// <summary>
     /// Bases creadas cuando los adjuntos se guardaban en disco (columna <c>StoredName</c>): copia cada archivo a la columna
     /// <c>Content</c> y, ya confirmada la transacción, borra los archivos copiados.
     /// La columna <c>StoredName</c> es lo único que relaciona cada fila con su archivo, así que sólo se quita cuando
@@ -241,7 +267,7 @@ public static class DbInitializer
     {
         var hasStoredName = await Db.Database.SqlQueryRaw<int>($"""
             SELECT COUNT(*)::int AS "Value" FROM information_schema.columns
-            WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'StoredName'
+            WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = '{LEGACY_STORED_NAME_COLUMN}'
             """).SingleAsync(CT) > 0;
         if (!hasStoredName) return;
 
@@ -301,10 +327,10 @@ public static class DbInitializer
     }
 
     /// <summary>
-    /// Ruta del archivo antiguo de un adjunto; null si <paramref name="StoredName"/> está vacío o el archivo no existe.
+    /// Ruta del archivo antiguo de un adjunto; null si <paramref name="StoredName"/> es null o vacío o el archivo no existe.
     /// <c>StoredName</c> lo generaba el servidor, pero sólo se usa su último segmento para evitar path traversal.
     /// </summary>
-    internal static string? ResolveLegacyPath(string Folder, string StoredName)
+    internal static string? ResolveLegacyPath(string Folder, string? StoredName)
     {
         var name = Path.GetFileName(StoredName);
         if (string.IsNullOrEmpty(name)) return null;
@@ -317,7 +343,8 @@ public static class DbInitializer
     internal sealed class LegacyAttachmentRow
     {
         public long ID { get; set; }
-        public string StoredName { get; set; } = "";
+        /// <summary>Null en las filas creadas después de quitarle el NOT NULL; ésas ya tienen contenido.</summary>
+        public string? StoredName { get; set; }
     }
 
     public static async Task SeedDefaultWorkflowAsync(AppDbContext Db, CancellationToken CT)
