@@ -104,11 +104,14 @@
     if (copyButton) {
       const source = $(copyButton.dataset.copyTarget);
       if (source && navigator.clipboard) {
-        const label = copyButton.textContent;
+        // La etiqueta original se guarda una sola vez: un segundo clic antes de que se restaure no debe tomar «✓ Copiado».
+        copyButton.dataset.label ??= copyButton.textContent;
+        const label = copyButton.dataset.label;
+        clearTimeout(copyButton.restoreTimer);
         navigator.clipboard.writeText(source.textContent).then(
           () => { copyButton.textContent = '✓ Copiado'; },
           () => { copyButton.textContent = 'No se pudo copiar'; });
-        setTimeout(() => { copyButton.textContent = label; }, 1500);
+        copyButton.restoreTimer = setTimeout(() => { copyButton.textContent = label; }, 1500);
       }
       return;
     }

@@ -86,6 +86,8 @@ public class DbInitializerTests
         var sql = DbInitializer.ADD_CAPTURE_COLUMN_SQL;
 
         Assert.Contains($"table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'IsCapture'", sql);
+        // Sin la tabla no hay nada que alterar: el ALTER no debe fallar si cambia el orden de las adaptaciones.
+        Assert.Contains("FROM information_schema.tables", sql);
         Assert.Contains($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" ADD COLUMN \"IsCapture\"", sql);
         Assert.DoesNotContain("table_name = 'TaskAttachments'", sql);
         Assert.DoesNotContain("{", sql);

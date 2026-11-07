@@ -262,31 +262,31 @@
         </aside>
 
         @{
-            void RunHead(TaskRun r)
+            void RunHead(TaskRun Run)
             {
                 <div class="run-detail-head">
-                    <strong>@r.StageName</strong>
-                    <span class="run-status @Labels.StatusCss(r.Status)">@Labels.Of(r.Status)</span>
-                    @if (r.NumTurns is not null) { <span class="muted">@r.NumTurns turnos</span> }
-                    @if (r.HeadCommit is not null) { <code title="Commit">@(r.HeadCommit[..Math.Min(10, r.HeadCommit.Length)])</code> }
+                    <strong>@Run.StageName</strong>
+                    <span class="run-status @Labels.StatusCss(Run.Status)">@Labels.Of(Run.Status)</span>
+                    @if (Run.NumTurns is not null) { <span class="muted">@Run.NumTurns turnos</span> }
+                    @if (Run.HeadCommit is not null) { <code title="Commit">@(Run.HeadCommit[..Math.Min(10, Run.HeadCommit.Length)])</code> }
                 </div>
 
-                @if (r.ErrorMessage is not null)
+                @if (Run.ErrorMessage is not null)
                 {
-                    <div class="alert error">@r.ErrorMessage</div>
+                    <div class="alert error">@Run.ErrorMessage</div>
                 }
             }
 
-            void RunSummary(TaskRun r)
+            void RunSummary(TaskRun Run)
             {
                 <h4>Resultado</h4>
-                @if (string.IsNullOrWhiteSpace(r.Summary))
+                @if (string.IsNullOrWhiteSpace(Run.Summary))
                 {
-                    <p class="muted">@(r.Status is RunStatus.RUNNING or RunStatus.QUEUED ? "En progreso…" : "Sin resultado.")</p>
+                    <p class="muted">@(Run.Status is RunStatus.RUNNING or RunStatus.QUEUED ? "En progreso…" : "Sin resultado.")</p>
                 }
                 else
                 {
-                    <div class="markdown result">@MarkdownRenderer.Render(r.Summary)</div>
+                    <div class="markdown result">@MarkdownRenderer.Render(Run.Summary)</div>
                 }
 
                 <h4>Archivos modificados</h4>
@@ -305,30 +305,30 @@
                 }
             }
 
-            void RunPrompt(TaskRun r)
+            void RunPrompt(TaskRun Run)
             {
-                @if (r.PromptSnapshot is not null)
+                @if (Run.PromptSnapshot is not null)
                 {
                     <details class="section" data-key="prompt">
                         <summary>Prompt enviado al agente</summary>
-                        <pre class="log">@r.PromptSnapshot</pre>
+                        <pre class="log">@Run.PromptSnapshot</pre>
                     </details>
                 }
             }
 
-            void ReportSection(TaskReportSectionViewModel? report, string missing)
+            void ReportSection(TaskReportSectionViewModel? Report, string Missing)
             {
-                @if (report is null)
+                @if (Report is null)
                 {
-                    <p class="muted report-empty">@missing</p>
+                    <p class="muted report-empty">@Missing</p>
                 }
                 else
                 {
                     <p class="muted report-source">
-                        Reportado por «@report.StageName» · @Model.Clock.Format(report.FinishedAt) ·
-                        <a href="@Model.SelfUrl(report.RunID)" data-modal-link>ver ejecución</a>
+                        Reportado por «@Report.StageName» · @Model.Clock.Format(Report.FinishedAt) ·
+                        <a href="@Model.SelfUrl(Report.RunID)" data-modal-link>ver ejecución</a>
                     </p>
-                    <div class="markdown result">@MarkdownRenderer.Render(report.Content)</div>
+                    <div class="markdown result">@MarkdownRenderer.Render(Report.Content)</div>
                 }
             }
         }

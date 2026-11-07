@@ -181,7 +181,7 @@ public static class DbInitializer
 
     /// <summary>
     /// Bases creadas antes de la pestaña «Capturas» del detalle: agrega <see cref="TaskAttachment.IsCapture"/>.
-    /// No hace nada si la columna ya existe. Debe correr después de <see cref="RenameTablesToModuleNamesAsync"/>.
+    /// No hace nada si la columna ya existe o si la tabla no existe. Debe correr después de <see cref="RenameTablesToModuleNamesAsync"/>.
     /// </summary>
     private static Task AddCaptureColumnAsync(AppDbContext Db, CancellationToken CT) =>
         Db.Database.ExecuteSqlRawAsync(ADD_CAPTURE_COLUMN_SQL, CT);
@@ -190,8 +190,10 @@ public static class DbInitializer
     internal static readonly string ADD_CAPTURE_COLUMN_SQL = $"""
         DO $$
         BEGIN
-            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
-                           WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'IsCapture') THEN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'IsCapture') THEN
                 ALTER TABLE "{TableNames.TASK_ATTACHMENTS}" ADD COLUMN "IsCapture" boolean NOT NULL DEFAULT FALSE;
             END IF;
         END $$;

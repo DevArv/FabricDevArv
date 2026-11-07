@@ -131,8 +131,10 @@ public static partial class TaskReport
     {
         var clean = Title.Trim().Trim('*', '_', ' ').TrimEnd(':').Trim('*', '_', ' ');
         return string.Compare(
-            clean, Expected, CultureInfo.InvariantCulture,
-            CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) == 0;
+            strA: clean,
+            strB: Expected,
+            culture: CultureInfo.InvariantCulture,
+            options: CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) == 0;
     }
 
     [GeneratedRegex(@"^ {0,3}(?<hashes>#{1,6})[ \t]+(?<title>.*?)[ \t]*#*[ \t]*$")]
