@@ -108,6 +108,32 @@ public class DbInitializerTests
         Assert.DoesNotContain("}", sql);
     }
 
+    [Fact]
+    public void DropLegacyStoredNameSql_DropsTheColumnFromTheModuleTable_AndIsIdempotent()
+    {
+        // La columna antigua no se usa; si se conservara (era NOT NULL), guardar un adjunto nuevo fallaría con
+        // «null value in column "StoredName"» (#18). Se elimina siempre, aunque falten archivos por migrar.
+        var sql = DbInitializer.DROP_LEGACY_STORED_NAME_SQL;
+
+        Assert.Equal($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" DROP COLUMN IF EXISTS \"StoredName\";", sql);
+        Assert.DoesNotContain("{", sql);
+        Assert.DoesNotContain("}", sql);
+    }
+
+    [Fact]
+    public void Model_DoesNotMapTheLegacyStoredNameColumn()
+    {
+        // La columna antigua sólo se toca con SQL escrito a mano; el modelo nunca debe volver a exigirla.
+        using var db = TestDatabase.CreateContext(Guid.NewGuid().ToString("N"));
+
+        var columns = db.Model.GetEntityTypes()
+            .Where(e => e.GetTableName() == TableNames.TASK_ATTACHMENTS)
+            .SelectMany(e => e.GetProperties())
+            .Select(p => p.GetColumnName());
+
+        Assert.DoesNotContain(DbInitializer.LEGACY_STORED_NAME_COLUMN, columns);
+    }
+
     // ------------------------------------------------------------------ ResolveLegacyPath (migración de adjuntos antiguos)
 
     private static string CreateTempFolder()
@@ -137,9 +163,10 @@ public class DbInitializerTests
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
     [InlineData("no-existe.png")]
-    public void ResolveLegacyPath_EmptyNameOrMissingFile_ReturnsNull(string StoredName)
+    public void ResolveLegacyPath_EmptyNameOrMissingFile_ReturnsNull(string? StoredName)
     {
         var folder = CreateTempFolder();
         try

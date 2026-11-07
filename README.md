@@ -405,8 +405,9 @@ El token de GitHub del worker viaja en una cabecera HTTP de git (igual que `acti
   (firma PNG/JPEG/GIF/WEBP, `%PDF-`, documento HTML en UTF-8 válido), no sólo por extensión, y la extensión debe coincidir.
   SVG, ejecutables y cualquier otro formato se rechazan. Se guardan en la base de datos (columna `Tasks_Attachments.Content`),
   nunca en disco ni dentro del repositorio; las capturas de la pestaña «Capturas» también. Al arrancar, los adjuntos
-  antiguos de `App_Data/attachments` se copian a la base de datos y se borran del disco. Si algún archivo no se
-  encuentra, se conserva la columna `StoredName` (la única relación con el archivo) y se reintenta en el siguiente arranque.
+  antiguos de `App_Data/attachments` se copian a la base de datos, se borran del disco y se elimina la columna antigua
+  `StoredName`. Si algún archivo no se encuentra, ese adjunto queda sin contenido (su descarga responde 404) y su ID se
+  registra en el log.
   El HTML nunca se muestra en el dominio de la app: se descarga con `Content-Security-Policy: sandbox` y `nosniff`.
 - **Markdown:** el HTML crudo se escapa y los enlaces sólo pueden ser http(s), mailto o relativos.
 - **Workers:** cada PC tiene su propia clave (se guarda sólo el hash SHA-256), se puede deshabilitar o rotar,
