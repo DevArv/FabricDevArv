@@ -107,4 +107,76 @@ public class DbInitializerTests
         Assert.DoesNotContain("{", sql);
         Assert.DoesNotContain("}", sql);
     }
+
+    // ------------------------------------------------------------------ ResolveLegacyPath (migración de adjuntos antiguos)
+
+    private static string CreateTempFolder()
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"devarv-legacy-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    [Fact]
+    public void ResolveLegacyPath_ExistingFile_ReturnsItsPath()
+    {
+        var folder = CreateTempFolder();
+        try
+        {
+            var expected = Path.Combine(folder, "aaa.pdf");
+            File.WriteAllBytes(expected, [1]);
+
+            Assert.Equal(expected, DbInitializer.ResolveLegacyPath(
+                Folder: folder,
+                StoredName: "aaa.pdf"));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("no-existe.png")]
+    public void ResolveLegacyPath_EmptyNameOrMissingFile_ReturnsNull(string StoredName)
+    {
+        var folder = CreateTempFolder();
+        try
+        {
+            Assert.Null(DbInitializer.ResolveLegacyPath(
+                Folder: folder,
+                StoredName: StoredName));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveLegacyPath_NameWithDirectories_OnlyLooksInsideTheFolder()
+    {
+        var folder = CreateTempFolder();
+        try
+        {
+            // Un archivo fuera de la carpeta con el mismo nombre no debe alcanzarse con «../».
+            var outside = Path.Combine(Path.GetDirectoryName(folder)!, $"fuera-{Guid.NewGuid():N}.txt");
+            File.WriteAllBytes(outside, [1]);
+            try
+            {
+                Assert.Null(DbInitializer.ResolveLegacyPath(
+                    Folder: folder,
+                    StoredName: $"../{Path.GetFileName(outside)}"));
+            }
+            finally
+            {
+                File.Delete(outside);
+            }
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }

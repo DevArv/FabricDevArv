@@ -71,14 +71,14 @@ public sealed class DetailsModel(
             AttachmentID: AttachmentID,
             CT: CT);
         if (attachment?.Content is null) return NotFound();
-        var data = attachment.Content.Data;
+        var fileBytes = attachment.Content.Data;
 
         Response.Headers.XContentTypeOptions = "nosniff";
         if (attachment.Kind != AttachmentKind.PDF)
             Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
         if (attachment.Kind == AttachmentKind.HTML)
-            return new FileContentResult(data, "application/octet-stream") { FileDownloadName = attachment.FileName };
-        return new FileContentResult(data, attachment.ContentType) { EnableRangeProcessing = true };
+            return new FileContentResult(fileBytes, "application/octet-stream") { FileDownloadName = attachment.FileName };
+        return new FileContentResult(fileBytes, attachment.ContentType) { EnableRangeProcessing = true };
     }
 
     public Task<IActionResult> OnPostApproveAsync(int ID, bool Modal, CancellationToken CT) =>

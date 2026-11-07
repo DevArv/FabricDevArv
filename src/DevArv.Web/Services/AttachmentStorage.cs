@@ -62,16 +62,20 @@ public sealed class AttachmentStorage(IOptions<AttachmentOptions> OptionsAccesso
         return validated;
     }
 
-    /// <summary>Lee el contenido completo de los archivos ya validados y arma las entidades (no las agrega al contexto).</summary>
+    /// <summary>
+    /// Lee el contenido completo de los archivos ya validados y arma las entidades (no las agrega al contexto).
+    /// Todos los archivos quedan en memoria hasta guardar: como máximo <c>MaxFilesPerTask × MaxFileBytes</c>
+    /// (300 MB con los valores por defecto), que es el límite de la solicitud en <c>Program.cs</c>.
+    /// </summary>
     public async Task<List<TaskAttachment>> ReadAsync(int TaskID, IReadOnlyList<ValidatedUpload> Validated, CancellationToken CT)
     {
         var attachments = new List<TaskAttachment>();
         foreach (var (file, type) in Validated)
         {
-            var data = new byte[file.Length];
+            var fileBytes = new byte[file.Length];
             await using (var source = file.OpenReadStream())
             {
-                await source.ReadExactlyAsync(data, CT);
+                await source.ReadExactlyAsync(fileBytes, CT);
             }
 
             attachments.Add(new TaskAttachment
@@ -80,8 +84,8 @@ public sealed class AttachmentStorage(IOptions<AttachmentOptions> OptionsAccesso
                 FileName = SanitizeFileName(file.FileName),
                 ContentType = type.ContentType,
                 Kind = type.Kind,
-                Size = data.LongLength,
-                Content = new TaskAttachmentContent { Data = data },
+                Size = fileBytes.LongLength,
+                Content = new TaskAttachmentContent { Data = fileBytes },
             });
         }
         return attachments;
