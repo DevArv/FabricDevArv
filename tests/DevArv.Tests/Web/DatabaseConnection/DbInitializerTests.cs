@@ -109,19 +109,13 @@ public class DbInitializerTests
     }
 
     [Fact]
-    public void AllowNullLegacyStoredNameSql_DropsNotNullOnlyWhenTheColumnExistsAndIsRequired()
+    public void DropLegacyStoredNameSql_DropsTheColumnFromTheModuleTable_AndIsIdempotent()
     {
-        // Mientras la migración de adjuntos conserve StoredName (faltan archivos), el modelo no la llena: si siguiera
-        // siendo NOT NULL, guardar un adjunto nuevo fallaría con «null value in column "StoredName"» (#18).
-        var sql = DbInitializer.ALLOW_NULL_LEGACY_STORED_NAME_SQL;
+        // La columna antigua no se usa; si se conservara (era NOT NULL), guardar un adjunto nuevo fallaría con
+        // «null value in column "StoredName"» (#18). Se elimina siempre, aunque falten archivos por migrar.
+        var sql = DbInitializer.DROP_LEGACY_STORED_NAME_SQL;
 
-        Assert.Matches(
-            $@"table_name = '{TableNames.TASK_ATTACHMENTS}'\s+AND column_name = 'StoredName' AND is_nullable = 'NO'",
-            sql);
-        Assert.Contains($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" ALTER COLUMN \"StoredName\" DROP NOT NULL;", sql);
-        Assert.DoesNotContain("table_name = 'TaskAttachments'", sql);
-        Assert.StartsWith("DO $$", sql);
-        Assert.EndsWith("END $$;", sql);
+        Assert.Equal($"ALTER TABLE \"{TableNames.TASK_ATTACHMENTS}\" DROP COLUMN IF EXISTS \"StoredName\";", sql);
         Assert.DoesNotContain("{", sql);
         Assert.DoesNotContain("}", sql);
     }
