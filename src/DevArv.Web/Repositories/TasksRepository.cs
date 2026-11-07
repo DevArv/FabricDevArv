@@ -211,10 +211,25 @@ public class TasksRepository(AppDbContext Db, AttachmentStorage Storage, ILogger
         if (task is null) return null;
 
         var selectedRun = task.Runs.FirstOrDefault(r => r.ID == RunID) ?? task.Runs.FirstOrDefault();
+        var stages = await Db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(CT);
         return new TaskDetailsViewModel
         {
             Item = task,
-            Stages = await Db.Stages.AsNoTracking().OrderBy(s => s.Order).ToListAsync(CT),
+            Stages = stages,
+            Attachments = task.Attachments.Where(a => !a.IsCapture).OrderBy(a => a.ID).ToList(),
+            Captures = task.Attachments.Where(a => a.IsCapture).OrderBy(a => a.ID).ToList(),
+            ShowReportTabs = TaskReport.ShowTabs(
+                Item: task,
+                Stages: stages),
+            SelectedRunLogLines = TaskReport.CountLines(selectedRun?.Log),
+            UnitTests = TaskReport.FindSection(
+                Runs: task.Runs,
+                Stages: stages,
+                Headings: TaskReport.UNIT_TESTS_HEADINGS),
+            QaTests = TaskReport.FindSection(
+                Runs: task.Runs,
+                Stages: stages,
+                Headings: TaskReport.QA_TESTS_HEADINGS),
             Workers = await Db.Workers.AsNoTracking().Where(w => w.IsEnabled).OrderBy(w => w.Name).ToListAsync(CT),
             SelectedRun = selectedRun,
             SelectedRunFiles = ParseChangedFiles(selectedRun?.ChangedFilesJson),

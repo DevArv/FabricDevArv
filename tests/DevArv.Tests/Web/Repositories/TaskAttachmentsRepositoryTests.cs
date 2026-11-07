@@ -327,4 +327,118 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         Assert.Null(file);
     }
+
+    // ------------------------------------------------------------------ AddCapturesAsync
+
+    [Fact]
+    public async Task AddCapturesAsync_StoresImagesAsCapturesAndLogsTheEvent()
+    {
+        var taskID = await SeedTaskAsync();
+        await using var db = CreateDbContext();
+
+        await CreateRepository(db).AddCapturesAsync(
+            TaskID: taskID,
+            Files: [TestFiles.CreatePng("antes.png"), TestFiles.CreatePng("despues.png")],
+            Actor: "qa",
+            CT: CancellationToken.None);
+
+        await using var check = CreateDbContext();
+        var captures = await check.TaskAttachments.OrderBy(a => a.ID).ToListAsync();
+        Assert.Equal(["antes.png", "despues.png"], captures.Select(c => c.FileName));
+        Assert.All(captures, c =>
+        {
+            Assert.True(c.IsCapture);
+            Assert.Equal(AttachmentKind.IMAGE, c.Kind);
+            Assert.True(File.Exists(Path.Combine(_StorageDirectory, c.StoredName)));
+        });
+        Assert.Contains(await check.TaskEvents.ToListAsync(), e => e.Message == "qa agregó 2 captura(s)");
+    }
+
+    [Fact]
+    public async Task AddCapturesAsync_WithNonImage_ThrowsAndStoresNothing()
+    {
+        var taskID = await SeedTaskAsync();
+        await using var db = CreateDbContext();
+        var pdf = TestFiles.Create("spec.pdf", System.Text.Encoding.ASCII.GetBytes("%PDF-1.7\n"));
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => CreateRepository(db).AddCapturesAsync(
+            TaskID: taskID,
+            Files: [TestFiles.CreatePng("ok.png"), pdf],
+            Actor: "qa",
+            CT: CancellationToken.None));
+
+        Assert.Contains("«spec.pdf» no es una imagen", ex.Message);
+        await using var check = CreateDbContext();
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
+    }
+
+    [Fact]
+    public async Task AddCapturesAsync_WithoutFiles_Throws()
+    {
+        var taskID = await SeedTaskAsync();
+        await using var db = CreateDbContext();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => CreateRepository(db).AddCapturesAsync(
+            TaskID: taskID,
+            Files: [],
+            Actor: "qa",
+            CT: CancellationToken.None));
+
+        Assert.Contains("al menos una imagen", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddCapturesAsync_CountsTheExistingAttachmentsForTheLimit()
+    {
+        var (taskID, _) = await SeedAttachmentAsync();
+        await using var db = CreateDbContext();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => CreateRepository(db, MaxFilesPerTask: 1).AddCapturesAsync(
+            TaskID: taskID,
+            Files: [TestFiles.CreatePng("extra.png")],
+            Actor: "qa",
+            CT: CancellationToken.None));
+
+        Assert.Contains("Máximo 1", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddCapturesAsync_WhenTheDatabaseRejectsIt_DeletesTheFilesAlreadyWritten()
+    {
+        var taskID = await SeedTaskAsync();
+        await using var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 1);
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => CreateRepository(db).AddCapturesAsync(
+            TaskID: taskID,
+            Files: [TestFiles.CreatePng()],
+            Actor: "qa",
+            CT: CancellationToken.None));
+
+        Assert.Empty(FilesOnDisk());
+    }
+
+    [Fact]
+    public async Task GetFileForWorkerRunAsync_Capture_ReturnsNull()
+    {
+        var (taskID, attachment) = await SeedAttachmentAsync();
+        await using (var setup = CreateDbContext())
+        {
+            var stored = await setup.TaskAttachments.SingleAsync(a => a.ID == attachment.ID);
+            stored.IsCapture = true;
+            await setup.SaveChangesAsync();
+        }
+        var runID = await SeedRunAsync(
+            TaskID: taskID,
+            WorkerID: 7,
+            Status: RunStatus.RUNNING);
+        await using var db = CreateDbContext();
+
+        var file = await CreateRepository(db).GetFileForWorkerRunAsync(
+            RunID: runID,
+            AttachmentID: attachment.ID,
+            WorkerID: 7,
+            CT: CancellationToken.None);
+
+        Assert.Null(file);
+    }
 }

@@ -33,6 +33,8 @@ public static class DbInitializer
         await AddMergeColumnsAsync(db, CT);
         await AddConflictColumnsAsync(db, CT);
         await RenameTablesToModuleNamesAsync(db, CT);
+        // Esta usa el nombre nuevo de la tabla, así que va después del renombrado (también aplica a bases ya renombradas).
+        await AddCaptureColumnAsync(db, CT);
 
         if (!await db.Stages.AnyAsync(CT))
         {
@@ -173,6 +175,26 @@ public static class DbInitializer
                AND NOT EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_schema = current_schema() AND table_name = 'TaskRuns' AND column_name = 'ResolveConflicts') THEN
                 ALTER TABLE "TaskRuns" ADD COLUMN "ResolveConflicts" boolean NOT NULL DEFAULT FALSE;
+            END IF;
+        END $$;
+        """;
+
+    /// <summary>
+    /// Bases creadas antes de la pestaña «Capturas» del detalle: agrega <see cref="TaskAttachment.IsCapture"/>.
+    /// No hace nada si la columna ya existe o si la tabla no existe. Debe correr después de <see cref="RenameTablesToModuleNamesAsync"/>.
+    /// </summary>
+    private static Task AddCaptureColumnAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ADD_CAPTURE_COLUMN_SQL, CT);
+
+    // Sin llaves en el SQL: EF Core lo pasa por string.Format.
+    internal static readonly string ADD_CAPTURE_COLUMN_SQL = $"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'IsCapture') THEN
+                ALTER TABLE "{TableNames.TASK_ATTACHMENTS}" ADD COLUMN "IsCapture" boolean NOT NULL DEFAULT FALSE;
             END IF;
         END $$;
         """;

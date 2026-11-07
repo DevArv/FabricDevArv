@@ -1,4 +1,5 @@
 using DevArv.Contracts.Models;
+using DevArv.Web.DataModels;
 using DevArv.Web.Repositories;
 using DevArv.Web.Services;
 
@@ -89,14 +90,22 @@ public static class WorkerApi
             PushChanges: stage.PushChanges,
             TimeoutMinutes: stage.TimeoutMinutes <= 0 ? DEFAULT_TIMEOUT_MINUTES : stage.TimeoutMinutes,
             CommitMessage: $"DevArv #{task.ID}: {task.Title}",
-            Attachments: task.Attachments
-                .OrderBy(a => a.ID)
-                .Select(a => new AttachmentInfo(a.ID, a.FileName, a.ContentType, a.Size))
-                .ToList(),
+            Attachments: JobAttachments(task),
             MergeBaseBranch: mergeBaseBranch);
 
         return Results.Ok(job);
     }
+
+    /// <summary>
+    /// Adjuntos que el worker descarga para la tarea. Las capturas de la pestaña «Capturas» muestran el resultado, no
+    /// definen la tarea: no van al agente.
+    /// </summary>
+    internal static List<AttachmentInfo> JobAttachments(TaskItem Item) =>
+        Item.Attachments
+            .Where(a => !a.IsCapture)
+            .OrderBy(a => a.ID)
+            .Select(a => new AttachmentInfo(a.ID, a.FileName, a.ContentType, a.Size))
+            .ToList();
 
     private static async Task<IResult> AppendLogAsync(
         long RunID, LogChunk Chunk, HttpContext Http, RunsRepository Runs, CancellationToken CT)
