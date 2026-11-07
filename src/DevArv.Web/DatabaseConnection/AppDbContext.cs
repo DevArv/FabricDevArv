@@ -95,9 +95,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> Options) : IdentityDbCo
             b.ToTable(TableNames.TASK_ATTACHMENTS);
             b.Property(a => a.FileName).HasMaxLength(255);
             b.Property(a => a.ContentType).HasMaxLength(100);
-            b.Property(a => a.StoredName).HasMaxLength(100);
             b.HasOne(a => a.Task).WithMany(t => t.Attachments).HasForeignKey(a => a.TaskID).OnDelete(DeleteBehavior.Cascade);
+            // Table splitting: el contenido vive en la misma fila (columna "Content") pero sólo se lee con Include.
+            b.HasOne(a => a.Content).WithOne().HasForeignKey<TaskAttachmentContent>(c => c.ID).OnDelete(DeleteBehavior.Cascade);
         });
+
+        Builder.Entity<TaskAttachmentContent>(b => b.ToTable(TableNames.TASK_ATTACHMENTS));
 
         Builder.Entity<TaskRun>(b =>
         {
@@ -148,7 +151,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> Options) : IdentityDbCo
             foreach (var property in entityType.GetProperties())
                 property.SetColumnName(ToColumnName(property.Name));
         }
+
+        // Después del mapeo general: la columna del contenido de un adjunto se llama "Content", no "Data".
+        Builder.Entity<TaskAttachmentContent>().Property(c => c.Data).HasColumnName(ATTACHMENT_CONTENT_COLUMN);
     }
+
+    /// <summary>Columna de <see cref="TaskAttachmentContent.Data"/> en la tabla de adjuntos.</summary>
+    internal const string ATTACHMENT_CONTENT_COLUMN = "Content";
 
     /// <summary>Nombre de la columna de una propiedad: «TaskID» → «TaskId», «ID» → «Id».</summary>
     internal static string ToColumnName(string PropertyName) =>

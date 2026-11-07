@@ -143,15 +143,14 @@ public static class WorkerApi
         long RunID, long AttachmentID, HttpContext Http, TaskAttachmentsRepository Attachments, CancellationToken CT)
     {
         var worker = WorkerAuthFilter.Current(Http);
-        var file = await Attachments.GetFileForWorkerRunAsync(
+        var attachment = await Attachments.GetFileForWorkerRunAsync(
             RunID: RunID,
             AttachmentID: AttachmentID,
             WorkerID: worker.ID,
             CT: CT);
-        if (file is null) return Results.NotFound();
-
-        var (attachment, path) = file.Value;
-        return TypedResults.PhysicalFile(path, attachment.ContentType, attachment.FileName);
+        return attachment?.Content is null
+            ? Results.NotFound()
+            : TypedResults.File(attachment.Content.Data, attachment.ContentType, attachment.FileName);
     }
 
     private static List<string> Lines(string? Text) =>

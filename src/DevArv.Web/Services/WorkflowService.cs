@@ -66,56 +66,47 @@ public sealed class WorkflowService(AppDbContext Db, AttachmentStorage Storage, 
             ? Record.PreferredWorkerID
             : null;
 
+        // Si algo falla, la transacción se revierte al salir: ni la tarea ni sus adjuntos (guardados en la base) quedan a medias.
         await using var transaction = await Db.Database.BeginTransactionAsync(CT);
-        List<TaskAttachment> stored = [];
-        try
+        var task = new TaskItem
         {
-            var task = new TaskItem
-            {
-                Title = Record.Title.Trim(),
-                Description = Record.Description?.Trim() ?? "",
-                ProjectID = project.ID,
-                Project = project,
-                StageID = initial.ID,
-                BaseBranch = Record.BaseBranch.Trim(),
-                Priority = Record.Priority,
-                Complexity = Record.Complexity,
-                Labels = TaskLabelsHelper.Normalize(Record.Labels),
-                ModelOverride = string.IsNullOrWhiteSpace(Record.ModelOverride) ? null : Record.ModelOverride.Trim(),
-                PreferredWorkerID = preferredWorkerID,
-                CreatedByID = UserID,
-                CreatedByName = Actor,
-            };
-            Db.Tasks.Add(task);
-            await Db.SaveChangesAsync(CT);
+            Title = Record.Title.Trim(),
+            Description = Record.Description?.Trim() ?? "",
+            ProjectID = project.ID,
+            Project = project,
+            StageID = initial.ID,
+            BaseBranch = Record.BaseBranch.Trim(),
+            Priority = Record.Priority,
+            Complexity = Record.Complexity,
+            Labels = TaskLabelsHelper.Normalize(Record.Labels),
+            ModelOverride = string.IsNullOrWhiteSpace(Record.ModelOverride) ? null : Record.ModelOverride.Trim(),
+            PreferredWorkerID = preferredWorkerID,
+            CreatedByID = UserID,
+            CreatedByName = Actor,
+        };
+        Db.Tasks.Add(task);
+        await Db.SaveChangesAsync(CT);
 
-            stored = await Storage.StoreAsync(
-                TaskID: task.ID,
-                Validated: uploads,
-                CT: CT);
-            Db.TaskAttachments.AddRange(stored);
+        Db.TaskAttachments.AddRange(await Storage.ReadAsync(
+            TaskID: task.ID,
+            Validated: uploads,
+            CT: CT));
 
-            var start = initial;
-            if (Record.StartNow)
-            {
-                start = await Db.Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges)
-                    .OrderBy(s => s.Order).FirstOrDefaultAsync(CT) ?? initial;
-            }
-            await EnterStageAsync(
-                Item: task,
-                Stage: start,
-                Actor: Actor,
-                Message: $"{Actor} creó la tarea en «{start.Name}»",
-                CT: CT);
-            await Db.SaveChangesAsync(CT);
-            await transaction.CommitAsync(CT);
-            return task;
-        }
-        catch
+        var start = initial;
+        if (Record.StartNow)
         {
-            Storage.DeleteQuietly(stored);
-            throw;
+            start = await Db.Stages.Where(s => s.Kind == StageKind.AGENT && s.PushChanges)
+                .OrderBy(s => s.Order).FirstOrDefaultAsync(CT) ?? initial;
         }
+        await EnterStageAsync(
+            Item: task,
+            Stage: start,
+            Actor: Actor,
+            Message: $"{Actor} creó la tarea en «{start.Name}»",
+            CT: CT);
+        await Db.SaveChangesAsync(CT);
+        await transaction.CommitAsync(CT);
+        return task;
     }
 
     // ------------------------------------------------------------------ acciones de usuario

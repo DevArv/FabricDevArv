@@ -66,19 +66,19 @@ public sealed class DetailsModel(
     public async Task<IActionResult> OnGetAttachmentAsync(int ID, long AttachmentID, CancellationToken CT)
     {
         this.ID = ID;
-        var file = await AttachmentsRepository.GetFileAsync(
+        var attachment = await AttachmentsRepository.GetFileAsync(
             TaskID: ID,
             AttachmentID: AttachmentID,
             CT: CT);
-        if (file is null) return NotFound();
-        var (attachment, path) = file.Value;
+        if (attachment?.Content is null) return NotFound();
+        var fileBytes = attachment.Content.Data;
 
         Response.Headers.XContentTypeOptions = "nosniff";
         if (attachment.Kind != AttachmentKind.PDF)
             Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'";
         if (attachment.Kind == AttachmentKind.HTML)
-            return new PhysicalFileResult(path, "application/octet-stream") { FileDownloadName = attachment.FileName };
-        return new PhysicalFileResult(path, attachment.ContentType) { EnableRangeProcessing = true };
+            return new FileContentResult(fileBytes, "application/octet-stream") { FileDownloadName = attachment.FileName };
+        return new FileContentResult(fileBytes, attachment.ContentType) { EnableRangeProcessing = true };
     }
 
     public Task<IActionResult> OnPostApproveAsync(int ID, bool Modal, CancellationToken CT) =>

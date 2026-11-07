@@ -15,7 +15,7 @@ using Microsoft.Extensions.Options;
 
 namespace DevArv.Tests.Web.Services;
 
-public sealed class WorkflowServiceTests : IDisposable
+public sealed class WorkflowServiceTests
 {
     // Columnas del flujo de las pruebas.
     private const int BACKLOG = 1;
@@ -26,19 +26,10 @@ public sealed class WorkflowServiceTests : IDisposable
     private const int DONE = 6;
 
     private readonly string _DatabaseName = Guid.NewGuid().ToString("N");
-    private readonly string _StorageDirectory = Path.Combine(Path.GetTempPath(), $"devarv-workflow-{Guid.NewGuid():N}");
-
-    public WorkflowServiceTests() => Directory.CreateDirectory(_StorageDirectory);
-
-    public void Dispose()
-    {
-        if (Directory.Exists(_StorageDirectory)) Directory.Delete(_StorageDirectory, recursive: true);
-    }
 
     private AppDbContext CreateDbContext() => TestDatabase.CreateContext(_DatabaseName);
 
-    private AttachmentStorage CreateStorage() =>
-        new(Options.Create(new AttachmentOptions { StoragePath = _StorageDirectory }), null!);
+    private static AttachmentStorage CreateStorage() => new(Options.Create(new AttachmentOptions()));
 
     private WorkflowService CreateService(AppDbContext Db) =>
         new(Db, CreateStorage(), NullLogger<WorkflowService>.Instance);
@@ -223,7 +214,7 @@ public sealed class WorkflowServiceTests : IDisposable
         Assert.Contains(ex.Errors, e => e.Field == "Files");
         await using var check = CreateDbContext();
         Assert.Equal(0, await check.Tasks.CountAsync());
-        Assert.Empty(Directory.GetFiles(_StorageDirectory));
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 
     [Fact]
@@ -240,26 +231,28 @@ public sealed class WorkflowServiceTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        var attachment = await check.TaskAttachments.SingleAsync();
+        var attachment = await check.TaskAttachments.Include(a => a.Content).SingleAsync();
         Assert.Equal(task.ID, attachment.TaskID);
-        Assert.Single(Directory.GetFiles(_StorageDirectory));
+        Assert.Equal(TestFiles.PngBytes, attachment.Content!.Data);
     }
 
     [Fact]
-    public async Task CreateTaskAsync_WhenTheFinalSaveFails_DeletesTheStoredFiles()
+    public async Task CreateTaskAsync_WhenTheFinalSaveFails_StoresNoAttachments()
     {
         await SeedFlowAsync();
         // El primer guardado inserta la tarea; el segundo (adjuntos + entrada a la columna) falla.
-        await using var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 2);
+        await using (var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 2))
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(db).CreateTaskAsync(
+                Record: NewRecord(),
+                Files: [TestFiles.CreatePng()],
+                Actor: "tester",
+                UserID: null,
+                CT: CancellationToken.None));
+        }
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => CreateService(db).CreateTaskAsync(
-            Record: NewRecord(),
-            Files: [TestFiles.CreatePng()],
-            Actor: "tester",
-            UserID: null,
-            CT: CancellationToken.None));
-
-        Assert.Empty(Directory.GetFiles(_StorageDirectory));
+        await using var check = CreateDbContext();
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 
     [Fact]

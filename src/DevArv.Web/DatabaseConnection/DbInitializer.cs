@@ -33,8 +33,16 @@ public static class DbInitializer
         await AddMergeColumnsAsync(db, CT);
         await AddConflictColumnsAsync(db, CT);
         await RenameTablesToModuleNamesAsync(db, CT);
-        // Esta usa el nombre nuevo de la tabla, así que va después del renombrado (también aplica a bases ya renombradas).
+        // Estas usan el nombre nuevo de la tabla, así que van después del renombrado (también aplican a bases ya renombradas).
         await AddCaptureColumnAsync(db, CT);
+        await AddAttachmentContentColumnAsync(db, CT);
+        await MoveLegacyAttachmentsToDatabaseAsync(
+            Db: db,
+            Folder: Path.Combine(
+                Services.GetRequiredService<IWebHostEnvironment>().ContentRootPath,
+                Services.GetRequiredService<IOptions<AttachmentOptions>>().Value.StoragePath),
+            Logger: logger,
+            CT: CT);
 
         if (!await db.Stages.AnyAsync(CT))
         {
@@ -198,6 +206,119 @@ public static class DbInitializer
             END IF;
         END $$;
         """;
+
+    /// <summary>
+    /// Bases creadas cuando los adjuntos se guardaban en disco: agrega la columna <c>Content</c>
+    /// (<see cref="TaskAttachmentContent.Data"/>). No hace nada si la columna ya existe o si la tabla no existe.
+    /// Debe correr después de <see cref="RenameTablesToModuleNamesAsync"/>.
+    /// </summary>
+    private static Task AddAttachmentContentColumnAsync(AppDbContext Db, CancellationToken CT) =>
+        Db.Database.ExecuteSqlRawAsync(ADD_ATTACHMENT_CONTENT_COLUMN_SQL, CT);
+
+    // Sin llaves en el SQL: EF Core lo pasa por string.Format.
+    internal static readonly string ADD_ATTACHMENT_CONTENT_COLUMN_SQL = $"""
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables
+                       WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}')
+               AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = '{AppDbContext.ATTACHMENT_CONTENT_COLUMN}') THEN
+                ALTER TABLE "{TableNames.TASK_ATTACHMENTS}" ADD COLUMN "{AppDbContext.ATTACHMENT_CONTENT_COLUMN}" bytea NULL;
+            END IF;
+        END $$;
+        """;
+
+    /// <summary>
+    /// Bases creadas cuando los adjuntos se guardaban en disco (columna <c>StoredName</c>): copia cada archivo a la columna
+    /// <c>Content</c> y, ya confirmada la transacción, borra los archivos copiados.
+    /// La columna <c>StoredName</c> es lo único que relaciona cada fila con su archivo, así que sólo se quita cuando
+    /// TODOS los archivos se copiaron. Si alguno no se encuentra (carpeta equivocada, archivos restaurados después…) se
+    /// conserva la columna y se reintenta en el siguiente arranque con las filas que sigan sin contenido.
+    /// No hace nada si la columna <c>StoredName</c> no existe. Debe correr después de <see cref="AddAttachmentContentColumnAsync"/>.
+    /// </summary>
+    private static async Task MoveLegacyAttachmentsToDatabaseAsync(
+        AppDbContext Db, string Folder, ILogger Logger, CancellationToken CT)
+    {
+        var hasStoredName = await Db.Database.SqlQueryRaw<int>($"""
+            SELECT COUNT(*)::int AS "Value" FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = '{TableNames.TASK_ATTACHMENTS}' AND column_name = 'StoredName'
+            """).SingleAsync(CT) > 0;
+        if (!hasStoredName) return;
+
+        var rows = await Db.Database.SqlQueryRaw<LegacyAttachmentRow>($"""
+            SELECT "Id" AS "ID", "StoredName" FROM "{TableNames.TASK_ATTACHMENTS}"
+            WHERE "{AppDbContext.ATTACHMENT_CONTENT_COLUMN}" IS NULL
+            """).ToListAsync(CT);
+
+        var copied = new List<string>();
+        var missing = 0;
+        await using (var transaction = await Db.Database.BeginTransactionAsync(CT))
+        {
+            foreach (var row in rows)
+            {
+                var path = ResolveLegacyPath(
+                    Folder: Folder,
+                    StoredName: row.StoredName);
+                if (path is null)
+                {
+                    missing++;
+                    continue;
+                }
+
+                var fileBytes = await File.ReadAllBytesAsync(path, CT);
+                // El nombre de la tabla no puede ir como parámetro: {0} y {1} son los parámetros de EF Core.
+                await Db.Database.ExecuteSqlRawAsync(
+                    sql: $$"""UPDATE "{{TableNames.TASK_ATTACHMENTS}}" SET "{{AppDbContext.ATTACHMENT_CONTENT_COLUMN}}" = {0} WHERE "Id" = {1}""",
+                    parameters: [fileBytes, row.ID],
+                    cancellationToken: CT);
+                copied.Add(path);
+            }
+
+            if (missing == 0)
+                await Db.Database.ExecuteSqlRawAsync($"""ALTER TABLE "{TableNames.TASK_ATTACHMENTS}" DROP COLUMN "StoredName" """, CT);
+            await transaction.CommitAsync(CT);
+        }
+
+        Logger.LogInformation("Adjuntos movidos del disco a la base de datos: {Copied}.", copied.Count);
+        if (missing > 0)
+            Logger.LogWarning(
+                "{Missing} adjunto(s) no tienen archivo en {Folder}. Se conserva la columna StoredName: restaura la carpeta y reinicia para reintentar.",
+                missing, Folder);
+
+        foreach (var path in copied)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Logger.LogWarning(ex, "No se pudo borrar el adjunto antiguo {Path}; ya está en la base de datos.", path);
+            }
+        }
+        if (Directory.Exists(Folder) && !Directory.EnumerateFileSystemEntries(Folder).Any())
+            Directory.Delete(Folder);
+    }
+
+    /// <summary>
+    /// Ruta del archivo antiguo de un adjunto; null si <paramref name="StoredName"/> está vacío o el archivo no existe.
+    /// <c>StoredName</c> lo generaba el servidor, pero sólo se usa su último segmento para evitar path traversal.
+    /// </summary>
+    internal static string? ResolveLegacyPath(string Folder, string StoredName)
+    {
+        var name = Path.GetFileName(StoredName);
+        if (string.IsNullOrEmpty(name)) return null;
+
+        var path = Path.Combine(Folder, name);
+        return File.Exists(path) ? path : null;
+    }
+
+    /// <summary>Fila de la tabla de adjuntos de una base anterior a guardar el contenido en la base de datos.</summary>
+    internal sealed class LegacyAttachmentRow
+    {
+        public long ID { get; set; }
+        public string StoredName { get; set; } = "";
+    }
 
     public static async Task SeedDefaultWorkflowAsync(AppDbContext Db, CancellationToken CT)
     {

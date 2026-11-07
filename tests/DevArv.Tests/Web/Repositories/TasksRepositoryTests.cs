@@ -3,36 +3,25 @@ using DevArv.Web.DataModels;
 using DevArv.Web.Enums.Runs;
 using DevArv.Web.Enums.Tasks;
 using DevArv.Web.Enums.Workflow;
-using DevArv.Web.Models;
 using DevArv.Web.Repositories;
 using DevArv.Web.Services;
 using DevArv.Web.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 
 namespace DevArv.Tests.Web.Repositories;
 
-public sealed class TasksRepositoryTests : IDisposable
+public sealed class TasksRepositoryTests
 {
     private readonly string _DatabaseName = Guid.NewGuid().ToString("N");
-    private readonly string _StorageDirectory = Path.Combine(Path.GetTempPath(), $"devarv-tests-{Guid.NewGuid():N}");
-
-    public TasksRepositoryTests() => Directory.CreateDirectory(_StorageDirectory);
-
-    public void Dispose()
-    {
-        // Restaura el permiso de escritura por si una prueba lo quitó.
-        if (!OperatingSystem.IsWindows() && Directory.Exists(_StorageDirectory))
-            File.SetUnixFileMode(_StorageDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        if (Directory.Exists(_StorageDirectory)) Directory.Delete(_StorageDirectory, recursive: true);
-    }
 
     [Fact]
-    public async Task DeleteAsync_WithRunningRun_ThrowsAndKeepsTaskAndFiles()
+    public async Task DeleteAsync_WithRunningRun_ThrowsAndKeepsTaskAndAttachments()
     {
-        var storedName = await SeedTaskAsync(RunStatus.RUNNING);
+        await SeedTaskAsync(RunStatus.RUNNING);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
@@ -47,7 +36,6 @@ public sealed class TasksRepositoryTests : IDisposable
         await using var check = CreateDbContext();
         Assert.Equal(1, await check.Tasks.CountAsync());
         Assert.Equal(1, await check.TaskAttachments.CountAsync());
-        Assert.True(File.Exists(Path.Combine(_StorageDirectory, storedName)));
     }
 
     [Theory]
@@ -56,9 +44,11 @@ public sealed class TasksRepositoryTests : IDisposable
     [InlineData(RunStatus.SUCCEEDED)]
     [InlineData(RunStatus.FAILED)]
     [InlineData(RunStatus.CANCELLED)]
-    public async Task DeleteAsync_WithoutRunningRun_DeletesTaskAttachmentsAndFiles(RunStatus? RunStatus)
+    public async Task DeleteAsync_WithoutRunningRun_DeletesTask(RunStatus? RunStatus)
     {
-        var storedName = await SeedTaskAsync(RunStatus);
+        // Los adjuntos se borran en cascada en la base de datos (ver Model_CascadesTaskDeletion...), que el proveedor
+        // en memoria no simula para entidades sin cargar.
+        await SeedTaskAsync(RunStatus);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
@@ -71,8 +61,6 @@ public sealed class TasksRepositoryTests : IDisposable
 
         await using var check = CreateDbContext();
         Assert.Equal(0, await check.Tasks.CountAsync());
-        Assert.Equal(0, await check.TaskAttachments.CountAsync());
-        Assert.False(File.Exists(Path.Combine(_StorageDirectory, storedName)));
     }
 
     [Fact]
@@ -102,30 +90,6 @@ public sealed class TasksRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteAsync_WhenFileCannotBeDeleted_StillDeletesTaskAndTriesRemainingFiles()
-    {
-        if (OperatingSystem.IsWindows()) return; // El bloqueo se simula con permisos POSIX de la carpeta.
-
-        var storedName = await SeedTaskAsync(RunStatus: null);
-        // Con la carpeta de solo lectura File.Delete lanza UnauthorizedAccessException.
-        File.SetUnixFileMode(_StorageDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        if (!CanNotDelete(storedName)) return; // Ejecutando como root el permiso no se aplica.
-
-        await using var db = CreateDbContext();
-        var repository = CreateRepository(db);
-        var task = await db.Tasks.SingleAsync();
-
-        await repository.DeleteAsync(
-            Item: task,
-            Actor: "tester",
-            CT: CancellationToken.None);
-
-        await using var check = CreateDbContext();
-        Assert.Equal(0, await check.Tasks.CountAsync());
-        Assert.True(File.Exists(Path.Combine(_StorageDirectory, storedName)));
-    }
-
-    [Fact]
     public void Model_CascadesTaskDeletionToRunsCommentsEventsAndAttachments()
     {
         using var db = CreateDbContext();
@@ -134,6 +98,25 @@ public sealed class TasksRepositoryTests : IDisposable
             var foreignKey = db.Model.FindEntityType(entityType)!.GetForeignKeys().Single(f => f.PrincipalEntityType.ClrType == typeof(TaskItem));
             Assert.Equal(DeleteBehavior.Cascade, foreignKey.DeleteBehavior);
         }
+    }
+
+    [Fact]
+    public void Model_StoresAttachmentContentInTaskAttachmentsTable()
+    {
+        // El contenido va en la columna Tasks_Attachments.Content (table splitting), no en disco ni en otra tabla.
+        using var db = CreateDbContext();
+        var model = db.GetService<IDesignTimeModel>().Model;
+        var attachment = model.FindEntityType(typeof(TaskAttachment))!;
+        var content = model.FindEntityType(typeof(TaskAttachmentContent))!;
+
+        Assert.Equal(TableNames.TASK_ATTACHMENTS, attachment.GetTableName());
+        Assert.Equal(TableNames.TASK_ATTACHMENTS, content.GetTableName());
+        Assert.Equal("Content", content.FindProperty(nameof(TaskAttachmentContent.Data))!.GetColumnName());
+        Assert.Equal("Id", content.FindProperty(nameof(TaskAttachmentContent.ID))!.GetColumnName());
+        Assert.Null(attachment.FindProperty("StoredName"));
+        var foreignKey = content.GetForeignKeys().Single();
+        Assert.Equal(typeof(TaskAttachment), foreignKey.PrincipalEntityType.ClrType);
+        Assert.True(foreignKey.IsUnique);
     }
 
     // ------------------------------------------------------------------ UpdateAsync
@@ -779,8 +762,8 @@ public sealed class TasksRepositoryTests : IDisposable
             });
             var task = NewTask("Tarea");
             task.StageID = APPROVAL_STAGE_ID;
-            task.Attachments.Add(new TaskAttachment { FileName = "spec.png", StoredName = "a.png", Kind = AttachmentKind.IMAGE });
-            task.Attachments.Add(new TaskAttachment { FileName = "resultado.png", StoredName = "b.png", Kind = AttachmentKind.IMAGE, IsCapture = true });
+            task.Attachments.Add(new TaskAttachment { FileName = "spec.png", Kind = AttachmentKind.IMAGE });
+            task.Attachments.Add(new TaskAttachment { FileName = "resultado.png", Kind = AttachmentKind.IMAGE, IsCapture = true });
             seed.Tasks.Add(task);
             await seed.SaveChangesAsync();
 
@@ -901,30 +884,12 @@ public sealed class TasksRepositoryTests : IDisposable
         return task.ID;
     }
 
-    private bool CanNotDelete(string StoredName)
-    {
-        try
-        {
-            File.Delete(Path.Combine(_StorageDirectory, StoredName));
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return true;
-        }
-    }
-
     private AppDbContext CreateDbContext() => new(new DbContextOptionsBuilder<AppDbContext>()
         .UseInMemoryDatabase(_DatabaseName)
         .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
         .Options);
 
-    private TasksRepository CreateRepository(AppDbContext Db)
-    {
-        // StoragePath es absoluta, así que AttachmentStorage no usa el IWebHostEnvironment.
-        var storage = new AttachmentStorage(Options.Create(new AttachmentOptions { StoragePath = _StorageDirectory }), null!);
-        return new TestableTasksRepository(Db, storage);
-    }
+    private static TasksRepository CreateRepository(AppDbContext Db) => new TestableTasksRepository(Db);
 
     private static TaskItem NewTask(string Title) => new()
     {
@@ -934,17 +899,19 @@ public sealed class TasksRepositoryTests : IDisposable
         CreatedByName = "tester",
     };
 
-    /// <summary>Crea proyecto, columna y una tarea con un adjunto en disco; devuelve el nombre del archivo guardado.</summary>
-    private async Task<string> SeedTaskAsync(RunStatus? RunStatus)
+    /// <summary>Crea proyecto, columna y una tarea con un adjunto (contenido en la base de datos).</summary>
+    private async Task SeedTaskAsync(RunStatus? RunStatus)
     {
-        var storedName = $"{Guid.NewGuid():N}.png";
-        await File.WriteAllBytesAsync(Path.Combine(_StorageDirectory, storedName), [1, 2, 3]);
-
         await using var db = CreateDbContext();
         db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
         db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Kind = StageKind.MANUAL });
         var task = NewTask("Tarea");
-        task.Attachments.Add(new TaskAttachment { FileName = "a.png", StoredName = storedName, Kind = AttachmentKind.IMAGE });
+        task.Attachments.Add(new TaskAttachment
+        {
+            FileName = "a.png",
+            Kind = AttachmentKind.IMAGE,
+            Content = new TaskAttachmentContent { Data = [1, 2, 3] },
+        });
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
@@ -953,12 +920,11 @@ public sealed class TasksRepositoryTests : IDisposable
             db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = 1, Status = RunStatus.Value });
             await db.SaveChangesAsync();
         }
-        return storedName;
     }
 
     /// <summary>El proveedor en memoria no ejecuta SQL, así que se omiten los bloqueos FOR UPDATE de PostgreSQL.</summary>
-    private sealed class TestableTasksRepository(AppDbContext Db, AttachmentStorage Storage)
-        : TasksRepository(Db, Storage, NullLogger<TasksRepository>.Instance)
+    private sealed class TestableTasksRepository(AppDbContext Db)
+        : TasksRepository(Db, NullLogger<TasksRepository>.Instance)
     {
         protected override Task LockTaskAndRunsAsync(int TaskID, CancellationToken CT) => Task.CompletedTask;
     }

@@ -7,34 +7,21 @@ using DevArv.Web.Models;
 using DevArv.Web.Repositories;
 using DevArv.Web.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace DevArv.Tests.Web.Repositories;
 
-public sealed class TaskAttachmentsRepositoryTests : IDisposable
+public sealed class TaskAttachmentsRepositoryTests
 {
     private readonly string _DatabaseName = Guid.NewGuid().ToString("N");
-    private readonly string _StorageDirectory = Path.Combine(Path.GetTempPath(), $"devarv-attachments-{Guid.NewGuid():N}");
-
-    public TaskAttachmentsRepositoryTests() => Directory.CreateDirectory(_StorageDirectory);
-
-    public void Dispose()
-    {
-        if (!OperatingSystem.IsWindows() && Directory.Exists(_StorageDirectory))
-            File.SetUnixFileMode(_StorageDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        if (Directory.Exists(_StorageDirectory)) Directory.Delete(_StorageDirectory, recursive: true);
-    }
 
     private AppDbContext CreateDbContext() => TestDatabase.CreateContext(_DatabaseName);
 
-    private AttachmentStorage CreateStorage(int MaxFilesPerTask = 15) =>
-        new(Options.Create(new AttachmentOptions { StoragePath = _StorageDirectory, MaxFilesPerTask = MaxFilesPerTask }), null!);
+    private static AttachmentStorage CreateStorage(int MaxFilesPerTask = 15) =>
+        new(Options.Create(new AttachmentOptions { MaxFilesPerTask = MaxFilesPerTask }));
 
-    private TaskAttachmentsRepository CreateRepository(AppDbContext Db, int MaxFilesPerTask = 15) =>
-        new(Db, CreateStorage(MaxFilesPerTask), NullLogger<TaskAttachmentsRepository>.Instance);
-
-    private string[] FilesOnDisk() => Directory.GetFiles(_StorageDirectory).Select(Path.GetFileName).ToArray()!;
+    private static TaskAttachmentsRepository CreateRepository(AppDbContext Db, int MaxFilesPerTask = 15) =>
+        new(Db, CreateStorage(MaxFilesPerTask));
 
     private async Task<int> SeedTaskAsync()
     {
@@ -51,12 +38,11 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     private async Task<(int TaskID, TaskAttachment Attachment)> SeedAttachmentAsync()
     {
         var taskID = await SeedTaskAsync();
-        var storedName = $"{Guid.NewGuid():N}.png";
-        await File.WriteAllBytesAsync(Path.Combine(_StorageDirectory, storedName), TestFiles.PngBytes);
         await using var db = CreateDbContext();
         var attachment = new TaskAttachment
         {
-            TaskID = taskID, FileName = "a.png", StoredName = storedName, ContentType = "image/png", Kind = AttachmentKind.IMAGE,
+            TaskID = taskID, FileName = "a.png", ContentType = "image/png", Kind = AttachmentKind.IMAGE,
+            Size = TestFiles.PngBytes.Length, Content = new TaskAttachmentContent { Data = TestFiles.PngBytes },
         };
         db.TaskAttachments.Add(attachment);
         await db.SaveChangesAsync();
@@ -96,7 +82,6 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None));
 
         Assert.Contains("no es un formato permitido", ex.Message);
-        Assert.Empty(FilesOnDisk());
         await using var check = CreateDbContext();
         Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
@@ -114,11 +99,12 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None));
 
         Assert.Contains("Máximo 1", ex.Message);
-        Assert.Empty(FilesOnDisk());
+        await using var check = CreateDbContext();
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 
     [Fact]
-    public async Task AddAsync_ValidFiles_PersistsAttachmentsEventAndFiles()
+    public async Task AddAsync_ValidFiles_PersistsAttachmentsWithTheirContentAndTheEvent()
     {
         var taskID = await SeedTaskAsync();
         await using var db = CreateDbContext();
@@ -130,32 +116,39 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        var attachments = await check.TaskAttachments.OrderBy(a => a.FileName).ToListAsync();
+        var attachments = await check.TaskAttachments.Include(a => a.Content).OrderBy(a => a.FileName).ToListAsync();
         Assert.Equal(["dos.png", "uno.png"], attachments.Select(a => a.FileName));
-        Assert.All(attachments, a => Assert.Equal(AttachmentKind.IMAGE, a.Kind));
-        Assert.Equal(2, FilesOnDisk().Length);
+        Assert.All(attachments, a =>
+        {
+            Assert.Equal(AttachmentKind.IMAGE, a.Kind);
+            Assert.Equal("image/png", a.ContentType);
+            Assert.Equal(TestFiles.PngBytes.Length, a.Size);
+            Assert.Equal(TestFiles.PngBytes, a.Content!.Data);
+        });
         Assert.Contains("adjuntó 2 archivo(s)", (await check.TaskEvents.SingleAsync()).Message);
     }
 
     [Fact]
-    public async Task AddAsync_WhenTheDatabaseRejectsIt_DeletesTheFilesAlreadyWritten()
+    public async Task AddAsync_WhenTheDatabaseRejectsIt_StoresNothing()
     {
         var taskID = await SeedTaskAsync();
-        await using var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 1);
+        await using (var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 1))
+        {
+            await Assert.ThrowsAsync<DbUpdateException>(() => CreateRepository(db).AddAsync(
+                TaskID: taskID,
+                Files: [TestFiles.CreatePng()],
+                Actor: "tester",
+                CT: CancellationToken.None));
+        }
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => CreateRepository(db).AddAsync(
-            TaskID: taskID,
-            Files: [TestFiles.CreatePng()],
-            Actor: "tester",
-            CT: CancellationToken.None));
-
-        Assert.Empty(FilesOnDisk());
+        await using var check = CreateDbContext();
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 
     // ------------------------------------------------------------------ DeleteAsync
 
     [Fact]
-    public async Task DeleteAsync_ExistingAttachment_RemovesRecordAndFileAndLogsTheEvent()
+    public async Task DeleteAsync_ExistingAttachment_RemovesRecordAndLogsTheEvent()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
         await using var db = CreateDbContext();
@@ -167,8 +160,8 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
+        // El contenido está en la misma fila y se borra con ella; el proveedor en memoria no simula el table splitting.
         Assert.Equal(0, await check.TaskAttachments.CountAsync());
-        Assert.Empty(FilesOnDisk());
         Assert.Contains("eliminó el adjunto «a.png»", (await check.TaskEvents.SingleAsync()).Message);
     }
 
@@ -186,40 +179,12 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
 
         await using var check = CreateDbContext();
         Assert.Equal(1, await check.TaskAttachments.CountAsync());
-        Assert.Single(FilesOnDisk());
-    }
-
-    [Fact]
-    public async Task DeleteAsync_WhenTheFileCannotBeDeleted_StillSucceeds()
-    {
-        if (OperatingSystem.IsWindows()) return; // El bloqueo se simula con permisos POSIX de la carpeta.
-
-        var (taskID, attachment) = await SeedAttachmentAsync();
-        File.SetUnixFileMode(_StorageDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
-        try
-        {
-            File.Delete(Path.Combine(_StorageDirectory, attachment.StoredName));
-            return; // Ejecutando como root el permiso no se aplica.
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-
-        await using var db = CreateDbContext();
-        await CreateRepository(db).DeleteAsync(
-            TaskID: taskID,
-            AttachmentID: attachment.ID,
-            Actor: "tester",
-            CT: CancellationToken.None);
-
-        await using var check = CreateDbContext();
-        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 
     // ------------------------------------------------------------------ lectura de archivos
 
     [Fact]
-    public async Task GetFileAsync_ReturnsTheAttachmentAndItsPath()
+    public async Task GetFileAsync_ReturnsTheAttachmentWithItsContent()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
         await using var db = CreateDbContext();
@@ -230,7 +195,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None);
 
         Assert.NotNull(file);
-        Assert.Equal(Path.Combine(_StorageDirectory, attachment.StoredName), file.Value.Path);
+        Assert.Equal(TestFiles.PngBytes, file.Content!.Data);
     }
 
     [Fact]
@@ -248,15 +213,20 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task GetFileAsync_MissingFileOnDisk_ReturnsNull()
+    public async Task GetFileAsync_AttachmentWithoutContent_ReturnsNull()
     {
-        var (taskID, attachment) = await SeedAttachmentAsync();
-        File.Delete(Path.Combine(_StorageDirectory, attachment.StoredName));
+        // Adjunto antiguo cuyo archivo no se encontró al moverlo del disco a la base de datos.
+        var taskID = await SeedTaskAsync();
+        await using (var setup = CreateDbContext())
+        {
+            setup.TaskAttachments.Add(new TaskAttachment { ID = 50, TaskID = taskID, FileName = "perdido.png", Kind = AttachmentKind.IMAGE });
+            await setup.SaveChangesAsync();
+        }
         await using var db = CreateDbContext();
 
         var file = await CreateRepository(db).GetFileAsync(
             TaskID: taskID,
-            AttachmentID: attachment.ID,
+            AttachmentID: 50,
             CT: CancellationToken.None);
 
         Assert.Null(file);
@@ -272,7 +242,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task GetFileForWorkerRunAsync_RunningRunOfThatWorker_ReturnsTheFile()
+    public async Task GetFileForWorkerRunAsync_RunningRunOfThatWorker_ReturnsTheFileWithItsContent()
     {
         var (taskID, attachment) = await SeedAttachmentAsync();
         var runID = await SeedRunAsync(
@@ -288,6 +258,7 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None);
 
         Assert.NotNull(file);
+        Assert.Equal(TestFiles.PngBytes, file.Content!.Data);
     }
 
     [Fact]
@@ -328,10 +299,35 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
         Assert.Null(file);
     }
 
+    [Fact]
+    public async Task GetFileForWorkerRunAsync_Capture_ReturnsNull()
+    {
+        var (taskID, attachment) = await SeedAttachmentAsync();
+        await using (var setup = CreateDbContext())
+        {
+            var stored = await setup.TaskAttachments.SingleAsync(a => a.ID == attachment.ID);
+            stored.IsCapture = true;
+            await setup.SaveChangesAsync();
+        }
+        var runID = await SeedRunAsync(
+            TaskID: taskID,
+            WorkerID: 7,
+            Status: RunStatus.RUNNING);
+        await using var db = CreateDbContext();
+
+        var file = await CreateRepository(db).GetFileForWorkerRunAsync(
+            RunID: runID,
+            AttachmentID: attachment.ID,
+            WorkerID: 7,
+            CT: CancellationToken.None);
+
+        Assert.Null(file);
+    }
+
     // ------------------------------------------------------------------ AddCapturesAsync
 
     [Fact]
-    public async Task AddCapturesAsync_StoresImagesAsCapturesAndLogsTheEvent()
+    public async Task AddCapturesAsync_StoresImagesAsCapturesWithTheirContentAndLogsTheEvent()
     {
         var taskID = await SeedTaskAsync();
         await using var db = CreateDbContext();
@@ -343,13 +339,13 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
             CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
-        var captures = await check.TaskAttachments.OrderBy(a => a.ID).ToListAsync();
+        var captures = await check.TaskAttachments.Include(a => a.Content).OrderBy(a => a.ID).ToListAsync();
         Assert.Equal(["antes.png", "despues.png"], captures.Select(c => c.FileName));
         Assert.All(captures, c =>
         {
             Assert.True(c.IsCapture);
             Assert.Equal(AttachmentKind.IMAGE, c.Kind);
-            Assert.True(File.Exists(Path.Combine(_StorageDirectory, c.StoredName)));
+            Assert.Equal(TestFiles.PngBytes, c.Content!.Data);
         });
         Assert.Contains(await check.TaskEvents.ToListAsync(), e => e.Message == "qa agregó 2 captura(s)");
     }
@@ -403,42 +399,19 @@ public sealed class TaskAttachmentsRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task AddCapturesAsync_WhenTheDatabaseRejectsIt_DeletesTheFilesAlreadyWritten()
+    public async Task AddCapturesAsync_WhenTheDatabaseRejectsIt_StoresNothing()
     {
         var taskID = await SeedTaskAsync();
-        await using var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 1);
-
-        await Assert.ThrowsAsync<DbUpdateException>(() => CreateRepository(db).AddCapturesAsync(
-            TaskID: taskID,
-            Files: [TestFiles.CreatePng()],
-            Actor: "qa",
-            CT: CancellationToken.None));
-
-        Assert.Empty(FilesOnDisk());
-    }
-
-    [Fact]
-    public async Task GetFileForWorkerRunAsync_Capture_ReturnsNull()
-    {
-        var (taskID, attachment) = await SeedAttachmentAsync();
-        await using (var setup = CreateDbContext())
+        await using (var db = new FailingDbContext(TestDatabase.CreateOptions(_DatabaseName), FailOnSave: 1))
         {
-            var stored = await setup.TaskAttachments.SingleAsync(a => a.ID == attachment.ID);
-            stored.IsCapture = true;
-            await setup.SaveChangesAsync();
+            await Assert.ThrowsAsync<DbUpdateException>(() => CreateRepository(db).AddCapturesAsync(
+                TaskID: taskID,
+                Files: [TestFiles.CreatePng()],
+                Actor: "qa",
+                CT: CancellationToken.None));
         }
-        var runID = await SeedRunAsync(
-            TaskID: taskID,
-            WorkerID: 7,
-            Status: RunStatus.RUNNING);
-        await using var db = CreateDbContext();
 
-        var file = await CreateRepository(db).GetFileForWorkerRunAsync(
-            RunID: runID,
-            AttachmentID: attachment.ID,
-            WorkerID: 7,
-            CT: CancellationToken.None);
-
-        Assert.Null(file);
+        await using var check = CreateDbContext();
+        Assert.Equal(0, await check.TaskAttachments.CountAsync());
     }
 }

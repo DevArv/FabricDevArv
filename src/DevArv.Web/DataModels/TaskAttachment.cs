@@ -11,8 +11,8 @@ public class TaskAttachment
     public string ContentType { get; set; } = "";
     public long Size { get; set; }
     public AttachmentKind Kind { get; set; }
-    /// <summary>Nombre del archivo en disco (GUID + extensión). Nunca se usa el nombre del usuario.</summary>
-    public string StoredName { get; set; } = "";
+    /// <summary>Bytes del archivo, guardados en la base de datos. Sólo se carga con Include; null si no se cargó.</summary>
+    public TaskAttachmentContent? Content { get; set; }
     /// <summary>
     /// Captura con los cambios aplicados (pestaña «Capturas» del detalle), no un adjunto de la definición de la tarea:
     /// no se envía al agente.
