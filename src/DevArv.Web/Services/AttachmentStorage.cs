@@ -8,43 +8,49 @@ namespace DevArv.Web.Services;
 
 /// <summary>
 /// Valida los adjuntos y arma las entidades con su contenido, que se guarda en la base de datos
-/// (columna TaskAttachments.Content). No escribe nada en disco.
+/// (columna Tasks_Attachments.Content). No escribe nada en disco.
 /// </summary>
-public sealed class AttachmentStorage(IOptions<AttachmentOptions> options)
+public sealed class AttachmentStorage(IOptions<AttachmentOptions> OptionsAccessor)
 {
-    private const int HeadBytes = 4096;
-    private readonly AttachmentOptions _options = options.Value;
+    private const int HEAD_BYTES = 4096;
+    private readonly AttachmentOptions _Options = OptionsAccessor.Value;
 
-    public AttachmentOptions Options => _options;
+    public AttachmentOptions Options => _Options;
 
     /// <summary>Valida y arma los adjuntos. Lanza AttachmentValidationException sin devolver nada si algún archivo es inválido.</summary>
-    public async Task<List<TaskAttachment>> CreateAsync(int taskId, IReadOnlyCollection<IFormFile> files, int existingCount, CancellationToken ct)
+    public async Task<List<TaskAttachment>> CreateAsync(int TaskID, IReadOnlyCollection<IFormFile> Files, int ExistingCount, CancellationToken CT)
     {
-        var validated = await ValidateAsync(files, existingCount, ct);
-        return await ReadAsync(taskId, validated, ct);
+        var validated = await ValidateAsync(
+            Files: Files,
+            ExistingCount: ExistingCount,
+            CT: CT);
+        return await ReadAsync(
+            TaskID: TaskID,
+            Validated: validated,
+            CT: CT);
     }
 
     /// <summary>Valida cantidad, tamaño y tipo real de todos los archivos. Lanza AttachmentValidationException.</summary>
-    public async Task<List<ValidatedUpload>> ValidateAsync(IReadOnlyCollection<IFormFile> files, int existingCount, CancellationToken ct)
+    public async Task<List<ValidatedUpload>> ValidateAsync(IReadOnlyCollection<IFormFile> Files, int ExistingCount, CancellationToken CT)
     {
-        if (files.Count == 0) return [];
-        if (existingCount + files.Count > _options.MaxFilesPerTask)
+        if (Files.Count == 0) return [];
+        if (ExistingCount + Files.Count > _Options.MaxFilesPerTask)
             throw new AttachmentValidationException(
-                $"Máximo {_options.MaxFilesPerTask} archivos por tarea (ya hay {existingCount}, intentas agregar {files.Count}).");
+                $"Máximo {_Options.MaxFilesPerTask} archivos por tarea (ya hay {ExistingCount}, intentas agregar {Files.Count}).");
 
         var validated = new List<ValidatedUpload>();
-        foreach (var file in files)
+        foreach (var file in Files)
         {
             if (file.Length == 0)
                 throw new AttachmentValidationException($"«{file.FileName}» está vacío.");
-            if (file.Length > _options.MaxFileBytes)
+            if (file.Length > _Options.MaxFileBytes)
                 throw new AttachmentValidationException(
-                    $"«{file.FileName}» supera el máximo de {_options.MaxFileBytes / (1024 * 1024)} MB.");
+                    $"«{file.FileName}» supera el máximo de {_Options.MaxFileBytes / (1024 * 1024)} MB.");
 
-            var head = new byte[(int)Math.Min(HeadBytes, file.Length)];
-            await using (var s = file.OpenReadStream())
+            var head = new byte[(int)Math.Min(HEAD_BYTES, file.Length)];
+            await using (var source = file.OpenReadStream())
             {
-                await s.ReadExactlyAsync(head, ct);
+                await source.ReadExactlyAsync(head, CT);
             }
 
             var type = FileSignature.Detect(head, file.FileName)
@@ -57,20 +63,20 @@ public sealed class AttachmentStorage(IOptions<AttachmentOptions> options)
     }
 
     /// <summary>Lee el contenido completo de los archivos ya validados y arma las entidades (no las agrega al contexto).</summary>
-    public async Task<List<TaskAttachment>> ReadAsync(int taskId, IReadOnlyList<ValidatedUpload> validated, CancellationToken ct)
+    public async Task<List<TaskAttachment>> ReadAsync(int TaskID, IReadOnlyList<ValidatedUpload> Validated, CancellationToken CT)
     {
         var attachments = new List<TaskAttachment>();
-        foreach (var (file, type) in validated)
+        foreach (var (file, type) in Validated)
         {
             var data = new byte[file.Length];
             await using (var source = file.OpenReadStream())
             {
-                await source.ReadExactlyAsync(data, ct);
+                await source.ReadExactlyAsync(data, CT);
             }
 
             attachments.Add(new TaskAttachment
             {
-                TaskId = taskId,
+                TaskID = TaskID,
                 FileName = SanitizeFileName(file.FileName),
                 ContentType = type.ContentType,
                 Kind = type.Kind,
@@ -81,15 +87,15 @@ public sealed class AttachmentStorage(IOptions<AttachmentOptions> options)
         return attachments;
     }
 
-    public static string SanitizeFileName(string fileName)
+    public static string SanitizeFileName(string FileName)
     {
         // Se quitan rutas y caracteres inválidos en Windows o Linux: el worker guarda el archivo con este nombre.
-        var name = fileName.Replace('\\', '/');
+        var name = FileName.Replace('\\', '/');
         name = name[(name.LastIndexOf('/') + 1)..];
-        var sb = new StringBuilder(name.Length);
+        var builder = new StringBuilder(name.Length);
         foreach (var c in name)
-            sb.Append(char.IsControl(c) || "<>:\"|?*".Contains(c) ? '_' : c);
-        name = sb.ToString().Trim().TrimEnd('.');
+            builder.Append(char.IsControl(c) || "<>:\"|?*".Contains(c) ? '_' : c);
+        name = builder.ToString().Trim().TrimEnd('.');
         if (name.Length == 0 || name.Trim('.').Length == 0) return "archivo";
         return name.Length > 120 ? name[^120..] : name;
     }

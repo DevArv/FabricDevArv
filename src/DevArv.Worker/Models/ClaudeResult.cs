@@ -10,4 +10,4 @@ public sealed record ClaudeResult(
     long CacheReadTokens,
     long CacheWriteTokens,
     int? NumTurns,
-    string? SessionId);
+    string? SessionID);

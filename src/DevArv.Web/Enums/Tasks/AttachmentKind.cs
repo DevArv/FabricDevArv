@@ -2,7 +2,7 @@ namespace DevArv.Web.Enums.Tasks;
 
 public enum AttachmentKind
 {
-    Image = 0,
-    Pdf = 1,
-    Html = 2,
+    IMAGE = 0,
+    PDF = 1,
+    HTML = 2,
 }

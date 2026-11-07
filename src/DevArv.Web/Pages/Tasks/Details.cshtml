@@ -4,16 +4,16 @@
     var t = Model.Item;
     var s = t.Stage;
     var run = Model.SelectedRun;
-    ViewData["Title"] = $"#{t.Id} {t.Title}";
+    ViewData["Title"] = $"#{t.ID} {t.Title}";
     if (Model.Modal) { Layout = null; }
 }
 
 <div class="panel details" data-live="@(Model.IsLive ? "true" : "false")" data-self="@Model.SelfUrl()">
     <div class="panel-head">
-        <h2>Tarea #@t.Id · @t.Title</h2>
+        <h2>Tarea #@t.ID · @t.Title</h2>
         @if (Model.Modal)
         {
-            <a class="btn btn-ghost" href="/Tasks/Details/@t.Id" target="_blank" title="Abrir en página completa">⤢</a>
+            <a class="btn btn-ghost" href="/Tasks/Details/@t.ID" target="_blank" title="Abrir en página completa">⤢</a>
             <button type="button" class="btn btn-ghost" data-close-modal>✕</button>
         }
     </div>
@@ -46,21 +46,21 @@
     </div>
 
     @* ---------- Decisión pendiente / errores / ejecución en curso ---------- *@
-    @if (t.Status == WorkStatus.WaitingApproval || (s.Kind == StageKind.Manual && s.SuccessStageId is not null && t.ArchivedAt is null))
+    @if (t.Status == WorkStatus.WAITING_APPROVAL || (s.Kind == StageKind.MANUAL && s.SuccessStageID is not null && t.ArchivedAt is null))
     {
-        <div class="decision @(t.Status == WorkStatus.WaitingApproval ? "waiting" : "")">
-            @if (t.Status == WorkStatus.WaitingApproval)
+        <div class="decision @(t.Status == WorkStatus.WAITING_APPROVAL ? "waiting" : "")">
+            @if (t.Status == WorkStatus.WAITING_APPROVAL)
             {
                 <span class="waiting-tag">⏸ Espera una decisión desde @Model.Clock.Format(t.StageEnteredAt)</span>
             }
             <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Approve")" class="inline">
                 <input type="hidden" name="returnQuery" />
-                <button class="btn btn-primary">✓ @(s.Kind == StageKind.HumanApproval ? "Aprobar" : "Avanzar") → @Model.StageName(s.SuccessStageId)</button>
+                <button class="btn btn-primary">✓ @(s.Kind == StageKind.HUMAN_APPROVAL ? "Aprobar" : "Avanzar") → @Model.StageName(s.SuccessStageID)</button>
             </form>
-            @if (s.Kind == StageKind.HumanApproval)
+            @if (s.Kind == StageKind.HUMAN_APPROVAL)
             {
                 <details class="inline-details" data-key="changes">
-                    <summary class="btn">↩ Pedir cambios → @Model.StageName(s.RejectStageId)</summary>
+                    <summary class="btn">↩ Pedir cambios → @Model.StageName(s.RejectStageID)</summary>
                     <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("RequestChanges")">
                         <input type="hidden" name="returnQuery" />
                         <textarea name="feedback" rows="5" required placeholder="¿Qué debe corregir el agente? Sé específico: el texto se envía en su próximo prompt."></textarea>
@@ -87,13 +87,13 @@
             {
                 <span>🔧 El desarrollador está integrando <code>@t.BaseBranch</code> y resolviendo los conflictos.</span>
             }
-            else if (t.Status is WorkStatus.Queued or WorkStatus.Running)
+            else if (t.Status is WorkStatus.QUEUED or WorkStatus.RUNNING)
             {
                 <span class="muted">Se podrán arreglar cuando termine la ejecución en curso.</span>
             }
         </div>
     }
-    @if (t.Status == WorkStatus.Failed)
+    @if (t.Status == WorkStatus.FAILED)
     {
         <div class="alert error">
             <strong>✖ Falló «@s.Name»:</strong> @t.LastError
@@ -106,10 +106,10 @@
             }
         </div>
     }
-    @if (t.Status is WorkStatus.Queued or WorkStatus.Running)
+    @if (t.Status is WorkStatus.QUEUED or WorkStatus.RUNNING)
     {
         <div class="alert info">
-            @(t.Status == WorkStatus.Queued ? "⏳ En cola, esperando una PC disponible…" : $"● {t.LastWorkerName} está trabajando en «{s.Name}»…")
+            @(t.Status == WorkStatus.QUEUED ? "⏳ En cola, esperando una PC disponible…" : $"● {t.LastWorkerName} está trabajando en «{s.Name}»…")
             <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Cancel")" class="inline">
                 <input type="hidden" name="returnQuery" />
                 <button class="btn btn-ghost">■ Cancelar</button>
@@ -124,12 +124,12 @@
             <select name="stageId">
                 @foreach (var st in Model.Stages)
                 {
-                    <option value="@st.Id" selected="@(st.Id == t.StageId)">@st.Icon @st.Name</option>
+                    <option value="@st.ID" selected="@(st.ID == t.StageID)">@st.Icon @st.Name</option>
                 }
             </select>
             <button class="btn">Mover a…</button>
         </form>
-        @if (s.RunsAutomatically && t.Status is not (WorkStatus.Queued or WorkStatus.Running or WorkStatus.Failed))
+        @if (s.RunsAutomatically && t.Status is not (WorkStatus.QUEUED or WorkStatus.RUNNING or WorkStatus.FAILED))
         {
             <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Retry")" class="inline">
                 <input type="hidden" name="returnQuery" />
@@ -169,7 +169,7 @@
                             <option value="">Cualquier PC</option>
                             @foreach (var w in Model.Workers)
                             {
-                                <option value="@w.Id" selected="@(w.Id == t.PreferredWorkerId)">@w.Name</option>
+                                <option value="@w.ID" selected="@(w.ID == t.PreferredWorkerID)">@w.Name</option>
                             }
                         </select>
                     </label>
@@ -186,7 +186,7 @@
             <button class="btn btn-ghost">@(t.ArchivedAt is null ? "📦 Archivar" : "↺ Restaurar")</button>
         </form>
         <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("Delete")" class="inline"
-              data-confirm="¿Eliminar definitivamente la tarea #@t.Id «@t.Title»? Se borrarán sus ejecuciones, comentarios y adjuntos; no se puede deshacer.">
+              data-confirm="¿Eliminar definitivamente la tarea #@t.ID «@t.Title»? Se borrarán sus ejecuciones, comentarios y adjuntos; no se puede deshacer.">
             <input type="hidden" name="returnQuery" />
             <button class="btn btn-ghost">🗑 Eliminar</button>
         </form>
@@ -198,24 +198,24 @@
         <div class="markdown">@MarkdownRenderer.Render(t.Description)</div>
     </details>
 
-    <details open="@(t.Attachments.Count > 0)" class="section" data-key="files">
-        <summary>Adjuntos (@t.Attachments.Count/@Model.MaxFiles)</summary>
+    <details open="@(Model.Attachments.Count > 0)" class="section" data-key="files">
+        <summary>Adjuntos (@Model.Attachments.Count/@Model.MaxFiles)@(Model.Captures.Count > 0 ? $" · {Model.Captures.Count} captura(s)" : "")</summary>
         <div class="attachments">
-            @foreach (var a in t.Attachments.OrderBy(a => a.Id))
+            @foreach (var a in Model.Attachments)
             {
                 <div class="attachment">
-                    @if (a.Kind == AttachmentKind.Image)
+                    @if (a.Kind == AttachmentKind.IMAGE)
                     {
-                        <a href="@Model.AttachmentUrl(a.Id)" target="_blank" rel="noopener"><img src="@Model.AttachmentUrl(a.Id)" alt="@a.FileName" loading="lazy" /></a>
+                        <a href="@Model.AttachmentUrl(a.ID)" target="_blank" rel="noopener"><img src="@Model.AttachmentUrl(a.ID)" alt="@a.FileName" loading="lazy" /></a>
                     }
                     else
                     {
-                        <a class="file-icon" href="@Model.AttachmentUrl(a.Id)" target="_blank" rel="noopener">@(a.Kind == AttachmentKind.Pdf ? "📄 PDF" : "🌐 HTML")</a>
+                        <a class="file-icon" href="@Model.AttachmentUrl(a.ID)" target="_blank" rel="noopener">@(a.Kind == AttachmentKind.PDF ? "📄 PDF" : "🌐 HTML")</a>
                     }
                     <span class="name" title="@a.FileName">@a.FileName</span>
                     <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("DeleteAttachment")" class="inline" data-confirm="¿Eliminar «@a.FileName»?">
                         <input type="hidden" name="returnQuery" />
-                        <input type="hidden" name="attachmentId" value="@a.Id" />
+                        <input type="hidden" name="attachmentId" value="@a.ID" />
                         <button class="btn btn-ghost small">🗑</button>
                     </form>
                 </div>
@@ -242,52 +242,51 @@
             }
             @foreach (var r in t.Runs)
             {
-                <a class="run-item @(r.Id == run?.Id ? "on" : "")" href="@Model.SelfUrl(r.Id)" data-modal-link>
+                <a class="run-item @(r.ID == run?.ID ? "on" : "")" href="@Model.SelfUrl(r.ID)" data-modal-link>
                     <div class="run-head">
                         <strong>@r.StageName</strong>
-                        <span class="run-status rs-@r.Status.ToString().ToLowerInvariant()">@Labels.Of(r.Status)</span>
+                        <span class="run-status @Labels.StatusCss(r.Status)">@Labels.Of(r.Status)</span>
                     </div>
                     <small>
-                        @Model.Clock.Format(r.StartedAt ?? r.CreatedAt) · 🖥 @(r.Worker?.Name ?? (r.RunnerKind == StageKind.System ? "servidor" : "—"))
+                        @Model.Clock.Format(r.StartedAt ?? r.CreatedAt) · 🖥 @(r.Worker?.Name ?? (r.RunnerKind == StageKind.SYSTEM ? "servidor" : "—"))
                         @if (r.Model is not null) { <text> · @r.Model</text> }
                         @if (r.Duration is not null) { <text> · @Labels.Duration(r.Duration)</text> }
                         @if (r.TotalTokens > 0) { <text> · @Labels.Usd(r.CostUsd) · @Labels.Tokens(r.TotalTokens)</text> }
                     </small>
-                    @if (r.Decision != RunDecision.None)
+                    @if (r.Decision != RunDecision.NONE)
                     {
-                        <span class="decision-tag @(r.Decision == RunDecision.Approved ? "ok" : "ko")">@(r.Decision == RunDecision.Approved ? "✓ Aprobó" : "⊘ Rechazó")</span>
+                        <span class="decision-tag @(r.Decision == RunDecision.APPROVED ? "ok" : "ko")">@(r.Decision == RunDecision.APPROVED ? "✓ Aprobó" : "⊘ Rechazó")</span>
                     }
                 </a>
             }
         </aside>
 
-        <section class="run-detail">
-            @if (run is null)
-            {
-                <p class="muted">Selecciona una ejecución.</p>
-            }
-            else
+        @{
+            void RunHead(TaskRun Run)
             {
                 <div class="run-detail-head">
-                    <strong>@run.StageName</strong>
-                    <span class="run-status rs-@run.Status.ToString().ToLowerInvariant()">@Labels.Of(run.Status)</span>
-                    @if (run.NumTurns is not null) { <span class="muted">@run.NumTurns turnos</span> }
-                    @if (run.HeadCommit is not null) { <code title="Commit">@(run.HeadCommit[..Math.Min(10, run.HeadCommit.Length)])</code> }
+                    <strong>@Run.StageName</strong>
+                    <span class="run-status @Labels.StatusCss(Run.Status)">@Labels.Of(Run.Status)</span>
+                    @if (Run.NumTurns is not null) { <span class="muted">@Run.NumTurns turnos</span> }
+                    @if (Run.HeadCommit is not null) { <code title="Commit">@(Run.HeadCommit[..Math.Min(10, Run.HeadCommit.Length)])</code> }
                 </div>
 
-                @if (run.ErrorMessage is not null)
+                @if (Run.ErrorMessage is not null)
                 {
-                    <div class="alert error">@run.ErrorMessage</div>
+                    <div class="alert error">@Run.ErrorMessage</div>
                 }
+            }
 
+            void RunSummary(TaskRun Run)
+            {
                 <h4>Resultado</h4>
-                @if (string.IsNullOrWhiteSpace(run.Summary))
+                @if (string.IsNullOrWhiteSpace(Run.Summary))
                 {
-                    <p class="muted">@(run.Status is RunStatus.Running or RunStatus.Queued ? "En progreso…" : "Sin resultado.")</p>
+                    <p class="muted">@(Run.Status is RunStatus.RUNNING or RunStatus.QUEUED ? "En progreso…" : "Sin resultado.")</p>
                 }
                 else
                 {
-                    <div class="markdown result">@MarkdownRenderer.Render(run.Summary)</div>
+                    <div class="markdown result">@MarkdownRenderer.Render(Run.Summary)</div>
                 }
 
                 <h4>Archivos modificados</h4>
@@ -304,18 +303,150 @@
                         }
                     </ul>
                 }
+            }
+
+            void RunPrompt(TaskRun Run)
+            {
+                @if (Run.PromptSnapshot is not null)
+                {
+                    <details class="section" data-key="prompt">
+                        <summary>Prompt enviado al agente</summary>
+                        <pre class="log">@Run.PromptSnapshot</pre>
+                    </details>
+                }
+            }
+
+            void ReportSection(TaskReportSectionViewModel? Report, string Missing)
+            {
+                @if (Report is null)
+                {
+                    <p class="muted report-empty">@Missing</p>
+                }
+                else
+                {
+                    <p class="muted report-source">
+                        Reportado por «@Report.StageName» · @Model.Clock.Format(Report.FinishedAt) ·
+                        <a href="@Model.SelfUrl(Report.RunID)" data-modal-link>ver ejecución</a>
+                    </p>
+                    <div class="markdown result">@MarkdownRenderer.Render(Report.Content)</div>
+                }
+            }
+        }
+
+        <section class="run-detail">
+            @if (Model.ShowReportTabs)
+            {
+                @* ---------- Pestañas informativas (la tarea ya llegó a «Creador de PR») ---------- *@
+                var reportGroup = $"task-{t.ID}-report";
+                var logGroup = $"task-{t.ID}-log";
+                <div class="tabs report-tabs" data-tabs="@reportGroup" role="tablist">
+                    <button type="button" class="on" data-tab="log">Log</button>
+                    <button type="button" data-tab="unit-tests">
+                        Pruebas unitarias
+                        @if (Model.UnitTests is not null) { <i class="tab-dot" title="El desarrollador reportó resultados"></i> }
+                    </button>
+                    <button type="button" data-tab="captures">
+                        Capturas
+                        @if (Model.Captures.Count > 0) { <span class="badge">@Model.Captures.Count</span> }
+                    </button>
+                    <button type="button" data-tab="qa-tests">
+                        Pruebas de QA
+                        @if (Model.QaTests is not null) { <i class="tab-dot" title="El desarrollador documentó las pruebas"></i> }
+                    </button>
+                </div>
+
+                <div class="report-panel" data-tab-panel="log" data-tab-group="@reportGroup">
+                    @if (run is null)
+                    {
+                        <p class="muted">Selecciona una ejecución.</p>
+                    }
+                    else
+                    {
+                        <div class="log-toolbar">
+                            <span class="muted">@Model.SelectedRunLogLines.ToString("N0") @(Model.SelectedRunLogLines == 1 ? "línea" : "líneas")</span>
+                            <span class="log-toolbar-actions">
+                                <span class="seg-tabs" data-tabs="@logGroup">
+                                    <button type="button" class="@(Model.IsLive ? "" : "on")" data-tab="summary">Resumen</button>
+                                    <button type="button" class="@(Model.IsLive ? "on" : "")" data-tab="full-log">Log completo</button>
+                                </span>
+                                <button type="button" class="btn" data-copy-target="#run-log-@run.ID">Copiar log</button>
+                            </span>
+                        </div>
+                        RunHead(run);
+                        <div data-tab-panel="summary" data-tab-group="@logGroup" hidden="@Model.IsLive">
+                            @{ RunSummary(run); }
+                        </div>
+                        <div data-tab-panel="full-log" data-tab-group="@logGroup" hidden="@(!Model.IsLive)">
+                            <pre class="log" id="run-log-@run.ID" data-autoscroll>@run.Log</pre>
+                        </div>
+                        RunPrompt(run);
+                    }
+                </div>
+
+                <div class="report-panel" data-tab-panel="unit-tests" data-tab-group="@reportGroup" hidden>
+                    @{ ReportSection(Model.UnitTests,
+                           "El desarrollador no reportó resultados de pruebas unitarias. Las próximas ejecuciones del desarrollador "
+                           + $"los incluyen en su resumen, en la sección «{TaskReport.UNIT_TESTS_HEADING}»."); }
+                </div>
+
+                <div class="report-panel" data-tab-panel="captures" data-tab-group="@reportGroup" hidden>
+                    @if (Model.Captures.Count == 0)
+                    {
+                        <p class="muted report-empty">Todavía no hay capturas con los cambios aplicados.</p>
+                    }
+                    else
+                    {
+                        <div class="attachments captures">
+                            @foreach (var c in Model.Captures)
+                            {
+                                <div class="attachment">
+                                    <a href="@Model.AttachmentUrl(c.ID)" target="_blank" rel="noopener"><img src="@Model.AttachmentUrl(c.ID)" alt="@c.FileName" loading="lazy" /></a>
+                                    <span class="name" title="@c.FileName">@c.FileName</span>
+                                    <small class="muted">@Model.Clock.Format(c.UploadedAt)</small>
+                                    <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("DeleteAttachment")" class="inline" data-confirm="¿Eliminar la captura «@c.FileName»?">
+                                        <input type="hidden" name="returnQuery" />
+                                        <input type="hidden" name="attachmentId" value="@c.ID" />
+                                        <button class="btn btn-ghost small">🗑</button>
+                                    </form>
+                                </div>
+                            }
+                        </div>
+                    }
+                    @if (t.Attachments.Count < Model.MaxFiles)
+                    {
+                        <form asp-antiforgery="true" method="post" action="@Model.HandlerUrl("UploadCapture")" enctype="multipart/form-data" class="inline upload">
+                            <input type="hidden" name="returnQuery" />
+                            <input type="file" name="files" multiple accept=".png,.jpg,.jpeg,.gif,.webp" required />
+                            <button class="btn">Agregar capturas</button>
+                        </form>
+                        <p class="muted small-note">Imágenes PNG, JPG, GIF o WEBP. Cuentan para el máximo de @Model.MaxFiles archivos por tarea y no se envían al agente.</p>
+                    }
+                    else
+                    {
+                        <p class="muted small-note">La tarea ya tiene el máximo de @Model.MaxFiles archivos (adjuntos y capturas).</p>
+                    }
+                </div>
+
+                <div class="report-panel" data-tab-panel="qa-tests" data-tab-group="@reportGroup" hidden>
+                    @{ ReportSection(Model.QaTests,
+                           "El desarrollador no documentó las pruebas de QA. Las próximas ejecuciones del desarrollador las "
+                           + $"incluyen en su resumen, en la sección «{TaskReport.QA_TESTS_HEADING}»."); }
+                </div>
+            }
+            else if (run is null)
+            {
+                <p class="muted">Selecciona una ejecución.</p>
+            }
+            else
+            {
+                RunHead(run);
+                RunSummary(run);
 
                 <details class="section" data-key="log" open="@Model.IsLive">
                     <summary>Log completo (@run.Log.Length.ToString("N0") caracteres)</summary>
                     <pre class="log" data-autoscroll>@run.Log</pre>
                 </details>
-                @if (run.PromptSnapshot is not null)
-                {
-                    <details class="section" data-key="prompt">
-                        <summary>Prompt enviado al agente</summary>
-                        <pre class="log">@run.PromptSnapshot</pre>
-                    </details>
-                }
+                RunPrompt(run);
             }
         </section>
     </div>
@@ -326,7 +457,7 @@
             <h3>Comentarios y retroalimentación</h3>
             @foreach (var c in t.Comments.OrderBy(c => c.CreatedAt))
             {
-                <div class="comment kind-@c.Kind.ToString().ToLowerInvariant()">
+                <div class="comment @Labels.KindCss(c.Kind)">
                     <div class="comment-head">
                         <strong>@c.Author</strong> · <span class="muted">@Labels.Of(c.Kind) · @Model.Clock.Format(c.CreatedAt)</span>
                     </div>

@@ -9,17 +9,17 @@ namespace DevArv.Web.Helpers;
 /// <summary>Markdown → HTML seguro: el HTML crudo se escapa y sólo se permiten enlaces http(s), mailto o relativos.</summary>
 public static class MarkdownRenderer
 {
-    private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
+    private static readonly MarkdownPipeline _Pipeline = new MarkdownPipelineBuilder()
         .DisableHtml()
         .UseAdvancedExtensions()
         .UseSoftlineBreakAsHardlineBreak()
         .Build();
 
-    public static IHtmlContent Render(string? markdown)
+    public static IHtmlContent Render(string? Markdown)
     {
-        if (string.IsNullOrWhiteSpace(markdown)) return HtmlString.Empty;
+        if (string.IsNullOrWhiteSpace(Markdown)) return HtmlString.Empty;
 
-        var document = Markdown.Parse(markdown, Pipeline);
+        var document = Markdig.Markdown.Parse(Markdown, _Pipeline);
         foreach (var link in document.Descendants<LinkInline>())
         {
             if (!IsSafeUrl(link.Url)) link.Url = "#";
@@ -31,16 +31,16 @@ public static class MarkdownRenderer
 
         using var writer = new StringWriter();
         var renderer = new HtmlRenderer(writer);
-        Pipeline.Setup(renderer);
+        _Pipeline.Setup(renderer);
         renderer.Render(document);
         writer.Flush();
         return new HtmlString(writer.ToString());
     }
 
-    private static bool IsSafeUrl(string? url)
+    private static bool IsSafeUrl(string? Url)
     {
-        if (string.IsNullOrWhiteSpace(url)) return true;
-        var trimmed = url.Trim();
+        if (string.IsNullOrWhiteSpace(Url)) return true;
+        var trimmed = Url.Trim();
         if (trimmed.StartsWith('/') || trimmed.StartsWith('#')) return true;
         if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
             return uri.Scheme is "http" or "https" or "mailto";

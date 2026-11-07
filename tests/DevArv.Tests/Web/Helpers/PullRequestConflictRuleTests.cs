@@ -7,11 +7,11 @@ namespace DevArv.Tests.Web.Helpers;
 
 public class PullRequestConflictRuleTests
 {
-    private static readonly Stage ProductApproval =
-        new() { Id = 7, Name = "Aprobación Producto", Order = 70, Kind = StageKind.HumanApproval };
+    private static readonly Stage _ProductApproval =
+        new() { ID = 7, Name = "Aprobación Producto", Order = 70, Kind = StageKind.HUMAN_APPROVAL };
 
-    private static readonly Stage PendingDeploy =
-        new() { Id = 9, Name = "Pendiente Deploy", Order = 90, Kind = StageKind.Manual, IsMergeDestination = true };
+    private static readonly Stage _PendingDeploy =
+        new() { ID = 9, Name = "Pendiente Deploy", Order = 90, Kind = StageKind.MANUAL, IsMergeDestination = true };
 
     [Theory]
     [InlineData(false, "dirty", true)]
@@ -22,46 +22,46 @@ public class PullRequestConflictRuleTests
     [InlineData(true, "unstable", false)]
     [InlineData(null, "unknown", null)]
     [InlineData(null, null, null)]
-    public void FromGitHub_InterpretsMergeableFields(bool? mergeable, string? state, bool? expected) =>
-        Assert.Equal(expected, PullRequestConflictRule.FromGitHub(mergeable, state));
+    public void FromGitHub_InterpretsMergeableFields(bool? Mergeable, string? State, bool? Expected) =>
+        Assert.Equal(Expected, PullRequestConflictRule.FromGitHub(Mergeable, State));
 
     [Fact]
     public void ShouldWatch_WithoutMergeDestination_WatchesEveryNonTerminalStage()
     {
-        Assert.True(PullRequestConflictRule.ShouldWatch(ProductApproval, null));
-        Assert.True(PullRequestConflictRule.ShouldWatch(PendingDeploy, null));
-        Assert.False(PullRequestConflictRule.ShouldWatch(new Stage { Kind = StageKind.Terminal, Order = 5 }, null));
+        Assert.True(PullRequestConflictRule.ShouldWatch(_ProductApproval, null));
+        Assert.True(PullRequestConflictRule.ShouldWatch(_PendingDeploy, null));
+        Assert.False(PullRequestConflictRule.ShouldWatch(new Stage { Kind = StageKind.TERMINAL, Order = 5 }, null));
     }
 
     [Fact]
     public void ShouldWatch_WithMergeDestination_WatchesOnlyStagesBeforeIt()
     {
-        Assert.True(PullRequestConflictRule.ShouldWatch(ProductApproval, PendingDeploy));
-        Assert.False(PullRequestConflictRule.ShouldWatch(PendingDeploy, PendingDeploy));
-        Assert.False(PullRequestConflictRule.ShouldWatch(new Stage { Id = 10, Kind = StageKind.Manual, Order = 100 }, PendingDeploy));
+        Assert.True(PullRequestConflictRule.ShouldWatch(_ProductApproval, _PendingDeploy));
+        Assert.False(PullRequestConflictRule.ShouldWatch(_PendingDeploy, _PendingDeploy));
+        Assert.False(PullRequestConflictRule.ShouldWatch(new Stage { ID = 10, Kind = StageKind.MANUAL, Order = 100 }, _PendingDeploy));
     }
 
-    private static TaskItem ConflictedTask(WorkStatus status = WorkStatus.WaitingApproval) => new()
+    private static TaskItem ConflictedTask(WorkStatus Status = WorkStatus.WAITING_APPROVAL) => new()
     {
-        Id = 1, PullRequestNumber = 12, PullRequestHasConflicts = true, Status = status, Stage = ProductApproval,
+        ID = 1, PullRequestNumber = 12, PullRequestHasConflicts = true, Status = Status, Stage = _ProductApproval,
     };
 
     [Fact]
     public void CanResolve_ConflictedTaskWaitingApproval_ReturnsTrue()
     {
         Assert.True(PullRequestConflictRule.ShowConflicts(ConflictedTask()));
-        Assert.True(PullRequestConflictRule.CanResolve(ConflictedTask(), ProductApproval));
-        Assert.True(PullRequestConflictRule.CanResolve(ConflictedTask(WorkStatus.Failed), ProductApproval));
+        Assert.True(PullRequestConflictRule.CanResolve(ConflictedTask(), _ProductApproval));
+        Assert.True(PullRequestConflictRule.CanResolve(ConflictedTask(WorkStatus.FAILED), _ProductApproval));
     }
 
     [Theory]
-    [InlineData(WorkStatus.Queued)]
-    [InlineData(WorkStatus.Running)]
-    public void CanResolve_WhileRunning_ReturnsFalse(WorkStatus status)
+    [InlineData(WorkStatus.QUEUED)]
+    [InlineData(WorkStatus.RUNNING)]
+    public void CanResolve_WhileRunning_ReturnsFalse(WorkStatus Status)
     {
-        var task = ConflictedTask(status);
+        var task = ConflictedTask(Status);
         Assert.True(PullRequestConflictRule.ShowConflicts(task));
-        Assert.False(PullRequestConflictRule.CanResolve(task, ProductApproval));
+        Assert.False(PullRequestConflictRule.CanResolve(task, _ProductApproval));
     }
 
     [Fact]
@@ -76,11 +76,11 @@ public class PullRequestConflictRuleTests
         var withoutPullRequest = ConflictedTask();
         withoutPullRequest.PullRequestNumber = null;
 
-        Assert.False(PullRequestConflictRule.CanResolve(noConflicts, ProductApproval));
-        Assert.False(PullRequestConflictRule.CanResolve(merged, ProductApproval));
+        Assert.False(PullRequestConflictRule.CanResolve(noConflicts, _ProductApproval));
+        Assert.False(PullRequestConflictRule.CanResolve(merged, _ProductApproval));
         Assert.False(PullRequestConflictRule.ShowConflicts(merged));
-        Assert.False(PullRequestConflictRule.CanResolve(archived, ProductApproval));
-        Assert.False(PullRequestConflictRule.CanResolve(withoutPullRequest, ProductApproval));
-        Assert.False(PullRequestConflictRule.CanResolve(ConflictedTask(), new Stage { Kind = StageKind.Terminal }));
+        Assert.False(PullRequestConflictRule.CanResolve(archived, _ProductApproval));
+        Assert.False(PullRequestConflictRule.CanResolve(withoutPullRequest, _ProductApproval));
+        Assert.False(PullRequestConflictRule.CanResolve(ConflictedTask(), new Stage { Kind = StageKind.TERMINAL }));
     }
 }

@@ -4,16 +4,18 @@ namespace DevArv.Web.Constants;
 /// Plantillas por defecto de los agentes. Se editan desde la pantalla "Flujo".
 /// Variables disponibles: {{task.id}} {{task.title}} {{task.description}} {{task.priority}}
 /// {{task.complexity}} {{task.labels}} {{project.name}} {{repo}} {{baseBranch}} {{workBranch}}
-/// {{attachments}} {{feedback}} {{skill}} {{conflicts}}
+/// {{attachments}} {{feedback}} {{skill}} {{conflicts}} {{report}}
 /// ({{conflicts}} sólo tiene contenido al arreglar los conflictos del pull request; si la plantilla no la usa, se agrega al final).
+/// ({{report}} sólo tiene contenido en las columnas que hacen push: pide las secciones «Pruebas unitarias» y «Pruebas QA»
+/// del resumen, que se muestran en las pestañas del detalle; si la plantilla no la usa, se agrega al final).
 /// </summary>
 public static class DefaultPrompts
 {
     /// <summary>Skill con el que revisa el Revisor de Código por defecto (<c>.claude/skills/revision</c>, como en ShopyCube).</summary>
-    public const string ReviewerSkill = "revision";
+    public const string REVIEWER_SKILL = "revision";
 
 
-    public const string Developer = """
+    public const string DEVELOPER = """
         Eres el agente **Desarrollador** de DevArv. Trabajas en el repositorio {{repo}} (proyecto {{project.name}}),
         en la rama `{{workBranch}}`, que parte de `{{baseBranch}}`.
 
@@ -36,7 +38,7 @@ public static class DefaultPrompts
         Termina con un resumen breve en español: qué cambiaste, archivos clave, cómo se probó y riesgos o pendientes.
         """;
 
-    public const string Reviewer = """
+    public const string REVIEWER = """
         Eres el agente **Revisor de Código** de DevArv. Revisa los cambios de la rama `{{workBranch}}`
         respecto a `origin/{{baseBranch}}` en el repositorio {{repo}}.
 
@@ -62,7 +64,7 @@ public static class DefaultPrompts
         VEREDICTO: RECHAZADO
         """;
 
-    public const string DeveloperAllowedTools = """
+    public const string DEVELOPER_ALLOWED_TOOLS = """
         Read
         Grep
         Glob
@@ -82,7 +84,7 @@ public static class DefaultPrompts
         Bash(npm test:*)
         """;
 
-    public const string ReviewerAllowedTools = """
+    public const string REVIEWER_ALLOWED_TOOLS = """
         Read
         Grep
         Glob
@@ -92,7 +94,7 @@ public static class DefaultPrompts
         Bash(git show:*)
         """;
 
-    public const string ReviewerDisallowedTools = """
+    public const string REVIEWER_DISALLOWED_TOOLS = """
         Edit
         Write
         NotebookEdit

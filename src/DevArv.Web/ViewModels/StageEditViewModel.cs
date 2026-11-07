@@ -7,14 +7,14 @@ public sealed class StageEditViewModel
 {
     [Required(ErrorMessage = "El nombre es obligatorio."), MaxLength(80)] public string Name { get; set; } = "";
     [MaxLength(16)] public string Icon { get; set; } = "📋";
-    public StageKind Kind { get; set; } = StageKind.Manual;
+    public StageKind Kind { get; set; } = StageKind.MANUAL;
     [MaxLength(500)] public string? Description { get; set; }
     public bool IsInitial { get; set; }
     public bool IsMergeDestination { get; set; }
-    public int? SuccessStageId { get; set; }
-    public int? RejectStageId { get; set; }
+    public int? SuccessStageID { get; set; }
+    public int? RejectStageID { get; set; }
 
-    [MaxLength(100), RegularExpression(@"^[A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
+    [MaxLength(100), RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9.\-_\[\]]*$", ErrorMessage = "Nombre de modelo inválido.")]
     public string? Model { get; set; }
     public string PermissionMode { get; set; } = "acceptEdits";
     public string? AllowedTools { get; set; }

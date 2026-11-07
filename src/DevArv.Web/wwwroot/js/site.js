@@ -9,10 +9,11 @@
   const board = $('#board');
   let liveTimer = null;
   let dragging = false;
+  const TAB_STORAGE_PREFIX = 'devarv-tab:';
 
   // ------------------------------------------------------------------ modal
 
-  async function openModal(url, { pushTask } = {}) {
+  async function openModal(url, { pushTask, resetTabs = false } = {}) {
     try {
       const res = await fetch(url, { headers: { 'X-Requested-With': 'fetch' }, credentials: 'same-origin' });
       if (res.redirected && res.url.includes('/Identity/Account/Login')) { location.href = res.url; return; }
@@ -23,7 +24,7 @@
         <button class="btn" data-close-modal>Cerrar</button></div>`;
     }
     if (!modal.open) modal.showModal();
-    initDynamic(modalBody);
+    initDynamic(modalBody, { resetTabs });
     if (pushTask) setTaskParam(pushTask);
     scheduleLive();
   }
@@ -85,7 +86,8 @@
     if (opener) { e.preventDefault(); openModal(opener.dataset.modal); return; }
 
     const inner = e.target.closest('a[data-modal-link]');
-    if (inner && modal.open) { e.preventDefault(); openModal(inner.getAttribute('href')); return; }
+    // Navegación explícita a otra ejecución: se abre en la pestaña Log, no en el informe recordado.
+    if (inner && modal.open) { e.preventDefault(); openModal(inner.getAttribute('href'), { resetTabs: true }); return; }
 
     const fix = e.target.closest('[data-resolve-conflicts]');
     if (fix) { e.preventDefault(); resolveConflicts(fix); return; }
@@ -94,6 +96,23 @@
     if (card && !e.target.closest('a, button')) {
       const id = card.dataset.taskId;
       openModal(`/Tasks/Details/${id}?modal=true`, { pushTask: id });
+      return;
+    }
+
+    // Botón que copia el texto de otro elemento (p. ej. «Copiar log» copia el log completo aunque esté oculto).
+    const copyButton = e.target.closest('[data-copy-target]');
+    if (copyButton) {
+      const source = $(copyButton.dataset.copyTarget);
+      if (source && navigator.clipboard) {
+        // La etiqueta original se guarda una sola vez: un segundo clic antes de que se restaure no debe tomar «✓ Copiado».
+        copyButton.dataset.label ??= copyButton.textContent;
+        const label = copyButton.dataset.label;
+        clearTimeout(copyButton.restoreTimer);
+        navigator.clipboard.writeText(source.textContent).then(
+          () => { copyButton.textContent = '✓ Copiado'; },
+          () => { copyButton.textContent = 'No se pudo copiar'; });
+        copyButton.restoreTimer = setTimeout(() => { copyButton.textContent = label; }, 1500);
+      }
       return;
     }
 
@@ -250,16 +269,37 @@
 
   // ------------------------------------------------------------------ contenido dinámico
 
-  function initDynamic(root) {
-    // Pestañas
+  function initDynamic(root, { resetTabs = false } = {}) {
+    // Pestañas. Sin nombre (data-tabs) controlan los paneles del mismo contenedor; con nombre (data-tabs="grupo")
+    // controlan los paneles con data-tab-group="grupo" (permite pestañas anidadas) y recuerdan la pestaña elegida
+    // en la sesión del navegador, para que no se pierda al refrescar el detalle o al volver tras un formulario.
+    // Con resetTabs (navegación explícita) se olvida la pestaña recordada y cada grupo abre en su pestaña inicial.
     $$('[data-tabs]', root).forEach(tabs => {
-      const scope = tabs.parentElement;
-      tabs.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-tab]');
+      const group = tabs.dataset.tabs;
+      const panels = () => group
+        ? $$('[data-tab-panel]', root).filter(p => p.dataset.tabGroup === group)
+        : $$('[data-tab-panel]', tabs.parentElement);
+      const activate = (name, remember) => {
+        const btn = $$('[data-tab]', tabs).find(b => b.dataset.tab === name);
         if (!btn) return;
         $$('[data-tab]', tabs).forEach(b => b.classList.toggle('on', b === btn));
-        $$('[data-tab-panel]', scope).forEach(p => { p.hidden = p.dataset.tabPanel !== btn.dataset.tab; });
+        panels().forEach(p => { p.hidden = p.dataset.tabPanel !== name; });
+        if (group && remember) {
+          try { sessionStorage.setItem(TAB_STORAGE_PREFIX + group, name); } catch { /* sin almacenamiento */ }
+        }
+      };
+      tabs.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-tab]');
+        if (btn) activate(btn.dataset.tab, true);
       });
+      if (group) {
+        let saved = null;
+        try {
+          if (resetTabs) sessionStorage.removeItem(TAB_STORAGE_PREFIX + group);
+          else saved = sessionStorage.getItem(TAB_STORAGE_PREFIX + group);
+        } catch { /* sin almacenamiento */ }
+        if (saved) activate(saved, false);
+      }
     });
 
     // Rama base según el proyecto elegido

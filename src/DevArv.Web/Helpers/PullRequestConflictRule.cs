@@ -12,32 +12,32 @@ public static class PullRequestConflictRule
     /// o <c>mergeable = false</c> indican conflictos; <c>mergeable = null</c> significa que GitHub aún lo está calculando
     /// (devuelve null: no se sabe).
     /// </summary>
-    public static bool? FromGitHub(bool? mergeable, string? mergeableState)
+    public static bool? FromGitHub(bool? Mergeable, string? MergeableState)
     {
-        if (string.Equals(mergeableState, "dirty", StringComparison.OrdinalIgnoreCase)) return true;
-        return mergeable is null ? null : !mergeable.Value;
+        if (string.Equals(MergeableState, "dirty", StringComparison.OrdinalIgnoreCase)) return true;
+        return Mergeable is null ? null : !Mergeable.Value;
     }
 
     /// <summary>
-    /// Si se revisa en GitHub el pull request de una tarea en <paramref name="current"/>: sin columna destino del merge,
+    /// Si se revisa en GitHub el pull request de una tarea en <paramref name="Current"/>: sin columna destino del merge,
     /// toda columna no final; con ella, sólo las anteriores (las que <see cref="MergedPullRequestRule"/> movería).
     /// </summary>
-    public static bool ShouldWatch(Stage current, Stage? mergeDestination) =>
-        mergeDestination is null
-            ? current.Kind != StageKind.Terminal
-            : MergedPullRequestRule.ShouldMove(current, mergeDestination);
+    public static bool ShouldWatch(Stage Current, Stage? MergeDestination) =>
+        MergeDestination is null
+            ? Current.Kind != StageKind.TERMINAL
+            : MergedPullRequestRule.ShouldMove(Current, MergeDestination);
 
     /// <summary>
     /// Se puede pedir al desarrollador que arregle los conflictos: el pull request sigue sin integrarse, GitHub informó
     /// conflictos, la tarea no está archivada ni en una columna final y no hay una ejecución en cola o en curso.
     /// </summary>
-    public static bool CanResolve(TaskItem task, Stage current) =>
-        ShowConflicts(task)
-        && task.ArchivedAt is null
-        && task.Status is not (WorkStatus.Queued or WorkStatus.Running)
-        && current.Kind != StageKind.Terminal;
+    public static bool CanResolve(TaskItem Item, Stage Current) =>
+        ShowConflicts(Item)
+        && Item.ArchivedAt is null
+        && Item.Status is not (WorkStatus.QUEUED or WorkStatus.RUNNING)
+        && Current.Kind != StageKind.TERMINAL;
 
     /// <summary>La tarjeta muestra el estado «El PR tiene conflictos» mientras el pull request no se integre.</summary>
-    public static bool ShowConflicts(TaskItem task) =>
-        task.PullRequestHasConflicts && task.PullRequestNumber is not null && task.PullRequestMergedAt is null;
+    public static bool ShowConflicts(TaskItem Item) =>
+        Item.PullRequestHasConflicts && Item.PullRequestNumber is not null && Item.PullRequestMergedAt is null;
 }

@@ -20,4 +20,25 @@ public sealed class TaskDetailsViewModel
 
     /// <summary>El desarrollador está arreglando (o tiene en cola arreglar) los conflictos del pull request.</summary>
     public bool ResolvingConflicts { get; init; }
+
+    /// <summary>Adjuntos de la definición de la tarea (sin las capturas).</summary>
+    public List<TaskAttachment> Attachments { get; init; } = [];
+
+    /// <summary>
+    /// La tarea llegó a «Creador de PR»: el detalle de la ejecución se muestra en las pestañas Log, Pruebas unitarias,
+    /// Capturas y Pruebas de QA.
+    /// </summary>
+    public bool ShowReportTabs { get; init; }
+
+    /// <summary>Líneas del log de la ejecución seleccionada.</summary>
+    public int SelectedRunLogLines { get; init; }
+
+    /// <summary>Resultado de las pruebas unitarias que reportó el desarrollador; null si no lo reportó.</summary>
+    public TaskReportSectionViewModel? UnitTests { get; init; }
+
+    /// <summary>Guía funcional para QA que documentó el desarrollador; null si no la documentó.</summary>
+    public TaskReportSectionViewModel? QaTests { get; init; }
+
+    /// <summary>Capturas con los cambios aplicados (imágenes), de la más antigua a la más reciente.</summary>
+    public List<TaskAttachment> Captures { get; init; } = [];
 }

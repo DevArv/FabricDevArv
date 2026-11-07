@@ -49,13 +49,22 @@ public sealed class GitWorkspaceTests : IDisposable
     [Fact]
     public async Task MergeBaseAsync_WithNonAsciiFileName_ReportsItUnquotedAndBlocksCommit()
     {
-        var (git, job, ws) = await SetUpAsync(baseChange: ("español.txt", "main\n"), workChange: ("español.txt", "tarea\n"));
+        var (git, job, ws) = await SetUpAsync(BaseChange: ("español.txt", "main\n"), WorkChange: ("español.txt", "tarea\n"));
 
-        var conflicted = await git.MergeBaseAsync(job, ws, _ => { }, CancellationToken.None);
+        var conflicted = await git.MergeBaseAsync(
+            Job: job,
+            Workspace: ws,
+            Log: _ => { },
+            CT: CancellationToken.None);
 
         Assert.Equal(["español.txt"], conflicted);
         var ex = await Assert.ThrowsAsync<GitException>(() =>
-            git.CommitAndPushAsync(job, ws, _ => { }, CancellationToken.None, conflicted));
+            git.CommitAndPushAsync(
+                Job: job,
+                Workspace: ws,
+                Log: _ => { },
+                CT: CancellationToken.None,
+                ConflictedFiles: conflicted));
         Assert.Contains("marcadores de conflicto", ex.Message);
         Assert.Contains("español.txt:", ex.Message);
     }
@@ -63,14 +72,23 @@ public sealed class GitWorkspaceTests : IDisposable
     [Fact]
     public async Task MergeBaseAsync_WithConflicts_LeavesThemAndBlocksCommitWhileMarkersRemain()
     {
-        var (git, job, ws) = await SetUpAsync(baseChange: ("a.txt", "uno\nmain\n"), workChange: ("a.txt", "uno\ntarea\n"));
+        var (git, job, ws) = await SetUpAsync(BaseChange: ("a.txt", "uno\nmain\n"), WorkChange: ("a.txt", "uno\ntarea\n"));
 
-        var conflicted = await git.MergeBaseAsync(job, ws, _ => { }, CancellationToken.None);
+        var conflicted = await git.MergeBaseAsync(
+            Job: job,
+            Workspace: ws,
+            Log: _ => { },
+            CT: CancellationToken.None);
 
         Assert.Equal(["a.txt"], conflicted);
         Assert.Contains("<<<<<<<", await File.ReadAllTextAsync(Path.Combine(ws.WorktreePath, "a.txt")));
         var ex = await Assert.ThrowsAsync<GitException>(() =>
-            git.CommitAndPushAsync(job, ws, _ => { }, CancellationToken.None, conflicted));
+            git.CommitAndPushAsync(
+                Job: job,
+                Workspace: ws,
+                Log: _ => { },
+                CT: CancellationToken.None,
+                ConflictedFiles: conflicted));
         Assert.Contains("marcadores de conflicto", ex.Message);
         Assert.Contains("a.txt:", ex.Message);
         Assert.Equal(ws.StartCommit, await RunGitAsync(ws.WorktreePath, "rev-parse", "HEAD"));
@@ -79,9 +97,13 @@ public sealed class GitWorkspaceTests : IDisposable
     [Fact]
     public async Task MergeBaseAsync_WithoutConflicts_CreatesTheMergeCommit()
     {
-        var (git, job, ws) = await SetUpAsync(baseChange: ("b.txt", "nuevo en main\n"), workChange: ("a.txt", "uno\ntarea\n"));
+        var (git, job, ws) = await SetUpAsync(BaseChange: ("b.txt", "nuevo en main\n"), WorkChange: ("a.txt", "uno\ntarea\n"));
 
-        var conflicted = await git.MergeBaseAsync(job, ws, _ => { }, CancellationToken.None);
+        var conflicted = await git.MergeBaseAsync(
+            Job: job,
+            Workspace: ws,
+            Log: _ => { },
+            CT: CancellationToken.None);
 
         Assert.Empty(conflicted);
         var parents = (await RunGitAsync(ws.WorktreePath, "rev-list", "--parents", "-n", "1", "HEAD")).Split(' ');
@@ -94,7 +116,7 @@ public sealed class GitWorkspaceTests : IDisposable
     /// rama de trabajo (como lo deja <see cref="GitWorkspace.PrepareAsync"/>).
     /// </summary>
     private async Task<(GitWorkspace Git, AgentJob Job, PreparedWorkspace Workspace)> SetUpAsync(
-        (string File, string Content) baseChange, (string File, string Content) workChange)
+        (string File, string Content) BaseChange, (string File, string Content) WorkChange)
     {
         const string workBranch = "fd_/1-tarea";
         var remote = Path.Combine(_Root, "remote");
@@ -107,9 +129,15 @@ public sealed class GitWorkspaceTests : IDisposable
         await RunGitAsync(remote, "add", "-A");
         await RunGitAsync(remote, "commit", "-q", "-m", "inicio");
         await RunGitAsync(remote, "checkout", "-q", "-b", workBranch);
-        await CommitAsync(remote, workChange, "cambio de la tarea");
+        await CommitAsync(
+            Repo: remote,
+            Change: WorkChange,
+            Message: "cambio de la tarea");
         await RunGitAsync(remote, "checkout", "-q", "main");
-        await CommitAsync(remote, baseChange, "cambio en main");
+        await CommitAsync(
+            Repo: remote,
+            Change: BaseChange,
+            Message: "cambio en main");
 
         await RunGitAsync(_Root, "clone", "-q", remote, local);
         await ConfigureAuthorAsync(local);
@@ -123,30 +151,30 @@ public sealed class GitWorkspaceTests : IDisposable
         return (git, job, new PreparedWorkspace(local, Path.Combine(_Root, "attachments"), start, RemoteBranchExisted: true));
     }
 
-    private static async Task CommitAsync(string repo, (string File, string Content) change, string message)
+    private static async Task CommitAsync(string Repo, (string File, string Content) Change, string Message)
     {
-        await File.WriteAllTextAsync(Path.Combine(repo, change.File), change.Content);
-        await RunGitAsync(repo, "add", "-A");
-        await RunGitAsync(repo, "commit", "-q", "-m", message);
+        await File.WriteAllTextAsync(Path.Combine(Repo, Change.File), Change.Content);
+        await RunGitAsync(Repo, "add", "-A");
+        await RunGitAsync(Repo, "commit", "-q", "-m", Message);
     }
 
-    private static async Task ConfigureAuthorAsync(string repo)
+    private static async Task ConfigureAuthorAsync(string Repo)
     {
-        await RunGitAsync(repo, "config", "user.name", "Pruebas");
-        await RunGitAsync(repo, "config", "user.email", "pruebas@example.com");
-        await RunGitAsync(repo, "config", "commit.gpgsign", "false");
+        await RunGitAsync(Repo, "config", "user.name", "Pruebas");
+        await RunGitAsync(Repo, "config", "user.email", "pruebas@example.com");
+        await RunGitAsync(Repo, "config", "commit.gpgsign", "false");
     }
 
-    private static async Task<string> RunGitAsync(string cwd, params string[] args)
+    private static async Task<string> RunGitAsync(string Cwd, params string[] Args)
     {
-        var info = new ProcessStartInfo("git") { WorkingDirectory = cwd, RedirectStandardOutput = true, RedirectStandardError = true };
-        foreach (var arg in args) info.ArgumentList.Add(arg);
+        var info = new ProcessStartInfo("git") { WorkingDirectory = Cwd, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var arg in Args) info.ArgumentList.Add(arg);
         using var process = Process.Start(info)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
         if (process.ExitCode != 0)
-            throw new InvalidOperationException($"git {string.Join(' ', args)} falló: {await stderr}");
+            throw new InvalidOperationException($"git {string.Join(' ', Args)} falló: {await stderr}");
         return (await stdout).Trim();
     }
 }

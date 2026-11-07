@@ -56,6 +56,18 @@ Después sigue el flujo normal (Revisor de Código → Creador de PR, que reutil
 El estado desaparece solo cuando GitHub deja de informar conflictos; el botón no se muestra mientras la tarea tiene una
 ejecución en cola o en curso. Los workers deben actualizarse junto con el servidor para soportar este arreglo.
 
+**Pestañas informativas de la tarea:** cuando la tarea llega a 🔀 Creador de PR (está en esa columna, ya tuvo una
+ejecución en ella o ya tiene pull request), el detalle de la ejecución se muestra en pestañas:
+- **Log**: la ejecución seleccionada con su cantidad de líneas, «Resumen» (resultado y archivos modificados),
+  «Log completo» y «Copiar log».
+- **Pruebas unitarias** y **Pruebas de QA**: las secciones `## Pruebas unitarias` y `## Pruebas QA` del resumen final
+  de la última ejecución exitosa del desarrollador que las incluya. El servidor le pide al desarrollador esas secciones
+  en el prompt (variable `{{report}}`, o al final si la plantilla no la usa; no aplica al arreglo de conflictos).
+- **Capturas**: imágenes (PNG, JPG, GIF o WEBP) con los cambios aplicados, que se suben desde la misma pestaña.
+  Cuentan para el máximo de archivos por tarea y no se envían al agente.
+
+El punto azul junto a una pestaña indica que tiene contenido; la pestaña elegida se recuerda en la sesión del navegador.
+
 **Skill de la etapa:** cada columna de agente puede indicar un *skill* de Claude Code (campo **Skill** en **Flujo**).
 El Revisor de Código usa por defecto `revision`, el mismo skill de ShopyCube (`.claude/skills/revision/SKILL.md` en el
 repositorio del proyecto). El servidor agrega `Skill(<nombre>)` a las herramientas permitidas y pone en el prompt la
@@ -227,7 +239,7 @@ Te pedirá los datos de la base (paso 4) y el token de GitHub (paso 2), y compro
 | `App:PublicUrl` | Recomendada | URL con la que se abre el tablero. Se usa para el enlace «Ver tarea en DevArv» dentro de cada PR. |
 | `App:TimeZone` | No | Zona horaria de las fechas (por defecto `America/Santo_Domingo`). |
 | `Auth:AllowRegistration` | No | `true` permite que otras personas se registren solas. Por defecto `false`. |
-| `Attachments:*` | No | Máximo de archivos por tarea (15) y tamaño (20 MB). El contenido se guarda en la base de datos (`TaskAttachments.Content`). |
+| `Attachments:*` | No | Máximo de archivos por tarea (15) y tamaño (20 MB). El contenido se guarda en la base de datos (`Tasks_Attachments.Content`). |
 
 ### Paso 6. Arrancar el servidor
 
@@ -391,9 +403,9 @@ El token de GitHub del worker viaja en una cabecera HTTP de git (igual que `acti
 
 - **Adjuntos:** máximo 15 por tarea y 20 MB cada uno (configurable en `Attachments`). El tipo se valida por **contenido**
   (firma PNG/JPEG/GIF/WEBP, `%PDF-`, documento HTML en UTF-8 válido), no sólo por extensión, y la extensión debe coincidir.
-  SVG, ejecutables y cualquier otro formato se rechazan. Se guardan en la base de datos (columna `TaskAttachments.Content`),
-  nunca en disco ni dentro del repositorio. Al arrancar, los adjuntos antiguos de `App_Data/attachments` se copian a la
-  base de datos y se borran del disco.
+  SVG, ejecutables y cualquier otro formato se rechazan. Se guardan en la base de datos (columna `Tasks_Attachments.Content`),
+  nunca en disco ni dentro del repositorio; las capturas de la pestaña «Capturas» también. Al arrancar, los adjuntos
+  antiguos de `App_Data/attachments` se copian a la base de datos y se borran del disco.
   El HTML nunca se muestra en el dominio de la app: se descarga con `Content-Security-Policy: sandbox` y `nosniff`.
 - **Markdown:** el HTML crudo se escapa y los enlaces sólo pueden ser http(s), mailto o relativos.
 - **Workers:** cada PC tiene su propia clave (se guarda sólo el hash SHA-256), se puede deshabilitar o rotar,

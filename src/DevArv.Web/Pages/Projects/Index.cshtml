@@ -39,9 +39,9 @@ else
                     <td><i class="dot" style="background:@p.Color"></i> <strong>@p.Name</strong> @(p.IsActive ? "" : "(inactivo)")</td>
                     <td><a href="https://github.com/@p.RepoOwner/@p.RepoName" target="_blank" rel="noopener">@p.RepoFullName</a></td>
                     <td><code>@p.DefaultBranch</code></td>
-                    <td><a href="/?project=@p.Id">@row.OpenTasks</a></td>
+                    <td><a href="/?project=@p.ID">@row.OpenTasks</a></td>
                     <td>@Labels.Usd(row.Cost)</td>
-                    <td><a class="btn small" href="/Projects/Edit/@p.Id">Editar</a></td>
+                    <td><a class="btn small" href="/Projects/Edit/@p.ID">Editar</a></td>
                 </tr>
             }
         </tbody>

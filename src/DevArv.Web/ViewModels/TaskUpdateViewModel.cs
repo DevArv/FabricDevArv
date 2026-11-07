@@ -8,6 +8,6 @@ public sealed record TaskUpdateViewModel(
     Complexity Complexity,
     string? Labels,
     string? ModelOverride,
-    int? PreferredWorkerId,
+    int? PreferredWorkerID,
     string? Title,
     string? Description);

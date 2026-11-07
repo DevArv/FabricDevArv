@@ -1,7 +1,7 @@
 @page "{id:int?}"
 @model DevArv.Web.Pages.Workflow.EditModel
 @{
-    ViewData["Title"] = Model.Id is null ? "Nueva columna" : $"Columna «{Model.Input.Name}»";
+    ViewData["Title"] = Model.ID is null ? "Nueva columna" : $"Columna «{Model.Input.Name}»";
 }
 
 <div class="panel form-panel">
@@ -29,20 +29,20 @@
 
         <div class="grid-2">
             <label>✓ Al terminar bien / aprobar, ir a
-                <select asp-for="Input.SuccessStageId">
+                <select asp-for="Input.SuccessStageID">
                     <option value="">— quedarse (finalizada) —</option>
                     @foreach (var s in Model.OtherStages)
                     {
-                        <option value="@s.Id" selected="@(s.Id == Model.Input.SuccessStageId)">@s.Icon @s.Name</option>
+                        <option value="@s.ID" selected="@(s.ID == Model.Input.SuccessStageID)">@s.Icon @s.Name</option>
                     }
                 </select>
             </label>
             <label>⊘ Al rechazar / pedir cambios, volver a
-                <select asp-for="Input.RejectStageId">
+                <select asp-for="Input.RejectStageID">
                     <option value="">— ninguna —</option>
                     @foreach (var s in Model.OtherStages)
                     {
-                        <option value="@s.Id" selected="@(s.Id == Model.Input.RejectStageId)">@s.Icon @s.Name</option>
+                        <option value="@s.ID" selected="@(s.ID == Model.Input.RejectStageID)">@s.Icon @s.Name</option>
                     }
                 </select>
             </label>
@@ -51,7 +51,7 @@
         <label class="check"><input asp-for="Input.IsMergeDestination" /> Al hacer merge del pull request en GitHub, la tarea entra aquí
             <small>(sólo si está en una columna anterior y no finalizada; se revisa cada minuto)</small></label>
 
-        <fieldset data-kind-show="System">
+        <fieldset data-kind-show="@StageKind.SYSTEM">
             <legend>Acción automática del servidor</legend>
             <select asp-for="Input.SystemAction">
                 @foreach (var a in Enum.GetValues<SystemAction>())
@@ -61,7 +61,7 @@
             </select>
         </fieldset>
 
-        <fieldset data-kind-show="Agent">
+        <fieldset data-kind-show="@StageKind.AGENT">
             <legend>Agente Claude Code</legend>
             <div class="grid-3">
                 <label>Modelo
@@ -86,7 +86,7 @@
             </div>
             <label>Skill (opcional)
                 <input asp-for="Input.Skill" list="skills-w" placeholder="revision" class="mono" />
-                <datalist id="skills-w"><option value="@DefaultPrompts.ReviewerSkill"></option></datalist>
+                <datalist id="skills-w"><option value="@DefaultPrompts.REVIEWER_SKILL"></option></datalist>
                 <small>Skill de Claude Code del repositorio del proyecto (<code>.claude/skills/&lt;nombre&gt;/SKILL.md</code>) con el que
                     el agente aplica la etapa; p. ej. <code>revision</code> para el revisor. Se agrega
                     <code>Skill(&lt;nombre&gt;)</code> a las herramientas permitidas y las instrucciones van en <code>{{skill}}</code>

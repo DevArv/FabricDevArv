@@ -1,3 +1,5 @@
+using DevArv.Worker.EnvironmentConfig;
+
 namespace DevArv.Worker.Helpers;
 
 /// <summary>
@@ -8,12 +10,15 @@ public static class ExecutableResolver
 {
     public sealed record Command(string FileName, IReadOnlyList<string> PrefixArgs);
 
-    public static Command Resolve(string executable)
+    public static Command Resolve(string Executable)
     {
-        if (!ProcessRunner.IsWindows) return new Command(executable, []);
+        if (!ProcessRunner.IsWindows) return new Command(Executable, []);
 
-        var path = FindOnPath(executable);
-        if (path is null) return new Command(executable, []);
+        var path = FindOnPath(
+            Executable: Executable,
+            Directories: EnvironmentTools.GetExecutableSearchDirectories(),
+            Extensions: EnvironmentTools.GetExecutableExtensions());
+        if (path is null) return new Command(Executable, []);
 
         var ext = Path.GetExtension(path).ToLowerInvariant();
         if (ext is ".cmd" or ".bat")
@@ -30,18 +35,19 @@ public static class ExecutableResolver
         return new Command(path, []);
     }
 
-    private static string? FindOnPath(string executable)
+    /// <summary>
+    /// Ruta del ejecutable: la misma si ya es absoluta; si no, la primera coincidencia en <paramref name="Directories"/>
+    /// probando <paramref name="Extensions"/> (sólo si el nombre no trae extensión). Null si no existe.
+    /// </summary>
+    internal static string? FindOnPath(string Executable, IReadOnlyList<string> Directories, IReadOnlyList<string> Extensions)
     {
-        if (Path.IsPathRooted(executable)) return File.Exists(executable) ? executable : null;
-        var exts = Path.HasExtension(executable)
-            ? new[] { "" }
-            : (Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT").Split(';', StringSplitOptions.RemoveEmptyEntries);
-        var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var dir in dirs)
+        if (Path.IsPathRooted(Executable)) return File.Exists(Executable) ? Executable : null;
+        var extensions = Path.HasExtension(Executable) ? [""] : Extensions;
+        foreach (var directory in Directories)
         {
-            foreach (var ext in exts)
+            foreach (var extension in extensions)
             {
-                var candidate = Path.Combine(dir.Trim('"'), executable + ext);
+                var candidate = Path.Combine(directory, Executable + extension);
                 if (File.Exists(candidate)) return candidate;
             }
         }

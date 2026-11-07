@@ -9,112 +9,120 @@ namespace DevArv.Worker.Services;
 
 /// <summary>Servicio principal: envía latidos al servidor y toma trabajos de agente para ejecutarlos.</summary>
 public sealed class AgentWorkerService(
-    ServerClient server,
-    JobRunner runner,
-    EnvironmentData environmentData,
-    IOptions<WorkerOptions> options,
-    ILogger<AgentWorkerService> logger) : BackgroundService
+    ServerClient Server,
+    JobRunner Runner,
+    EnvironmentData EnvironmentData,
+    IOptions<WorkerOptions> Options,
+    ILogger<AgentWorkerService> Logger) : BackgroundService
 {
-    private readonly WorkerOptions _options = options.Value;
-    private int _running;
+    private readonly WorkerOptions _Options = Options.Value;
+    private int _Running;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken StoppingToken)
     {
-        logger.LogInformation("DevArv.Worker en {Machine} · servidor {Url} · espacio de trabajo {Root} · {Jobs} trabajo(s) en paralelo",
-            Environment.MachineName, environmentData.Url, _options.Workspace.ResolveRoot(), _options.MaxParallelJobs);
-        await CheckToolsAsync(stoppingToken);
-        logger.LogInformation("Conexión y credenciales tomadas del appsettings (EnvironmentData, Worker:Claude, Worker:Git).");
+        Logger.LogInformation("DevArv.Worker en {Machine} · servidor {Url} · espacio de trabajo {Root} · {Jobs} trabajo(s) en paralelo",
+            Environment.MachineName, EnvironmentData.Url, _Options.Workspace.ResolveRoot(), _Options.MaxParallelJobs);
+        await CheckToolsAsync(StoppingToken);
+        Logger.LogInformation("Conexión y credenciales tomadas del appsettings (EnvironmentData, Worker:Claude, Worker:Git).");
 
-        var loops = Enumerable.Range(0, Math.Max(1, _options.MaxParallelJobs))
-            .Select(i => JobLoopAsync(i, stoppingToken))
-            .Append(HeartbeatLoopAsync(stoppingToken))
+        var loops = Enumerable.Range(0, Math.Max(1, _Options.MaxParallelJobs))
+            .Select(i => JobLoopAsync(i, StoppingToken))
+            .Append(HeartbeatLoopAsync(StoppingToken))
             .ToList();
         await Task.WhenAll(loops);
     }
 
-    private async Task HeartbeatLoopAsync(CancellationToken ct)
+    private async Task HeartbeatLoopAsync(CancellationToken CT)
     {
         var version = typeof(AgentWorkerService).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
-        while (!ct.IsCancellationRequested)
+        while (!CT.IsCancellationRequested)
         {
             try
             {
-                var response = await server.HeartbeatAsync(
-                    new HeartbeatRequest(Environment.MachineName, version, RuntimeInformation.OSDescription, Volatile.Read(ref _running)), ct);
-                logger.LogDebug("Latido OK como «{Name}»", response?.WorkerName);
+                var response = await Server.HeartbeatAsync(
+                    new HeartbeatRequest(Environment.MachineName, version, RuntimeInformation.OSDescription, Volatile.Read(ref _Running)), CT);
+                Logger.LogDebug("Latido OK como «{Name}»", response?.WorkerName);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning("No se pudo contactar al servidor: {Message}", ex.Message);
+                Logger.LogWarning("No se pudo contactar al servidor: {Message}", ex.Message);
             }
-            await Delay(TimeSpan.FromSeconds(30), ct);
+            await Delay(TimeSpan.FromSeconds(30), CT);
         }
     }
 
-    private async Task JobLoopAsync(int slot, CancellationToken ct)
+    private async Task JobLoopAsync(int Slot, CancellationToken CT)
     {
         // Desfase inicial para que varios slots no consulten al mismo tiempo.
-        await Delay(TimeSpan.FromMilliseconds(700 * slot), ct);
-        var backoff = TimeSpan.FromSeconds(Math.Max(2, _options.PollSeconds));
+        await Delay(TimeSpan.FromMilliseconds(700 * Slot), CT);
+        var backoff = TimeSpan.FromSeconds(Math.Max(2, _Options.PollSeconds));
 
-        while (!ct.IsCancellationRequested)
+        while (!CT.IsCancellationRequested)
         {
             AgentJob? job;
             try
             {
-                job = await server.ClaimAsync(ct);
-                backoff = TimeSpan.FromSeconds(Math.Max(2, _options.PollSeconds));
+                job = await Server.ClaimAsync(CT);
+                backoff = TimeSpan.FromSeconds(Math.Max(2, _Options.PollSeconds));
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                logger.LogWarning("Error pidiendo trabajo: {Message}", ex.Message);
-                await Delay(backoff, ct);
+                Logger.LogWarning("Error pidiendo trabajo: {Message}", ex.Message);
+                await Delay(backoff, CT);
                 backoff = TimeSpan.FromSeconds(Math.Min(60, backoff.TotalSeconds * 2));
                 continue;
             }
 
             if (job is null)
             {
-                await Delay(TimeSpan.FromSeconds(Math.Max(2, _options.PollSeconds)), ct);
+                await Delay(TimeSpan.FromSeconds(Math.Max(2, _Options.PollSeconds)), CT);
                 continue;
             }
 
-            Interlocked.Increment(ref _running);
+            Interlocked.Increment(ref _Running);
             try
             {
-                await runner.RunAsync(job, ct);
+                await Runner.RunAsync(job, CT);
             }
             finally
             {
-                Interlocked.Decrement(ref _running);
+                Interlocked.Decrement(ref _Running);
             }
         }
     }
 
-    private async Task CheckToolsAsync(CancellationToken ct)
+    private async Task CheckToolsAsync(CancellationToken CT)
     {
-        var claude = ExecutableResolver.Resolve(_options.Claude.Executable);
-        await CheckAsync("Claude Code", claude.FileName, [.. claude.PrefixArgs, "--version"], ct);
-        await CheckAsync("git", _options.Git.Executable, ["--version"], ct);
+        var claude = ExecutableResolver.Resolve(_Options.Claude.Executable);
+        await CheckAsync(
+            Name: "Claude Code",
+            File: claude.FileName,
+            Args: [.. claude.PrefixArgs, "--version"],
+            CT: CT);
+        await CheckAsync(
+            Name: "git",
+            File: _Options.Git.Executable,
+            Args: ["--version"],
+            CT: CT);
     }
 
-    private async Task CheckAsync(string name, string file, IReadOnlyList<string> args, CancellationToken ct)
+    private async Task CheckAsync(string Name, string File, IReadOnlyList<string> Args, CancellationToken CT)
     {
         try
         {
-            var r = await ProcessRunner.RunAsync(new ProcessSpec(file, args, Environment.CurrentDirectory), ct);
-            if (r.Ok) logger.LogInformation("{Name}: {Version}", name, r.StdOut.Trim());
-            else logger.LogError("{Name} respondió con código {Code}: {Error}", name, r.ExitCode, r.StdErr.Trim());
+            var r = await ProcessRunner.RunAsync(new ProcessSpec(File, Args, Environment.CurrentDirectory), CT);
+            if (r.Ok) Logger.LogInformation("{Name}: {Version}", Name, r.StdOut.Trim());
+            else Logger.LogError("{Name} respondió con código {Code}: {Error}", Name, r.ExitCode, r.StdErr.Trim());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError("No se encontró {Name} ({File}): {Message}. Instálalo y verifica el PATH o la configuración.", name, file, ex.Message);
+            Logger.LogError("No se encontró {Name} ({File}): {Message}. Instálalo y verifica el PATH o la configuración.", Name, File, ex.Message);
         }
     }
 
-    private static async Task Delay(TimeSpan delay, CancellationToken ct)
+    private static async Task Delay(TimeSpan Delay, CancellationToken CT)
     {
-        try { await Task.Delay(delay, ct); }
+        try { await Task.Delay(Delay, CT); }
         catch (OperationCanceledException) { }
     }
 }

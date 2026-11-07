@@ -21,16 +21,16 @@ public sealed class TasksRepositoryTests
     [Fact]
     public async Task DeleteAsync_WithRunningRun_ThrowsAndKeepsTaskAndAttachments()
     {
-        await SeedTaskAsync(RunStatus.Running);
+        await SeedTaskAsync(RunStatus.RUNNING);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
         var task = await db.Tasks.SingleAsync();
 
         var ex = await Assert.ThrowsAsync<WorkflowException>(() => repository.DeleteAsync(
-            task: task,
-            actor: "tester",
-            ct: CancellationToken.None));
+            Item: task,
+            Actor: "tester",
+            CT: CancellationToken.None));
 
         Assert.Contains("se está ejecutando", ex.Message);
         await using var check = CreateDbContext();
@@ -40,24 +40,24 @@ public sealed class TasksRepositoryTests
 
     [Theory]
     [InlineData(null)]
-    [InlineData(RunStatus.Queued)]
-    [InlineData(RunStatus.Succeeded)]
-    [InlineData(RunStatus.Failed)]
-    [InlineData(RunStatus.Cancelled)]
-    public async Task DeleteAsync_WithoutRunningRun_DeletesTask(RunStatus? runStatus)
+    [InlineData(RunStatus.QUEUED)]
+    [InlineData(RunStatus.SUCCEEDED)]
+    [InlineData(RunStatus.FAILED)]
+    [InlineData(RunStatus.CANCELLED)]
+    public async Task DeleteAsync_WithoutRunningRun_DeletesTask(RunStatus? RunStatus)
     {
         // Los adjuntos se borran en cascada en la base de datos (ver Model_CascadesTaskDeletion...), que el proveedor
         // en memoria no simula para entidades sin cargar.
-        await SeedTaskAsync(runStatus);
+        await SeedTaskAsync(RunStatus);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
         var task = await db.Tasks.SingleAsync();
 
         await repository.DeleteAsync(
-            task: task,
-            actor: "tester",
-            ct: CancellationToken.None);
+            Item: task,
+            Actor: "tester",
+            CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
         Assert.Equal(0, await check.Tasks.CountAsync());
@@ -66,13 +66,13 @@ public sealed class TasksRepositoryTests
     [Fact]
     public async Task DeleteAsync_WithRunningRunOfAnotherTask_DeletesTask()
     {
-        await SeedTaskAsync(runStatus: null);
+        await SeedTaskAsync(RunStatus: null);
         await using (var seed = CreateDbContext())
         {
-            var other = NewTask(title: "Otra");
+            var other = NewTask(Title: "Otra");
             seed.Tasks.Add(other);
             await seed.SaveChangesAsync();
-            seed.TaskRuns.Add(new TaskRun { TaskId = other.Id, StageId = other.StageId, Status = RunStatus.Running });
+            seed.TaskRuns.Add(new TaskRun { TaskID = other.ID, StageID = other.StageID, Status = RunStatus.RUNNING });
             await seed.SaveChangesAsync();
         }
 
@@ -81,9 +81,9 @@ public sealed class TasksRepositoryTests
         var task = await db.Tasks.SingleAsync(t => t.Title == "Tarea");
 
         await repository.DeleteAsync(
-            task: task,
-            actor: "tester",
-            ct: CancellationToken.None);
+            Item: task,
+            Actor: "tester",
+            CT: CancellationToken.None);
 
         await using var check = CreateDbContext();
         Assert.Equal(["Otra"], await check.Tasks.Select(t => t.Title).ToListAsync());
@@ -103,19 +103,483 @@ public sealed class TasksRepositoryTests
     [Fact]
     public void Model_StoresAttachmentContentInTaskAttachmentsTable()
     {
-        // El contenido va en la columna TaskAttachments.Content (table splitting), no en disco ni en otra tabla.
+        // El contenido va en la columna Tasks_Attachments.Content (table splitting), no en disco ni en otra tabla.
         using var db = CreateDbContext();
         var model = db.GetService<IDesignTimeModel>().Model;
         var attachment = model.FindEntityType(typeof(TaskAttachment))!;
         var content = model.FindEntityType(typeof(TaskAttachmentContent))!;
 
-        Assert.Equal("TaskAttachments", attachment.GetTableName());
-        Assert.Equal("TaskAttachments", content.GetTableName());
+        Assert.Equal(TableNames.TASK_ATTACHMENTS, attachment.GetTableName());
+        Assert.Equal(TableNames.TASK_ATTACHMENTS, content.GetTableName());
         Assert.Equal("Content", content.FindProperty(nameof(TaskAttachmentContent.Data))!.GetColumnName());
+        Assert.Equal("Id", content.FindProperty(nameof(TaskAttachmentContent.ID))!.GetColumnName());
         Assert.Null(attachment.FindProperty("StoredName"));
         var foreignKey = content.GetForeignKeys().Single();
         Assert.Equal(typeof(TaskAttachment), foreignKey.PrincipalEntityType.ClrType);
         Assert.True(foreignKey.IsUnique);
+    }
+
+    // ------------------------------------------------------------------ UpdateAsync
+
+    private async Task<int> SeedEditableTaskAsync()
+    {
+        await using var db = CreateDbContext();
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Kind = StageKind.MANUAL });
+        db.Workers.Add(new WorkerNode { ID = 5, Name = "PC-1", KeyHash = "h" });
+        var task = NewTask("Original");
+        task.Description = "Descripción original";
+        db.Tasks.Add(task);
+        await db.SaveChangesAsync();
+        return task.ID;
+    }
+
+    private static TaskUpdateViewModel UpdateRecord(
+        string? Title = "Nuevo título", string? Description = "Nueva descripción", string? Labels = "api, ui, API",
+        string? ModelOverride = " opus ", int? PreferredWorkerID = 5,
+        Priority Priority = Priority.HIGH, Complexity Complexity = Complexity.MEDIUM) =>
+        new(Priority, Complexity, Labels, ModelOverride, PreferredWorkerID, Title, Description);
+
+    private async Task<TaskItem> UpdateAsync(int TaskID, TaskUpdateViewModel Record)
+    {
+        await using var db = CreateDbContext();
+        var task = await db.Tasks.SingleAsync(t => t.ID == TaskID);
+        await CreateRepository(db).UpdateAsync(
+            Item: task,
+            Record: Record,
+            Actor: "tester",
+            CT: CancellationToken.None);
+        return task;
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ValidRecord_UpdatesTheFieldsAndLogsAnEvent()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await UpdateAsync(taskID, UpdateRecord());
+
+        await using var check = CreateDbContext();
+        var task = await check.Tasks.SingleAsync();
+        Assert.Equal("Nuevo título", task.Title);
+        Assert.Equal("Nueva descripción", task.Description);
+        Assert.Equal(Priority.HIGH, task.Priority);
+        Assert.Equal(Complexity.MEDIUM, task.Complexity);
+        Assert.Equal("api, ui", task.Labels);
+        Assert.Equal("opus", task.ModelOverride);
+        Assert.Equal(5, task.PreferredWorkerID);
+        Assert.Contains("tester editó la tarea", (await check.TaskEvents.SingleAsync()).Message);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_NullTitleAndDescription_KeepTheStoredValues()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await UpdateAsync(taskID, UpdateRecord(Title: null, Description: null));
+
+        await using var check = CreateDbContext();
+        var task = await check.Tasks.SingleAsync();
+        Assert.Equal("Original", task.Title);
+        Assert.Equal("Descripción original", task.Description);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_BlankOptionalFields_ClearThem()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await UpdateAsync(taskID, UpdateRecord(
+            Labels: "  ",
+            ModelOverride: "  ",
+            PreferredWorkerID: null));
+
+        await using var check = CreateDbContext();
+        var task = await check.Tasks.SingleAsync();
+        Assert.Null(task.Labels);
+        Assert.Null(task.ModelOverride);
+        Assert.Null(task.PreferredWorkerID);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_TitleLongerThanTheColumn_IsTruncated()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await UpdateAsync(taskID, UpdateRecord(Title: new string('t', 500)));
+
+        await using var check = CreateDbContext();
+        Assert.Equal(200, (await check.Tasks.SingleAsync()).Title.Length);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ModelOverrideLongerThanTheColumn_ThrowsValidationInsteadOfFailingInTheDatabase()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(ModelOverride: new string('m', 101))));
+
+        Assert.Contains("100", ex.Message);
+        await using var check = CreateDbContext();
+        Assert.Equal("Original", (await check.Tasks.SingleAsync()).Title);
+        Assert.Equal(0, await check.TaskEvents.CountAsync());
+    }
+
+    [Theory]
+    [InlineData("modelo con espacios")]
+    [InlineData("--flag")]
+    [InlineData("a;b")]
+    public async Task UpdateAsync_ModelOverrideWithInvalidCharacters_Throws(string ModelOverride)
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(ModelOverride: ModelOverride)));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_DescriptionOverTheLimit_Throws()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(Description: new string('d', 50_001))));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_UndefinedPriority_Throws()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(Priority: (Priority)99)));
+
+        Assert.Equal(nameof(TaskUpdateViewModel.Priority), ex.Errors.Single().Field);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_UndefinedComplexity_Throws()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(Complexity: (Complexity)99)));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_UnknownWorker_Throws()
+    {
+        var taskID = await SeedEditableTaskAsync();
+
+        var ex = await Assert.ThrowsAsync<ValidationFailedException>(() => UpdateAsync(taskID, UpdateRecord(PreferredWorkerID: 999)));
+
+        Assert.Contains("PC no existe", ex.Message);
+    }
+
+    // ------------------------------------------------------------------ lecturas
+
+    [Theory]
+    [InlineData("abc", "%abc%")]
+    [InlineData("100%", @"%100\%%")]
+    [InlineData("a_b", @"%a\_b%")]
+    [InlineData(@"a\b", @"%a\\b%")]
+    public void BuildLikePattern_EscapesWildcards(string Term, string Expected) =>
+        Assert.Equal(Expected, TasksRepository.BuildLikePattern(Term));
+
+    [Fact]
+    public async Task NewCreateAsync_WithoutProjects_ReturnsNull()
+    {
+        await using var db = CreateDbContext();
+
+        var record = await CreateRepository(db).NewCreateAsync(
+            ProjectID: null,
+            CT: CancellationToken.None);
+
+        Assert.Null(record);
+    }
+
+    [Fact]
+    public async Task NewCreateAsync_UsesTheRequestedProjectOrFallsBackToTheFirstActiveByName()
+    {
+        await using (var db = CreateDbContext())
+        {
+            db.Projects.AddRange(
+                new Project { ID = 1, Name = "Zeta", RepoOwner = "o", RepoName = "z", DefaultBranch = "main" },
+                new Project { ID = 2, Name = "Alfa", RepoOwner = "o", RepoName = "a", DefaultBranch = "develop" },
+                new Project { ID = 3, Name = "Apagado", RepoOwner = "o", RepoName = "x", IsActive = false });
+            await db.SaveChangesAsync();
+        }
+
+        await using var check = CreateDbContext();
+        var repository = CreateRepository(check);
+
+        var requested = await repository.NewCreateAsync(
+            ProjectID: 1,
+            CT: CancellationToken.None);
+        var inactive = await repository.NewCreateAsync(
+            ProjectID: 3,
+            CT: CancellationToken.None);
+        var unknown = await repository.NewCreateAsync(
+            ProjectID: 999,
+            CT: CancellationToken.None);
+
+        Assert.Equal(1, requested!.ProjectID);
+        Assert.Equal("main", requested.BaseBranch);
+        Assert.Equal(2, inactive!.ProjectID);
+        Assert.Equal("develop", unknown!.BaseBranch);
+    }
+
+    private async Task SeedBoardAsync()
+    {
+        await using var db = CreateDbContext();
+        db.Projects.AddRange(
+            new Project { ID = 1, Name = "P1", RepoOwner = "o", RepoName = "a" },
+            new Project { ID = 2, Name = "P2", RepoOwner = "o", RepoName = "b" });
+        db.Stages.AddRange(
+            new Stage { ID = 1, Name = "Backlog", Order = 10, Kind = StageKind.MANUAL, SuccessStageID = 2 },
+            new Stage { ID = 2, Name = "Desarrollador", Order = 20, Kind = StageKind.AGENT, PushChanges = true, RejectStageID = 1 });
+        await db.SaveChangesAsync();
+        db.Tasks.AddRange(
+            new TaskItem { ID = 1, Title = "Baja", ProjectID = 1, StageID = 1, Priority = Priority.LOW, CreatedByName = "t" },
+            new TaskItem { ID = 2, Title = "Crítica", ProjectID = 1, StageID = 1, Priority = Priority.CRITICAL, CreatedByName = "t" },
+            new TaskItem { ID = 3, Title = "Otro proyecto", ProjectID = 2, StageID = 1, CreatedByName = "t" },
+            new TaskItem { ID = 4, Title = "Archivada", ProjectID = 1, StageID = 1, ArchivedAt = DateTimeOffset.UtcNow, CreatedByName = "t" },
+            new TaskItem { ID = 5, Title = "En espera", ProjectID = 1, StageID = 1, Status = WorkStatus.WAITING_APPROVAL, CreatedByName = "t" },
+            new TaskItem { ID = 6, Title = "Programando", ProjectID = 1, StageID = 2, Status = WorkStatus.RUNNING, LastWorkerName = "PC-1", CreatedByName = "t" });
+        await db.SaveChangesAsync();
+        db.TaskRuns.Add(new TaskRun
+        {
+            TaskID = 6, StageID = 2, Status = RunStatus.RUNNING, StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task<BoardViewModel> LoadBoardAsync(BoardFilterViewModel Filter)
+    {
+        await using var db = CreateDbContext();
+        return await CreateRepository(db).GetBoardAsync(
+            Filter: Filter,
+            CT: CancellationToken.None);
+    }
+
+    private static List<string> TitlesOf(BoardViewModel Board) =>
+        Board.Columns.SelectMany(c => c.Tasks).Select(c => c.Item.Title).Order().ToList();
+
+    [Fact]
+    public async Task GetBoardAsync_WithoutFilters_ShowsActiveTasksInEveryColumnOrderedByPriority()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        Assert.Equal(["Backlog", "Desarrollador"], board.Columns.Select(c => c.Stage.Name));
+        Assert.Equal("Crítica", board.Columns[0].Tasks[0].Item.Title);
+        Assert.DoesNotContain("Archivada", TitlesOf(board));
+        Assert.Equal(5, TitlesOf(board).Count);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_ColumnsKnowTheNamesOfTheirDestinations()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        Assert.Equal("Desarrollador", board.Columns[0].SuccessName);
+        Assert.Null(board.Columns[0].RejectName);
+        Assert.Equal("Backlog", board.Columns[1].RejectName);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_ArchivedFilter_ShowsOnlyArchivedTasks()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel { Archived = true });
+
+        Assert.Equal(["Archivada"], TitlesOf(board));
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_ProjectFilter_ShowsOnlyThatProject()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel { ProjectID = 2 });
+
+        Assert.Equal(["Otro proyecto"], TitlesOf(board));
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_WaitingFilter_ShowsOnlyTasksWaitingForApproval()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel { Waiting = true });
+
+        Assert.Equal(["En espera"], TitlesOf(board));
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_WorkerFilter_ShowsOnlyTasksOfThatWorker()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel { WorkerName = "PC-1" });
+
+        Assert.Equal(["Programando"], TitlesOf(board));
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_TaskBeingDeveloped_ShowsTheElapsedTimeAndCountsIt()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        var card = board.Columns[1].Tasks.Single();
+        Assert.NotNull(card.DevelopmentElapsed);
+        Assert.InRange(card.DevelopmentElapsed.Value.TotalMinutes, 4.9, 6);
+        Assert.Equal(1, board.DevelopingCount);
+        Assert.All(board.Columns[0].Tasks, c => Assert.Null(c.DevelopmentElapsed));
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_LongDescriptions_AreCutForTheCardsAndShortOnesStayWhole()
+    {
+        await SeedBoardAsync();
+        await using (var db = CreateDbContext())
+        {
+            (await db.Tasks.SingleAsync(t => t.ID == 1)).Description = new string('d', 5000);
+            (await db.Tasks.SingleAsync(t => t.ID == 2)).Description = "corta";
+            await db.SaveChangesAsync();
+        }
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
+        Assert.Equal(1000, cards[1].Item.Description.Length);
+        Assert.Equal("corta", cards[2].Item.Description);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_CardsCarryEverythingTheViewShows()
+    {
+        await SeedBoardAsync();
+        await using (var db = CreateDbContext())
+        {
+            var task = await db.Tasks.SingleAsync(t => t.ID == 6);
+            task.Labels = "api";
+            task.WorkBranch = "devarv/6-x";
+            task.PullRequestNumber = 9;
+            task.PullRequestUrl = "https://github.com/o/a/pull/9";
+            task.TotalCostUsd = 1.25m;
+            task.TotalTokens = 321;
+            await db.SaveChangesAsync();
+        }
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        var item = board.Columns[1].Tasks.Single().Item;
+        Assert.Equal("P1", item.Project.Name);
+        Assert.Equal("api", item.Labels);
+        Assert.Equal("devarv/6-x", item.WorkBranch);
+        Assert.Equal(9, item.PullRequestNumber);
+        Assert.Equal("https://github.com/o/a/pull/9", item.PullRequestUrl);
+        Assert.Equal(1.25m, item.TotalCostUsd);
+        Assert.Equal(321, item.TotalTokens);
+        Assert.Equal("PC-1", item.LastWorkerName);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_OrdersEachColumnByPriority_CriticalFirst()
+    {
+        await using (var db = CreateDbContext())
+        {
+            db.Projects.Add(new Project { ID = 1, Name = "P", RepoOwner = "o", RepoName = "r" });
+            db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Order = 10 });
+            await db.SaveChangesAsync();
+            // Se insertan en un orden que no coincide con la prioridad ni con el alfabético.
+            foreach (var priority in new[] { Priority.LOW, Priority.CRITICAL, Priority.MEDIUM, Priority.HIGH })
+                db.Tasks.Add(new TaskItem { Title = priority.ToString(), ProjectID = 1, StageID = 1, Priority = priority, CreatedByName = "t" });
+            await db.SaveChangesAsync();
+        }
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+
+        Assert.Equal(["CRITICAL", "HIGH", "MEDIUM", "LOW"], board.Columns[0].Tasks.Select(c => c.Item.Title));
+    }
+
+    [Fact]
+    public async Task LockSql_ReferencesTheTablesOfTheModel()
+    {
+        await using var db = CreateDbContext();
+
+        Assert.Contains($"\"{db.Model.FindEntityType(typeof(TaskItem))!.GetTableName()}\"", TasksRepository.LOCK_TASK_SQL);
+        Assert.Contains($"\"{db.Model.FindEntityType(typeof(TaskRun))!.GetTableName()}\"", TasksRepository.LOCK_RUNS_SQL);
+        // Las columnas conservan su nombre histórico.
+        Assert.Contains("\"TaskId\"", TasksRepository.LOCK_RUNS_SQL);
+        Assert.DoesNotContain("TaskID", TasksRepository.LOCK_RUNS_SQL);
+    }
+
+    [Fact]
+    public async Task GetBoardAsync_TheBoardFlagsAreCopiedFromTheFilter()
+    {
+        await SeedBoardAsync();
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel { Compact = true, HideEmpty = true });
+
+        Assert.True(board.Compact);
+        Assert.True(board.HideEmpty);
+    }
+
+    [Fact]
+    public async Task CountWaitingAsync_CountsTasksWaitingForApprovalThatAreNotArchived()
+    {
+        await SeedBoardAsync();
+        await using var db = CreateDbContext();
+
+        Assert.Equal(1, await CreateRepository(db).CountWaitingAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task GetDetailsViewAsync_UnknownTask_ReturnsNull()
+    {
+        await using var db = CreateDbContext();
+
+        var view = await CreateRepository(db).GetDetailsViewAsync(
+            ID: 999,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.Null(view);
+    }
+
+    [Fact]
+    public async Task GetDetailsViewAsync_SelectsTheRequestedRunOrTheMostRecentOne()
+    {
+        var taskID = await SeedEditableTaskAsync();
+        await using (var db = CreateDbContext())
+        {
+            db.TaskRuns.AddRange(
+                new TaskRun { ID = 10, TaskID = taskID, StageID = 1, ChangedFilesJson = """[{"Status":"M","Path":"a.cs"}]""" },
+                new TaskRun { ID = 11, TaskID = taskID, StageID = 1, ChangedFilesJson = "no es json" });
+            await db.SaveChangesAsync();
+        }
+
+        await using var check = CreateDbContext();
+        var repository = CreateRepository(check);
+        var latest = await repository.GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+        var requested = await repository.GetDetailsViewAsync(
+            ID: taskID,
+            RunID: 10,
+            CT: CancellationToken.None);
+
+        Assert.Equal(11, latest!.SelectedRun!.ID);
+        Assert.Empty(latest.SelectedRunFiles);
+        Assert.Equal(10, requested!.SelectedRun!.ID);
+        Assert.Single(requested.SelectedRunFiles);
+        Assert.Equal(["Original"], [requested.Item.Title]);
+        Assert.Single(requested.Workers);
     }
 
     // ------------------------------------------------------------------ conflictos del pull request
@@ -125,146 +589,154 @@ public sealed class TasksRepositoryTests
     private const int TERMINAL_STAGE_ID = 3;
 
     [Theory]
-    [InlineData(RunStatus.Queued, true)]
-    [InlineData(RunStatus.Running, true)]
-    [InlineData(RunStatus.Succeeded, false)]
-    [InlineData(RunStatus.Failed, false)]
-    [InlineData(RunStatus.Cancelled, false)]
-    public async Task GetBoardAsync_ResolvingConflicts_OnlyWithActiveResolveConflictsRun(RunStatus runStatus, bool expected)
+    [InlineData(RunStatus.QUEUED, true)]
+    [InlineData(RunStatus.RUNNING, true)]
+    [InlineData(RunStatus.SUCCEEDED, false)]
+    [InlineData(RunStatus.FAILED, false)]
+    [InlineData(RunStatus.CANCELLED, false)]
+    public async Task GetBoardAsync_ResolvingConflicts_OnlyWithAnActiveResolveConflictsRun(RunStatus RunStatus, bool Expected)
     {
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Running,
-            runs: [(runStatus, resolveConflicts: true)]);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus, ResolveConflicts: true)]);
 
-        var card = await GetBoardCardAsync(taskId);
+        var card = await GetBoardCardAsync(taskID);
 
-        Assert.Equal(expected, card.ResolvingConflicts);
+        Assert.Equal(Expected, card.ResolvingConflicts);
     }
 
     [Fact]
     public async Task GetBoardAsync_ActiveRunWithoutResolveConflicts_IsNotResolvingConflicts()
     {
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Running,
-            runs: [(RunStatus.Running, resolveConflicts: false)]);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus.RUNNING, ResolveConflicts: false)]);
 
-        var card = await GetBoardCardAsync(taskId);
+        var card = await GetBoardCardAsync(taskID);
 
         Assert.False(card.ResolvingConflicts);
     }
 
     [Fact]
-    public async Task GetBoardAsync_ResolveConflictsRunOfAnotherTask_DoesNotMarkTask()
+    public async Task GetBoardAsync_ResolveConflictsRunOfAnotherTask_DoesNotMarkTheTask()
     {
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Running,
-            runs: [(RunStatus.Running, resolveConflicts: false)]);
-        var otherId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Queued,
-            runs: [(RunStatus.Queued, resolveConflicts: true)]);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(RunStatus.RUNNING, ResolveConflicts: false)]);
+        var otherID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.QUEUED,
+            Runs: [(RunStatus.QUEUED, ResolveConflicts: true)]);
 
-        await using var db = CreateDbContext();
-        var board = await CreateRepository(db).GetBoardAsync(new BoardFilterViewModel(), CancellationToken.None);
-        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.Id);
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
 
-        Assert.False(cards[taskId].ResolvingConflicts);
-        Assert.True(cards[otherId].ResolvingConflicts);
+        Assert.False(cards[taskID].ResolvingConflicts);
+        Assert.True(cards[otherID].ResolvingConflicts);
     }
 
     [Fact]
-    public async Task GetBoardAsync_IdleTaskWithLeftoverActiveRun_IsNotResolvingConflicts()
+    public async Task GetBoardAsync_IdleTaskWithALeftoverActiveRun_IsNotResolvingConflicts()
     {
         // Sólo se consideran las tareas en cola o en ejecución.
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Idle,
-            runs: [(RunStatus.Queued, resolveConflicts: true)]);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.IDLE,
+            Runs: [(RunStatus.QUEUED, ResolveConflicts: true)]);
 
-        var card = await GetBoardCardAsync(taskId);
+        var card = await GetBoardCardAsync(taskID);
 
         Assert.False(card.ResolvingConflicts);
     }
 
     [Theory]
     // Aprobación Producto con conflictos: se muestra el estado y el botón 🔧.
-    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WaitingApproval, true, true, false, true, true)]
-    [InlineData(APPROVAL_STAGE_ID, WorkStatus.Idle, true, true, false, true, true)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, true, false, true, true)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.IDLE, true, true, false, true, true)]
     // Sin conflictos, sin pull request o ya integrado: nada.
-    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WaitingApproval, false, true, false, false, false)]
-    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WaitingApproval, true, false, false, false, false)]
-    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WaitingApproval, true, true, true, false, false)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, false, true, false, false, false)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, false, false, false, false)]
+    [InlineData(APPROVAL_STAGE_ID, WorkStatus.WAITING_APPROVAL, true, true, true, false, false)]
     // En ejecución o en una columna final: se muestra el estado, pero no el botón.
-    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.Running, true, true, false, true, false)]
-    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.Queued, true, true, false, true, false)]
-    [InlineData(TERMINAL_STAGE_ID, WorkStatus.Done, true, true, false, true, false)]
+    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.RUNNING, true, true, false, true, false)]
+    [InlineData(DEVELOPER_STAGE_ID, WorkStatus.QUEUED, true, true, false, true, false)]
+    [InlineData(TERMINAL_STAGE_ID, WorkStatus.DONE, true, true, false, true, false)]
     public async Task GetBoardAsync_SetsShowAndCanResolveConflicts(
-        int stageId, WorkStatus status, bool hasConflicts, bool hasPullRequest, bool merged,
-        bool expectedShow, bool expectedCanResolve)
+        int StageID, WorkStatus Status, bool HasConflicts, bool HasPullRequest, bool Merged,
+        bool ExpectedShow, bool ExpectedCanResolve)
     {
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: stageId,
-            status: status,
-            runs: [],
-            hasConflicts: hasConflicts,
-            hasPullRequest: hasPullRequest,
-            merged: merged);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: StageID,
+            Status: Status,
+            Runs: [],
+            HasConflicts: HasConflicts,
+            HasPullRequest: HasPullRequest,
+            Merged: Merged);
 
-        var card = await GetBoardCardAsync(taskId);
+        var card = await GetBoardCardAsync(taskID);
 
-        Assert.Equal(expectedShow, card.ShowConflicts);
-        Assert.Equal(expectedCanResolve, card.CanResolveConflicts);
+        Assert.Equal(ExpectedShow, card.ShowConflicts);
+        Assert.Equal(ExpectedCanResolve, card.CanResolveConflicts);
     }
 
     [Theory]
     // La más reciente es el arreglo de conflictos activo.
-    [InlineData(RunStatus.Failed, false, RunStatus.Queued, true, true)]
-    [InlineData(RunStatus.Succeeded, false, RunStatus.Running, true, true)]
+    [InlineData(RunStatus.FAILED, false, RunStatus.QUEUED, true, true)]
+    [InlineData(RunStatus.SUCCEEDED, false, RunStatus.RUNNING, true, true)]
     // La más reciente es un arreglo que ya terminó.
-    [InlineData(RunStatus.Succeeded, false, RunStatus.Failed, true, false)]
+    [InlineData(RunStatus.SUCCEEDED, false, RunStatus.FAILED, true, false)]
     // Una ejecución anterior de arreglo, aunque siga activa, no cuenta si la más reciente no es un arreglo.
-    [InlineData(RunStatus.Queued, true, RunStatus.Running, false, false)]
-    public async Task GetDetailsViewAsync_ResolvingConflicts_UsesMostRecentRun(
-        RunStatus olderStatus, bool olderResolve, RunStatus newerStatus, bool newerResolve, bool expected)
+    [InlineData(RunStatus.QUEUED, true, RunStatus.RUNNING, false, false)]
+    public async Task GetDetailsViewAsync_ResolvingConflicts_UsesTheMostRecentRun(
+        RunStatus OlderStatus, bool OlderResolve, RunStatus NewerStatus, bool NewerResolve, bool Expected)
     {
         await SeedStagesAsync();
-        var taskId = await SeedConflictTaskAsync(
-            stageId: DEVELOPER_STAGE_ID,
-            status: WorkStatus.Running,
-            runs: [(olderStatus, olderResolve), (newerStatus, newerResolve)]);
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.RUNNING,
+            Runs: [(OlderStatus, OlderResolve), (NewerStatus, NewerResolve)]);
 
         await using var db = CreateDbContext();
-        var details = await CreateRepository(db).GetDetailsViewAsync(id: taskId, runId: null, ct: CancellationToken.None);
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
 
         Assert.NotNull(details);
-        Assert.Equal(expected, details.ResolvingConflicts);
+        Assert.Equal(Expected, details.ResolvingConflicts);
     }
 
     [Fact]
-    public async Task GetDetailsViewAsync_SetsShowAndCanResolveConflictsFromTaskAndStage()
+    public async Task GetDetailsViewAsync_SetsShowAndCanResolveConflictsFromTheTaskAndItsStage()
     {
         await SeedStagesAsync();
-        var approvalId = await SeedConflictTaskAsync(
-            stageId: APPROVAL_STAGE_ID,
-            status: WorkStatus.WaitingApproval,
-            runs: [(RunStatus.Succeeded, resolveConflicts: false)]);
-        var terminalId = await SeedConflictTaskAsync(
-            stageId: TERMINAL_STAGE_ID,
-            status: WorkStatus.Done,
-            runs: []);
+        var approvalID = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [(RunStatus.SUCCEEDED, ResolveConflicts: false)]);
+        var terminalID = await SeedConflictTaskAsync(
+            StageID: TERMINAL_STAGE_ID,
+            Status: WorkStatus.DONE,
+            Runs: []);
 
         await using var db = CreateDbContext();
         var repository = CreateRepository(db);
-        var approval = await repository.GetDetailsViewAsync(id: approvalId, runId: null, ct: CancellationToken.None);
-        var terminal = await repository.GetDetailsViewAsync(id: terminalId, runId: null, ct: CancellationToken.None);
+        var approval = await repository.GetDetailsViewAsync(
+            ID: approvalID,
+            RunID: null,
+            CT: CancellationToken.None);
+        var terminal = await repository.GetDetailsViewAsync(
+            ID: terminalID,
+            RunID: null,
+            CT: CancellationToken.None);
 
         Assert.NotNull(approval);
         Assert.True(approval.ShowConflicts);
@@ -275,46 +747,141 @@ public sealed class TasksRepositoryTests
         Assert.False(terminal.CanResolveConflicts);
     }
 
-    private async Task<BoardCardViewModel> GetBoardCardAsync(int taskId)
+    // ------------------------------------------------------------------ pestañas informativas
+
+    [Fact]
+    public async Task GetDetailsViewAsync_AfterPullRequestCreator_FillsReportTabs()
     {
+        await SeedStagesAsync();
+        await using (var seed = CreateDbContext())
+        {
+            seed.Stages.Add(new Stage
+            {
+                ID = PULL_REQUEST_STAGE_ID, Name = "Creador de PR", Order = 2, Kind = StageKind.SYSTEM,
+                SystemAction = SystemAction.CREATE_PULL_REQUEST,
+            });
+            var task = NewTask("Tarea");
+            task.StageID = APPROVAL_STAGE_ID;
+            task.Attachments.Add(new TaskAttachment { FileName = "spec.png", Kind = AttachmentKind.IMAGE });
+            task.Attachments.Add(new TaskAttachment { FileName = "resultado.png", Kind = AttachmentKind.IMAGE, IsCapture = true });
+            seed.Tasks.Add(task);
+            await seed.SaveChangesAsync();
+
+            seed.TaskRuns.Add(new TaskRun
+            {
+                TaskID = task.ID, StageID = DEVELOPER_STAGE_ID, StageName = "Desarrollador", RunnerKind = StageKind.AGENT,
+                Status = RunStatus.SUCCEEDED, Summary = "Listo.\n## Pruebas unitarias\n10 aprobadas\n## Pruebas QA\n1. Abrir la tarea",
+            });
+            await seed.SaveChangesAsync();
+            seed.TaskRuns.Add(new TaskRun
+            {
+                TaskID = task.ID, StageID = PULL_REQUEST_STAGE_ID, StageName = "Creador de PR", RunnerKind = StageKind.SYSTEM,
+                Status = RunStatus.SUCCEEDED, Summary = "Pull request created", Log = "uno\ndos\ntres\n",
+            });
+            await seed.SaveChangesAsync();
+        }
+
         await using var db = CreateDbContext();
-        var board = await CreateRepository(db).GetBoardAsync(new BoardFilterViewModel(), CancellationToken.None);
-        return board.Columns.SelectMany(c => c.Tasks).Single(c => c.Item.Id == taskId);
+        var taskID = (await db.Tasks.SingleAsync()).ID;
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.True(details.ShowReportTabs);
+        Assert.Equal("Creador de PR", details.SelectedRun?.StageName);
+        Assert.Equal(3, details.SelectedRunLogLines);
+        Assert.Equal("10 aprobadas", details.UnitTests?.Content);
+        Assert.Equal("1. Abrir la tarea", details.QaTests?.Content);
+        Assert.Equal(["spec.png"], details.Attachments.Select(a => a.FileName));
+        Assert.Equal(["resultado.png"], details.Captures.Select(a => a.FileName));
+    }
+
+    [Fact]
+    public async Task GetDetailsViewAsync_BeforePullRequestCreator_HidesReportTabs()
+    {
+        await SeedStagesAsync();
+        var taskID = await SeedConflictTaskAsync(
+            StageID: DEVELOPER_STAGE_ID,
+            Status: WorkStatus.IDLE,
+            Runs: [(RunStatus.SUCCEEDED, ResolveConflicts: false)],
+            HasPullRequest: false);
+
+        await using var db = CreateDbContext();
+        var details = await CreateRepository(db).GetDetailsViewAsync(
+            ID: taskID,
+            RunID: null,
+            CT: CancellationToken.None);
+
+        Assert.NotNull(details);
+        Assert.False(details.ShowReportTabs);
+    }
+
+    private const int PULL_REQUEST_STAGE_ID = 4;
+
+    [Fact]
+    public async Task GetBoardAsync_KeepsTheConflictFlagOfEachTask_EvenThoughTheBoardOnlyLoadsSomeColumns()
+    {
+        // La proyección del tablero recorta columnas: este campo tiene que seguir viajando.
+        await SeedStagesAsync();
+        var withConflicts = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [],
+            HasConflicts: true);
+        var withoutConflicts = await SeedConflictTaskAsync(
+            StageID: APPROVAL_STAGE_ID,
+            Status: WorkStatus.WAITING_APPROVAL,
+            Runs: [],
+            HasConflicts: false);
+
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        var cards = board.Columns.SelectMany(c => c.Tasks).ToDictionary(c => c.Item.ID);
+
+        Assert.True(cards[withConflicts].Item.PullRequestHasConflicts);
+        Assert.False(cards[withoutConflicts].Item.PullRequestHasConflicts);
+    }
+
+    private async Task<BoardCardViewModel> GetBoardCardAsync(int TaskID)
+    {
+        var board = await LoadBoardAsync(new BoardFilterViewModel());
+        return board.Columns.SelectMany(c => c.Tasks).Single(c => c.Item.ID == TaskID);
     }
 
     /// <summary>Proyecto y columnas «Aprobación Producto» (aprobación humana), «Desarrollador» (agente con push) y «Terminado».</summary>
     private async Task SeedStagesAsync()
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
         db.Stages.AddRange(
-            new Stage { Id = APPROVAL_STAGE_ID, Name = "Aprobación Producto", Order = 3, Kind = StageKind.HumanApproval },
-            new Stage { Id = DEVELOPER_STAGE_ID, Name = "Desarrollador", Order = 1, Kind = StageKind.Agent, PushChanges = true },
-            new Stage { Id = TERMINAL_STAGE_ID, Name = "Terminado", Order = 9, Kind = StageKind.Terminal });
+            new Stage { ID = APPROVAL_STAGE_ID, Name = "Aprobación Producto", Order = 3, Kind = StageKind.HUMAN_APPROVAL },
+            new Stage { ID = DEVELOPER_STAGE_ID, Name = "Desarrollador", Order = 1, Kind = StageKind.AGENT, PushChanges = true },
+            new Stage { ID = TERMINAL_STAGE_ID, Name = "Terminado", Order = 9, Kind = StageKind.TERMINAL });
         await db.SaveChangesAsync();
     }
 
-    /// <summary>Crea una tarea con pull request y sus ejecuciones, de la más antigua a la más reciente; devuelve su id.</summary>
+    /// <summary>Crea una tarea con pull request y sus ejecuciones, de la más antigua a la más reciente; devuelve su ID.</summary>
     private async Task<int> SeedConflictTaskAsync(
-        int stageId, WorkStatus status, (RunStatus status, bool resolveConflicts)[] runs,
-        bool hasConflicts = true, bool hasPullRequest = true, bool merged = false)
+        int StageID, WorkStatus Status, (RunStatus Status, bool ResolveConflicts)[] Runs,
+        bool HasConflicts = true, bool HasPullRequest = true, bool Merged = false)
     {
         await using var db = CreateDbContext();
         var task = NewTask("Tarea");
-        task.StageId = stageId;
-        task.Status = status;
-        task.PullRequestHasConflicts = hasConflicts;
-        task.PullRequestNumber = hasPullRequest ? 42 : null;
-        task.PullRequestMergedAt = merged ? DateTimeOffset.UtcNow : null;
+        task.StageID = StageID;
+        task.Status = Status;
+        task.PullRequestHasConflicts = HasConflicts;
+        task.PullRequestNumber = HasPullRequest ? 42 : null;
+        task.PullRequestMergedAt = Merged ? DateTimeOffset.UtcNow : null;
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
-        foreach (var run in runs)
+        foreach (var run in Runs)
         {
-            db.TaskRuns.Add(new TaskRun { TaskId = task.Id, StageId = stageId, Status = run.status, ResolveConflicts = run.resolveConflicts });
-            await db.SaveChangesAsync(); // Uno por uno para que los ids sigan el orden de creación.
+            db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = StageID, Status = run.Status, ResolveConflicts = run.ResolveConflicts });
+            await db.SaveChangesAsync(); // Uno por uno para que los IDs sigan el orden de creación.
         }
-        return task.Id;
+        return task.ID;
     }
 
     private AppDbContext CreateDbContext() => new(new DbContextOptionsBuilder<AppDbContext>()
@@ -322,43 +889,43 @@ public sealed class TasksRepositoryTests
         .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
         .Options);
 
-    private static TasksRepository CreateRepository(AppDbContext db) => new TestableTasksRepository(db);
+    private static TasksRepository CreateRepository(AppDbContext Db) => new TestableTasksRepository(Db);
 
-    private static TaskItem NewTask(string title) => new()
+    private static TaskItem NewTask(string Title) => new()
     {
-        Title = title,
-        ProjectId = 1,
-        StageId = 1,
+        Title = Title,
+        ProjectID = 1,
+        StageID = 1,
         CreatedByName = "tester",
     };
 
     /// <summary>Crea proyecto, columna y una tarea con un adjunto (contenido en la base de datos).</summary>
-    private async Task SeedTaskAsync(RunStatus? runStatus)
+    private async Task SeedTaskAsync(RunStatus? RunStatus)
     {
         await using var db = CreateDbContext();
-        db.Projects.Add(new Project { Id = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
-        db.Stages.Add(new Stage { Id = 1, Name = "Backlog", Kind = StageKind.Manual });
+        db.Projects.Add(new Project { ID = 1, Name = "Proyecto", RepoOwner = "o", RepoName = "r" });
+        db.Stages.Add(new Stage { ID = 1, Name = "Backlog", Kind = StageKind.MANUAL });
         var task = NewTask("Tarea");
         task.Attachments.Add(new TaskAttachment
         {
             FileName = "a.png",
-            Kind = AttachmentKind.Image,
+            Kind = AttachmentKind.IMAGE,
             Content = new TaskAttachmentContent { Data = [1, 2, 3] },
         });
         db.Tasks.Add(task);
         await db.SaveChangesAsync();
 
-        if (runStatus is not null)
+        if (RunStatus is not null)
         {
-            db.TaskRuns.Add(new TaskRun { TaskId = task.Id, StageId = 1, Status = runStatus.Value });
+            db.TaskRuns.Add(new TaskRun { TaskID = task.ID, StageID = 1, Status = RunStatus.Value });
             await db.SaveChangesAsync();
         }
     }
 
     /// <summary>El proveedor en memoria no ejecuta SQL, así que se omiten los bloqueos FOR UPDATE de PostgreSQL.</summary>
-    private sealed class TestableTasksRepository(AppDbContext db)
-        : TasksRepository(db, NullLogger<TasksRepository>.Instance)
+    private sealed class TestableTasksRepository(AppDbContext Db)
+        : TasksRepository(Db, NullLogger<TasksRepository>.Instance)
     {
-        protected override Task LockTaskAndRunsAsync(int taskId, CancellationToken ct) => Task.CompletedTask;
+        protected override Task LockTaskAndRunsAsync(int TaskID, CancellationToken CT) => Task.CompletedTask;
     }
 }

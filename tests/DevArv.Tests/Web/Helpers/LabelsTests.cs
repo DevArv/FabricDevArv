@@ -12,8 +12,8 @@ public class LabelsTests
     [InlineData(3600, "1:00:00")]
     [InlineData(3 * 3600 + 5 * 60 + 9, "3:05:09")]
     [InlineData(26 * 3600, "26:00:00")]
-    public void Stopwatch_FormatsElapsedTime(int seconds, string expected) =>
-        Assert.Equal(expected, Labels.Stopwatch(TimeSpan.FromSeconds(seconds)));
+    public void Stopwatch_FormatsElapsedTime(int Seconds, string Expected) =>
+        Assert.Equal(Expected, Labels.Stopwatch(TimeSpan.FromSeconds(Seconds)));
 
     [Fact]
     public void Stopwatch_IgnoresFractionsOfSecond() =>
