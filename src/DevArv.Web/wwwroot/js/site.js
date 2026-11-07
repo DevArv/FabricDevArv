@@ -13,7 +13,7 @@
 
   // ------------------------------------------------------------------ modal
 
-  async function openModal(url, { pushTask } = {}) {
+  async function openModal(url, { pushTask, resetTabs = false } = {}) {
     try {
       const res = await fetch(url, { headers: { 'X-Requested-With': 'fetch' }, credentials: 'same-origin' });
       if (res.redirected && res.url.includes('/Identity/Account/Login')) { location.href = res.url; return; }
@@ -24,7 +24,7 @@
         <button class="btn" data-close-modal>Cerrar</button></div>`;
     }
     if (!modal.open) modal.showModal();
-    initDynamic(modalBody);
+    initDynamic(modalBody, { resetTabs });
     if (pushTask) setTaskParam(pushTask);
     scheduleLive();
   }
@@ -86,7 +86,8 @@
     if (opener) { e.preventDefault(); openModal(opener.dataset.modal); return; }
 
     const inner = e.target.closest('a[data-modal-link]');
-    if (inner && modal.open) { e.preventDefault(); openModal(inner.getAttribute('href')); return; }
+    // Navegación explícita a otra ejecución: se abre en la pestaña Log, no en el informe recordado.
+    if (inner && modal.open) { e.preventDefault(); openModal(inner.getAttribute('href'), { resetTabs: true }); return; }
 
     const fix = e.target.closest('[data-resolve-conflicts]');
     if (fix) { e.preventDefault(); resolveConflicts(fix); return; }
@@ -265,10 +266,11 @@
 
   // ------------------------------------------------------------------ contenido dinámico
 
-  function initDynamic(root) {
+  function initDynamic(root, { resetTabs = false } = {}) {
     // Pestañas. Sin nombre (data-tabs) controlan los paneles del mismo contenedor; con nombre (data-tabs="grupo")
     // controlan los paneles con data-tab-group="grupo" (permite pestañas anidadas) y recuerdan la pestaña elegida
     // en la sesión del navegador, para que no se pierda al refrescar el detalle o al volver tras un formulario.
+    // Con resetTabs (navegación explícita) se olvida la pestaña recordada y cada grupo abre en su pestaña inicial.
     $$('[data-tabs]', root).forEach(tabs => {
       const group = tabs.dataset.tabs;
       const panels = () => group
@@ -289,7 +291,10 @@
       });
       if (group) {
         let saved = null;
-        try { saved = sessionStorage.getItem(TAB_STORAGE_PREFIX + group); } catch { /* sin almacenamiento */ }
+        try {
+          if (resetTabs) sessionStorage.removeItem(TAB_STORAGE_PREFIX + group);
+          else saved = sessionStorage.getItem(TAB_STORAGE_PREFIX + group);
+        } catch { /* sin almacenamiento */ }
         if (saved) activate(saved, false);
       }
     });
